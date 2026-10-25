@@ -7,17 +7,20 @@
     <title>CITCI GradeTrack</title>
     {% tailwind_css %}
     <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
+    <script src="{% static 'js/htmx-csrf.js' %}" defer></script>
     <script src="{% static 'vendor/alpinejs/alpine.min.js' %}" defer></script>
 </head>
 <body class="h-full font-sans text-gray-800 antialiased"
       x-data="{
           collapsed: (() => { try { return localStorage.getItem('citci_sidebar_collapsed') === '1'; } catch (e) { return false; } })(),
           mobileOpen: false,
+          modalOpen: false,
           toggleCollapsed() {
               this.collapsed = !this.collapsed;
               try { localStorage.setItem('citci_sidebar_collapsed', this.collapsed ? '1' : '0'); } catch (e) {}
           }
-      }">
+      }"
+      @keydown.escape.window="modalOpen = false">
 {% if user.is_authenticated %}
 <div class="min-h-full md:flex">
     {% include "partials/_sidebar.html" %}
@@ -30,7 +33,14 @@
                 </button>
                 <div>
                     <h1 class="text-base font-semibold leading-tight text-gray-900 md:text-lg">{% block page_title %}Dashboard{% endblock %}</h1>
-                    <p class="text-xs leading-tight text-gray-500">1st Sem, A.Y. 2026–2027</p>
+                    {% if active_semester %}
+                    <p class="text-xs leading-tight text-gray-500">{{ active_semester }}</p>
+                    {% else %}
+                    <p class="text-xs leading-tight text-amber-600">
+                        No active semester
+                        {% if user.is_admin_role %}· <a href="{% url 'academics:terms' %}" class="underline hover:no-underline">set one</a>{% endif %}
+                    </p>
+                    {% endif %}
                 </div>
             </div>
 
@@ -43,6 +53,15 @@
             {% include "partials/_messages.html" %}
             {% block content %}{% endblock %}
         </main>
+    </div>
+</div>
+
+{# Shared modal shell: CRUD pages hx-get their form/confirm fragment into #modal-content. #}
+<div x-show="modalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50" @click="modalOpen = false"></div>
+    <div id="modal-content"
+         @modal-success.window="modalOpen = false"
+         class="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
     </div>
 </div>
 {% else %}

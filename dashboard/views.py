@@ -1,22 +1,63 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+from academics.models import ClassOffering, Enrollment, Program, Semester
 from accounts.decorators import role_required
 from accounts.models import User
 from accounts.utils import coming_soon
 
-_TEMPLATE_BY_ROLE = {
-    User.Role.ADMIN: "dashboard/admin_dashboard.html",
-    User.Role.PROGRAM_HEAD: "dashboard/program_head_dashboard.html",
-    User.Role.INSTRUCTOR: "dashboard/instructor_dashboard.html",
-    User.Role.STUDENT: "dashboard/student_dashboard.html",
-}
-
 
 @login_required
 def home(request):
-    template = _TEMPLATE_BY_ROLE.get(request.user.role, "dashboard/admin_dashboard.html")
-    return render(request, template)
+    user = request.user
+    if user.is_admin_role:
+        return _admin_dashboard(request)
+    if user.is_program_head:
+        return render(request, "dashboard/program_head_dashboard.html")
+    if user.is_instructor:
+        return _instructor_dashboard(request)
+    return _student_dashboard(request)
+
+
+def _active_semester():
+    return Semester.objects.filter(is_active=True).first()
+
+
+def _admin_dashboard(request):
+    active = _active_semester()
+    context = {
+        "total_students": User.objects.filter(role=User.Role.STUDENT).count(),
+        "total_instructors": User.objects.filter(role=User.Role.INSTRUCTOR).count(),
+        "active_classes": ClassOffering.objects.filter(semester=active).count() if active else 0,
+        "total_programs": Program.objects.count(),
+    }
+    return render(request, "dashboard/admin_dashboard.html", context)
+
+
+def _instructor_dashboard(request):
+    active = _active_semester()
+    classes = ClassOffering.objects.filter(instructor=request.user, semester=active) if active else ClassOffering.objects.none()
+    total_students = (
+        Enrollment.objects.filter(class_offering__in=classes, status=Enrollment.Status.ENROLLED)
+        .values("student")
+        .distinct()
+        .count()
+    )
+    context = {"my_classes_count": classes.count(), "total_students": total_students}
+    return render(request, "dashboard/instructor_dashboard.html", context)
+
+
+def _student_dashboard(request):
+    active = _active_semester()
+    enrollments = (
+        Enrollment.objects.filter(
+            student=request.user, status=Enrollment.Status.ENROLLED, class_offering__semester=active
+        ).select_related("class_offering__subject", "class_offering__instructor")
+        if active
+        else Enrollment.objects.none()
+    )
+    context = {"enrollments": enrollments, "enrolled_count": enrollments.count()}
+    return render(request, "dashboard/student_dashboard.html", context)
 
 
 @role_required(User.Role.STUDENT)

@@ -1,0 +1,31 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Add Students — {{ class_offering }}</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{% url 'academics:enrollment_add_students_submit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4">
+    {% csrf_token %}
+    {% if available_students %}
+    <div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
+        {% for student in available_students %}
+        <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-50">
+            <input type="checkbox" name="student_ids" value="{{ student.pk }}"
+                   class="h-4 w-4 rounded border-gray-300 text-brand-accent-600 focus:ring-brand-accent-500">
+            <span>{{ student.full_name }}{% if student.id_number %} <span class="text-gray-400">({{ student.id_number }})</span>{% endif %}</span>
+        </label>
+        {% endfor %}
+    </div>
+    <div class="mt-4 flex justify-end gap-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Add Selected
+        </button>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">All students are already enrolled in this class.</p>
+    {% endif %}
+</form>

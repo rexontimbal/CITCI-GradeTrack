@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block page_title %}Roster — {{ class_offering }}{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title=class_offering|stringformat:"s" subtitle=class_offering.semester|stringformat:"s" %}
+
+<div class="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <div class="rounded-xl border border-gray-200 bg-white p-3">
+        <p class="text-xs font-medium uppercase text-gray-500">Section</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.section }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-3">
+        <p class="text-xs font-medium uppercase text-gray-500">Instructor</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.instructor.full_name|default:"Unassigned" }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-3">
+        <p class="text-xs font-medium uppercase text-gray-500">Schedule</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.schedule|default:"—" }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-3">
+        <p class="text-xs font-medium uppercase text-gray-500">Room</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.room|default:"—" }}</p>
+    </div>
+</div>
+
+{% if enrollments %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">ID Number</th>
+                <th class="px-4 py-3">Name</th>
+                <th class="px-4 py-3">Section</th>
+                <th class="px-4 py-3">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for enrollment in enrollments %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-gray-700">{{ enrollment.student.id_number|default:"—" }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ enrollment.student.full_name }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ class_offering.section }}</td>
+                <td class="px-4 py-3">
+                    {% if enrollment.status == "ENROLLED" %}
+                    <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Enrolled</span>
+                    {% else %}
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Dropped</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="Students will appear here once enrolled in this class." %}
+{% endif %}
+{% endblock %}

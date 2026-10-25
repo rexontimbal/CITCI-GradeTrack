@@ -1,0 +1,43 @@
+{% load sidebar_icons %}
+<div id="{{ table_id }}">
+    {% if page_obj.object_list %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Section</th>
+                    <th class="px-4 py-3">Program</th>
+                    <th class="px-4 py-3">Academic Year</th>
+                    <th class="px-4 py-3">Year Level</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for section in page_obj %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ section }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ section.program.code }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ section.academic_year }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ section.get_year_level_display }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex justify-end gap-1">
+                            <button hx-get="{% url 'academics:section_edit' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                {% sidebar_icon "pencil" "w-4 h-4" %}
+                            </button>
+                            <button hx-get="{% url 'academics:section_delete' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                {% sidebar_icon "trash" "w-4 h-4" %}
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="grid" title="No sections yet" description="Add a section for a program and year level." %}
+    {% endif %}
+</div>

@@ -1,0 +1,35 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Delete {{ label }}?</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    {% if protect_error %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        {{ protect_error }}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-600">This action cannot be undone.</p>
+    {% endif %}
+
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        {% if protect_error %}
+            {% if can_deactivate %}
+            <button hx-post="{{ deactivate_url }}" hx-target="#modal-content" hx-swap="innerHTML"
+                    class="rounded-lg bg-brand-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+                Deactivate Instead
+            </button>
+            {% endif %}
+        {% else %}
+        <button hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML"
+                class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Delete
+        </button>
+        {% endif %}
+    </div>
+</div>

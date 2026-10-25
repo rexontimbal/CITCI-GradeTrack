@@ -29,7 +29,7 @@ MENUS = {
         {
             "label": "Management",
             "items": [
-                ("accounts:users", "Users", "users"),
+                ("academics:students", "Users", "users"),
                 ("grading:templates", "Grading Templates", "sliders"),
                 ("forecasting:model", "Forecast Model", "chart"),
             ],
@@ -57,7 +57,7 @@ MENUS = {
         {
             "label": "Academics",
             "items": [
-                ("academics:classes", "Classes", "chalkboard"),
+                ("academics:program_head_classes", "Classes", "chalkboard"),
                 ("approvals:index", "Grade Approvals", "check-circle"),
                 ("forecasting:at_risk", "At-Risk Students", "alert"),
             ],

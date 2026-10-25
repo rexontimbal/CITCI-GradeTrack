@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_tailwind_cli",
     # CITCI GradeTrack apps
+    "core",
     "accounts",
     "academics",
     "grading",
@@ -67,6 +68,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "accounts.context_processors.sidebar",
+                "academics.context_processors.active_semester",
             ],
         },
     },

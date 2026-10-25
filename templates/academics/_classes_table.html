@@ -1,0 +1,53 @@
+{% load sidebar_icons %}
+<div id="{{ table_id }}">
+    {% if page_obj.object_list %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Class</th>
+                    <th class="px-4 py-3">Semester</th>
+                    <th class="px-4 py-3">Instructor</th>
+                    <th class="px-4 py-3">Enrolled</th>
+                    <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for class_offering in page_obj %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3">
+                        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
+                    </td>
+                    <td class="px-4 py-3 text-gray-700">{{ class_offering.semester }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ class_offering.enrolled }}</td>
+                    <td class="px-4 py-3">
+                        {% if class_offering.is_active %}
+                        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                        {% else %}
+                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex justify-end gap-1">
+                            <button hx-get="{% url 'academics:class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                {% sidebar_icon "pencil" "w-4 h-4" %}
+                            </button>
+                            <button hx-get="{% url 'academics:class_delete' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                {% sidebar_icon "trash" "w-4 h-4" %}
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="Add a class to pair a subject, section, and instructor." %}
+    {% endif %}
+</div>

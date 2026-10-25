@@ -1,0 +1,17 @@
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="mt-3 flex items-center justify-between text-sm text-gray-600">
+    <p>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} total)</p>
+    <div class="flex gap-2">
+        {% if page_obj.has_previous %}
+        <button hx-get="{{ request.path }}?{{ query_string }}{% if query_string %}&{% endif %}page={{ page_obj.previous_page_number }}"
+                hx-target="#{{ table_id }}" hx-swap="outerHTML"
+                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</button>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <button hx-get="{{ request.path }}?{{ query_string }}{% if query_string %}&{% endif %}page={{ page_obj.next_page_number }}"
+                hx-target="#{{ table_id }}" hx-swap="outerHTML"
+                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</button>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block page_title %}Instructor Dashboard{% endblock %}
 {% block content %}
-    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Your teaching overview — placeholder values, no live data yet." %}
+    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Your teaching overview for the current semester." %}
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {% include "partials/_stat_card.html" with icon="chalkboard" label="My Classes" value="—" %}
-        {% include "partials/_stat_card.html" with icon="users" label="Total Students" value="—" %}
+        {% include "partials/_stat_card.html" with icon="chalkboard" label="My Classes" value=my_classes_count %}
+        {% include "partials/_stat_card.html" with icon="users" label="Total Students" value=total_students %}
         {% include "partials/_stat_card.html" with icon="clipboard" label="Grade Sheets Pending" value="—" %}
         {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value="—" %}
     </div>
 
     <div class="mt-6">
-        {% include "partials/_empty_state.html" with icon="clipboard" title="Your classes will appear here" description="Score encoding, computed grades, and forecasts will be available once the grading engine is built." %}
+        {% include "partials/_empty_state.html" with icon="clipboard" title="Score encoding coming soon" description="Score encoding, computed grades, and forecasts will be available once the grading engine is built." %}
     </div>
 {% endblock %}

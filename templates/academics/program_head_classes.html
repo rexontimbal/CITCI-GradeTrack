@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block page_title %}Classes{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Classes" subtitle="Classes under your program for the active semester." %}
+
+{% if not active_semester_set %}
+{% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
+{% elif classes %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3">Instructor</th>
+                <th class="px-4 py-3">Enrolled</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for class_offering in classes %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">
+                    <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
+                </td>
+                <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ class_offering.enrolled }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="No classes under your program for the active semester." %}
+{% endif %}
+{% endblock %}

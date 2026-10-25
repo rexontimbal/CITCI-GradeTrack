@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block page_title %}Admin Dashboard{% endblock %}
 {% block content %}
-    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="System-wide overview — placeholder values, no live data yet." %}
+    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="System-wide overview for the current semester." %}
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {% include "partials/_stat_card.html" with icon="users" label="Total Students" value="—" %}
-        {% include "partials/_stat_card.html" with icon="chalkboard" label="Total Instructors" value="—" %}
-        {% include "partials/_stat_card.html" with icon="clipboard" label="Active Classes" value="—" %}
-        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value="—" %}
+        {% include "partials/_stat_card.html" with icon="users" label="Total Students" value=total_students %}
+        {% include "partials/_stat_card.html" with icon="chalkboard" label="Total Instructors" value=total_instructors %}
+        {% include "partials/_stat_card.html" with icon="clipboard" label="Active Classes" value=active_classes %}
+        {% include "partials/_stat_card.html" with icon="folder" label="Programs" value=total_programs %}
     </div>
 
     <div class="mt-6">
-        {% include "partials/_empty_state.html" with icon="chart" title="Reports and analytics coming soon" description="Grade distribution, pass/fail rates, and enrollment trends will appear here once the academic structure and grading phases are built." %}
+        {% include "partials/_empty_state.html" with icon="chart" title="Reports and analytics coming soon" description="Grade distribution, pass/fail rates, and enrollment trends will appear here once the grading phase is built." %}
     </div>
 {% endblock %}

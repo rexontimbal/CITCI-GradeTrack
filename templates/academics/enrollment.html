@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block page_title %}Enrollment{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Enrollment" subtitle="Pick a class to manage its roster." %}
+
+<div class="mb-4 max-w-md">
+    <label class="mb-1 block text-sm font-medium text-gray-700">Class</label>
+    <select name="class" hx-get="{% url 'academics:enrollment' %}" hx-target="#roster-container" hx-swap="outerHTML" hx-trigger="change"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+        <option value="">— Select a class —</option>
+        {% for c in classes %}
+        <option value="{{ c.pk }}" {% if selected_class.pk == c.pk %}selected{% endif %}>{{ c }} ({{ c.semester }})</option>
+        {% endfor %}
+    </select>
+</div>
+
+{% include "academics/_enrollment_roster.html" %}
+{% endblock %}

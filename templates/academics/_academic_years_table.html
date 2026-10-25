@@ -1,0 +1,36 @@
+{% load sidebar_icons %}
+<div id="academic-years-table" hx-trigger="refreshYears from:body" hx-get="{% url 'academics:academic_years_table' %}" hx-target="this" hx-swap="outerHTML">
+    {% if academic_years %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Academic Year</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for ay in academic_years %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ ay }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex justify-end gap-1">
+                            <button hx-get="{% url 'academics:academic_year_edit' ay.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                {% sidebar_icon "pencil" "w-4 h-4" %}
+                            </button>
+                            <button hx-get="{% url 'academics:academic_year_delete' ay.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                {% sidebar_icon "trash" "w-4 h-4" %}
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="calendar" title="No academic years yet" description="Add one to start setting up terms." %}
+    {% endif %}
+</div>

@@ -1,7 +1,8 @@
 {% load sidebar_icons static %}
 {# Rendered once for the desktop rail (collapsible) and once for the mobile drawer (always expanded). #}
 
-<div class="flex items-center gap-3 px-3 py-4" :class="forMobile ? '' : (collapsed ? 'justify-center' : '')">
+<div class="flex h-16 shrink-0 items-center gap-3 border-b border-brand-primary-700/60 px-3"
+     :class="forMobile ? '' : (collapsed ? 'justify-center' : '')">
     <button type="button"
             x-show="!forMobile"
             @click="toggleCollapsed()"
@@ -37,27 +38,32 @@
     {% endfor %}
 </nav>
 
-<div class="px-2 pb-2">
-    <div class="mb-2 grid gap-1" :class="(forMobile || !collapsed) ? 'grid-cols-4' : 'grid-cols-1'">
-        <a href="#" title="Notifications" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
-            {% sidebar_icon "bell" "w-4.5 h-4.5" %}
+{# User card: click to open a popover (Profile / Help / Change Password / Logout). #}
+<div class="relative px-2 pb-2" x-data="{ userMenuOpen: false }" @keydown.escape.window="userMenuOpen = false">
+    <div x-show="userMenuOpen" x-cloak
+         x-transition
+         @click.outside="userMenuOpen = false"
+         class="absolute bottom-full left-2 z-30 mb-2 w-56 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-black/5">
+        <a href="{% url 'accounts:profile' %}" class="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+            {% sidebar_icon "profile" "w-4 h-4" %} Profile
         </a>
-        <a href="{% url 'accounts:profile' %}" title="Profile" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
-            {% sidebar_icon "profile" "w-4.5 h-4.5" %}
+        <a href="{% url 'accounts:help' %}" class="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+            {% sidebar_icon "help" "w-4 h-4" %} Help
         </a>
-        <a href="{% url 'accounts:help' %}" title="Help" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
-            {% sidebar_icon "help" "w-4.5 h-4.5" %}
+        <a href="{% url 'accounts:force_password_change' %}" class="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+            {% sidebar_icon "sliders" "w-4 h-4" %} Change Password
         </a>
         <form method="post" action="{% url 'accounts:logout' %}">
             {% csrf_token %}
-            <button type="submit" title="Logout" class="flex h-9 w-full items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
-                {% sidebar_icon "logout" "w-4.5 h-4.5" %}
+            <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">
+                {% sidebar_icon "logout" "w-4 h-4" %} Logout
             </button>
         </form>
     </div>
 
-    <div class="flex items-center gap-3 rounded-xl bg-brand-primary-900 px-3 py-3"
-         :class="(forMobile || !collapsed) ? '' : 'justify-center'">
+    <button type="button" @click="userMenuOpen = !userMenuOpen"
+            class="flex w-full items-center gap-3 rounded-xl bg-brand-primary-900 px-3 py-3 text-left transition hover:bg-brand-primary-900/70"
+            :class="(forMobile || !collapsed) ? '' : 'justify-center'">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-accent-500 text-sm font-bold text-brand-primary-900">
             {{ user.initials }}
         </div>
@@ -65,5 +71,5 @@
             <p class="truncate text-sm font-semibold text-white">{{ user.full_name }}</p>
             <p class="truncate text-xs text-brand-primary-300">{{ user.get_role_display }}</p>
         </div>
-    </div>
+    </button>
 </div>

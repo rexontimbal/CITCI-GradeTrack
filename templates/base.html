@@ -1,10 +1,10 @@
-{% load tailwind_cli static %}
+{% load tailwind_cli static sidebar_icons %}
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-gray-100">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ page_title|default:"Dashboard" }}{% endblock %} · CITCI GradeTrack</title>
+    <title>CITCI GradeTrack</title>
     {% tailwind_css %}
     <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
     <script src="{% static 'vendor/alpinejs/alpine.min.js' %}" defer></script>
@@ -23,7 +23,21 @@
     {% include "partials/_sidebar.html" %}
 
     <div class="flex min-h-screen flex-1 flex-col">
-        {% include "partials/_topbar.html" %}
+        <header class="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 md:px-6">
+            <div class="flex items-center gap-3">
+                <button type="button" @click="mobileOpen = true" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 md:hidden">
+                    {% sidebar_icon "menu" "w-5 h-5" %}
+                </button>
+                <div>
+                    <h1 class="text-base font-semibold leading-tight text-gray-900 md:text-lg">{% block page_title %}Dashboard{% endblock %}</h1>
+                    <p class="text-xs leading-tight text-gray-500">1st Sem, A.Y. 2026–2027</p>
+                </div>
+            </div>
+
+            <button type="button" title="Notifications" class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
+                {% sidebar_icon "bell" "w-5 h-5" %}
+            </button>
+        </header>
 
         <main class="flex-1 p-4 md:p-6">
             {% include "partials/_messages.html" %}

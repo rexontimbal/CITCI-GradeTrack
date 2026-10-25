@@ -32,8 +32,9 @@ def help_page(request):
 
 @login_required
 def force_password_change(request):
-    if not request.user.must_change_password:
-        return redirect("dashboard:home")
+    """Doubles as the forced first-login screen (must_change_password=True)
+    and a voluntary "Change Password" page reachable from the sidebar user
+    menu at any time."""
     if request.method == "POST":
         form = ForcedPasswordChangeForm(request.user, request.POST)
         if form.is_valid():
@@ -41,8 +42,10 @@ def force_password_change(request):
             user.must_change_password = False
             user.save(update_fields=["must_change_password"])
             update_session_auth_hash(request, user)
-            messages.success(request, "Password updated. Welcome to CITCI GradeTrack.")
-            return redirect("accounts:privacy_consent")
+            messages.success(request, "Password updated.")
+            if not user.privacy_consent_at:
+                return redirect("accounts:privacy_consent")
+            return redirect("dashboard:home")
     else:
         form = ForcedPasswordChangeForm(request.user)
     return render(request, "accounts/force_password_change.html", {"form": form})
@@ -60,7 +63,7 @@ def privacy_consent(request):
 
 
 def permission_denied_view(request, exception=None):
-    return render(request, "accounts/403.html", {"page_title": "Access Denied"}, status=403)
+    return render(request, "accounts/403.html", status=403)
 
 
 @role_required(User.Role.ADMIN)

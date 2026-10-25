@@ -1,0 +1,18 @@
+{% load sidebar_icons %}
+<li class="relative group/item">
+    <a href="{% url url_name %}"
+       class="flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm transition
+              {% if url_name == active_url_name %}bg-brand-primary-700 text-white font-semibold{% else %}text-brand-primary-200 hover:bg-brand-primary-700/60 hover:text-white{% endif %}"
+       :class="(forMobile || !collapsed) ? '' : 'justify-center'">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
+                     {% if url_name == active_url_name %}bg-brand-accent-500 text-brand-primary-900{% else %}text-brand-primary-200{% endif %}">
+            {% sidebar_icon icon "w-4.5 h-4.5" %}
+        </span>
+        <span class="whitespace-nowrap" x-show="forMobile || !collapsed">{{ label }}</span>
+    </a>
+    <span x-show="!forMobile && collapsed"
+          x-cloak
+          class="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-brand-primary-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover/item:opacity-100">
+        {{ label }}
+    </span>
+</li>

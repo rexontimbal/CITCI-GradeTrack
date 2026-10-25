@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Access Denied{% endblock %}
+{% block topbar_title %}Access Denied{% endblock %}
+{% block content %}
+<div class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-red-200 bg-white px-6 py-20 text-center">
+    <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-red-100 text-red-600">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="8.5"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/>
+        </svg>
+    </div>
+    <h3 class="text-base font-semibold text-gray-900">403 — Access Denied</h3>
+    <p class="mt-1 max-w-sm text-sm text-gray-500">Your account role ({{ user.get_role_display }}) does not have access to this page.</p>
+    <a href="{% url 'dashboard:home' %}" class="mt-5 inline-block rounded-lg bg-brand-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+        Back to Dashboard
+    </a>
+</div>
+{% endblock %}

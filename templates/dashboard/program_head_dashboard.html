@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Program Head Dashboard{% endblock %}
+{% block content %}
+    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Department overview — placeholder values, no live data yet." %}
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {% include "partials/_stat_card.html" with icon="chalkboard" label="Classes in Department" value="—" %}
+        {% include "partials/_stat_card.html" with icon="check-circle" label="Pending Approvals" value="—" %}
+        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value="—" %}
+        {% include "partials/_stat_card.html" with icon="chart" label="Avg. Pass Rate" value="—" %}
+    </div>
+
+    <div class="mt-6">
+        {% include "partials/_empty_state.html" with icon="chart" title="Grade distribution coming soon" description="Pass/fail rates and at-risk counts per subject and section will appear here once the grading and forecasting phases are built." %}
+    </div>
+{% endblock %}

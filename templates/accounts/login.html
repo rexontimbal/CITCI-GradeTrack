@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Login{% endblock %}
+{% block guest_content %}
+<div class="flex min-h-full items-center justify-center bg-gray-100 px-4 py-12">
+    <div class="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+        <div class="mb-6 flex flex-col items-center text-center">
+            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="mb-4 h-16 w-16 rounded-full object-cover">
+            <h1 class="text-xl font-bold text-gray-900">CITCI GradeTrack</h1>
+            <p class="mt-1 text-xs text-gray-500">Grading Management System with Academic Performance Forecasting</p>
+        </div>
+
+        {% include "partials/_messages.html" %}
+
+        {% if form.errors %}
+        <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            Incorrect username or password. Please try again.
+        </div>
+        {% endif %}
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <div>
+                <label for="id_username" class="mb-1 block text-sm font-medium text-gray-700">Username / Student No.</label>
+                <input type="text" name="username" id="id_username" autofocus required
+                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            </div>
+            <div>
+                <label for="id_password" class="mb-1 block text-sm font-medium text-gray-700">Password</label>
+                <input type="password" name="password" id="id_password" required
+                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            </div>
+            <input type="hidden" name="next" value="{{ next }}">
+            <button type="submit"
+                    class="w-full rounded-lg bg-brand-accent-600 px-4 py-2.5 text-sm font-semibold text-brand-primary-900 transition hover:bg-brand-accent-700 focus:outline-none focus:ring-2 focus:ring-brand-accent-500 focus:ring-offset-2">
+                Log In
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-xs text-gray-400">
+            Candelaria Institute of Technology of Cabadbaran, Inc. &middot; College Department
+        </p>
+    </div>
+</div>
+{% endblock %}

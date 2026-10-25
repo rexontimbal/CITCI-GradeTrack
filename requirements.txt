@@ -1,0 +1,5 @@
+Django==5.2.18
+psycopg[binary]==3.3.6
+django-environ==0.14.0
+django-tailwind-cli==4.8.1
+Pillow==13.0.0

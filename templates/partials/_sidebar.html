@@ -1,0 +1,21 @@
+{# Desktop rail: persistent, collapsible, remembers state via localStorage (see base.html x-data). #}
+<aside x-data="{ forMobile: false }"
+       class="relative m-2 hidden shrink-0 flex-col overflow-hidden rounded-2xl bg-brand-primary-800 shadow-lg transition-all duration-300 md:flex"
+       :class="collapsed ? 'w-[72px]' : 'w-64'">
+    {% include "partials/_sidebar_content.html" %}
+</aside>
+
+{# Mobile drawer: hidden off-canvas, opens from the topbar hamburger with a dark overlay. #}
+<div x-data="{ forMobile: true }" x-show="mobileOpen" x-cloak class="fixed inset-0 z-40 md:hidden">
+    <div x-show="mobileOpen"
+         x-transition:enter="transition-opacity ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="transition-opacity ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         @click="mobileOpen = false"
+         class="absolute inset-0 bg-black/50"></div>
+    <aside x-show="mobileOpen"
+           x-transition:enter="transition ease-out duration-200" x-transition:enter-start="-translate-x-full" x-transition:enter-end="translate-x-0"
+           x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-x-0" x-transition:leave-end="-translate-x-full"
+           class="relative z-50 flex h-full w-72 flex-col overflow-hidden bg-brand-primary-800 shadow-lg">
+        {% include "partials/_sidebar_content.html" %}
+    </aside>
+</div>

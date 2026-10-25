@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Student Dashboard{% endblock %}
+{% block content %}
+    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Your academic overview — placeholder values, no live data yet." %}
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {% include "partials/_stat_card.html" with icon="book" label="Enrolled Subjects" value="—" %}
+        {% include "partials/_stat_card.html" with icon="chart" label="Current GWA" value="—" %}
+        {% include "partials/_stat_card.html" with icon="alert" label="Warnings" value="—" %}
+    </div>
+
+    <div class="mt-6">
+        {% include "partials/_empty_state.html" with icon="book" title="Your subjects will appear here" description="Running grades, progress charts, and your personalized forecast will show up once you are enrolled and grades are encoded." %}
+    </div>
+{% endblock %}

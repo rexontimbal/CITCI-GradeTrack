@@ -1,0 +1,69 @@
+{% load sidebar_icons static %}
+{# Rendered once for the desktop rail (collapsible) and once for the mobile drawer (always expanded). #}
+
+<div class="flex items-center gap-3 px-3 py-4" :class="forMobile ? '' : (collapsed ? 'justify-center' : '')">
+    <button type="button"
+            x-show="!forMobile"
+            @click="toggleCollapsed()"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+        <span x-show="!collapsed">{% sidebar_icon "chevron-left" "w-5 h-5" %}</span>
+        <span x-show="collapsed">{% sidebar_icon "menu" "w-5 h-5" %}</span>
+    </button>
+    <button type="button" x-show="forMobile" @click="mobileOpen = false"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+        {% sidebar_icon "chevron-left" "w-5 h-5" %}
+    </button>
+
+    <a href="{% url 'dashboard:home' %}" class="flex items-center gap-2 overflow-hidden" x-show="forMobile || !collapsed">
+        <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="h-8 w-8 shrink-0 rounded-full object-cover">
+        <span class="whitespace-nowrap text-sm font-bold tracking-wide text-white">CITCI GradeTrack</span>
+    </a>
+    <a href="{% url 'dashboard:home' %}" x-show="!forMobile && collapsed" class="flex items-center justify-center">
+        <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="h-8 w-8 rounded-full object-cover">
+    </a>
+</div>
+
+<nav class="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+    {% for group in sidebar_menu %}
+    <div class="mb-4">
+        <p class="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-primary-300"
+           x-show="forMobile || !collapsed">{{ group.label }}</p>
+        <ul class="space-y-1">
+            {% for url_name, label, icon in group.items %}
+            {% include "partials/_sidebar_item.html" with url_name=url_name label=label icon=icon %}
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+</nav>
+
+<div class="px-2 pb-2">
+    <div class="mb-2 grid gap-1" :class="(forMobile || !collapsed) ? 'grid-cols-4' : 'grid-cols-1'">
+        <a href="#" title="Notifications" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+            {% sidebar_icon "bell" "w-4.5 h-4.5" %}
+        </a>
+        <a href="{% url 'accounts:profile' %}" title="Profile" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+            {% sidebar_icon "profile" "w-4.5 h-4.5" %}
+        </a>
+        <a href="{% url 'accounts:help' %}" title="Help" class="flex h-9 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+            {% sidebar_icon "help" "w-4.5 h-4.5" %}
+        </a>
+        <form method="post" action="{% url 'accounts:logout' %}">
+            {% csrf_token %}
+            <button type="submit" title="Logout" class="flex h-9 w-full items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
+                {% sidebar_icon "logout" "w-4.5 h-4.5" %}
+            </button>
+        </form>
+    </div>
+
+    <div class="flex items-center gap-3 rounded-xl bg-brand-primary-900 px-3 py-3"
+         :class="(forMobile || !collapsed) ? '' : 'justify-center'">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-accent-500 text-sm font-bold text-brand-primary-900">
+            {{ user.initials }}
+        </div>
+        <div class="overflow-hidden" x-show="forMobile || !collapsed">
+            <p class="truncate text-sm font-semibold text-white">{{ user.full_name }}</p>
+            <p class="truncate text-xs text-brand-primary-300">{{ user.get_role_display }}</p>
+        </div>
+    </div>
+</div>

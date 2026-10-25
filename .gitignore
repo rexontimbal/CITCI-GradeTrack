@@ -1,0 +1,22 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Django
+db.sqlite3
+/staticfiles/
+/static/css/tailwind.css
+/media/
+*.log
+
+# Tailwind CLI binary (downloaded automatically into this dir; source.css inside it is tracked)
+.django_tailwind_cli/tailwindcss*
+.django_tailwind_cli/*.exe
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+desktop.ini

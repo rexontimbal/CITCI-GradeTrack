@@ -1,6 +1,6 @@
 {# Desktop rail: persistent, collapsible, remembers state via localStorage (see base.html x-data). Flush against the left edge — no outer margin/rounding/shadow. #}
 <aside x-data="{ forMobile: false }"
-       class="relative hidden h-full shrink-0 flex-col border-r border-brand-primary-900/40 bg-brand-primary-800 transition-all duration-300 md:flex"
+       class="sticky top-0 hidden h-dvh shrink-0 flex-col self-start border-r border-brand-primary-900/40 bg-brand-primary-800 transition-all duration-300 md:flex"
        :class="collapsed ? 'w-[72px]' : 'w-64'">
     {% include "partials/_sidebar_content.html" %}
 </aside>

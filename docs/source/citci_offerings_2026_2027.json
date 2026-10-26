@@ -1,0 +1,1703 @@
+[
+  {
+    "semester": "FIRST",
+    "code": "GE 2",
+    "description": "Purposive Communication",
+    "units": "3",
+    "instructor": "Mr. Garibay",
+    "room": "204 HB",
+    "schedule": "5-8 (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 6",
+    "description": "Readings in Philippine History",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "201 CB",
+    "schedule": "5-8PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 7",
+    "description": "Understanding the Self",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "202 HB",
+    "schedule": "9-12 NN (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 100",
+    "description": "Introduction to Linguistics",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "204 HB",
+    "schedule": "4-7 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 101",
+    "description": "Language, Culture, and Society",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 102",
+    "description": "Structures of English",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "205 HB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PATHFit 1",
+    "description": "Movement, Competency Training or MCT",
+    "units": "2",
+    "instructor": "Mr. Pasaylo",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "Theo 1",
+    "description": "Old Testament – Human Relation with God",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "9-12 NN (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "NSTP 1",
+    "description": "Civic Welfare Training Service 1",
+    "units": "3",
+    "instructor": "Mr. Anino",
+    "room": "202 HB",
+    "schedule": "1-4 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 3",
+    "description": "Mathematics in the Modern World",
+    "units": "3",
+    "instructor": "Mr. Dalogdog",
+    "room": "203 HB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 202",
+    "description": "The Teaching Profession",
+    "units": "3",
+    "instructor": "Dr. Casamayor",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 203",
+    "description": "The Teacher and the Community, School Culture, and Organizational Leadership",
+    "units": "3",
+    "instructor": "Dr. Casamayor",
+    "room": "201 HB",
+    "schedule": "1-4 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 104",
+    "description": "Language Programs and Policies in Multilingual Societies",
+    "units": "3",
+    "instructor": "Mr. Justo",
+    "room": "201 HB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 111",
+    "description": "Children and Adolescent Literature",
+    "units": "3",
+    "instructor": "Mrs. Durango",
+    "room": "201 HB",
+    "schedule": "5-8 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 112",
+    "description": "Mythology and Folklore",
+    "units": "3",
+    "instructor": "Mr. Garibay",
+    "room": "201 HB",
+    "schedule": "5-8 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 118",
+    "description": "Technical Writing",
+    "units": "3",
+    "instructor": "Mr. Justo",
+    "room": "203 CB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PATHFit 3",
+    "description": "Choice of Dance, Sports, Martial Arts, Group Exercise, Outdoor and Adventure Activities",
+    "units": "2",
+    "instructor": "Mr. Pasaylo",
+    "room": "205 HB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "Theo 3",
+    "description": "Community Disciples",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "202 HB",
+    "schedule": "1-4 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 8",
+    "description": "The Contemporary World",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 205",
+    "description": "Facilitating Learner-Centered Teaching",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "204 HB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 207",
+    "description": "Assessment in Learning 2",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 209",
+    "description": "The Teacher and the School Curriculum",
+    "units": "3",
+    "instructor": "Dr. Brongcano",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 210",
+    "description": "Building and Enhancing New Literacies Across the Curriculum",
+    "units": "3",
+    "instructor": "Dr. Brongcano",
+    "room": "205 HB",
+    "schedule": "9-12 NN (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 117",
+    "description": "Literary Criticism",
+    "units": "3",
+    "instructor": "Mr. Garibay",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 119",
+    "description": "Campus Journalism",
+    "units": "3",
+    "instructor": "Mr. Gipal",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "EL 120",
+    "description": "Technology for Teaching and Learning 2 (Technology in Language Education)",
+    "units": "3",
+    "instructor": "Mr. Capon",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "RES 1",
+    "description": "Elements of Research",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 9",
+    "description": "The Life and Works of Rizal",
+    "units": "3",
+    "instructor": "Dr. Brongcano",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 12 ELEC",
+    "description": "Philippine Popular Culture",
+    "units": "3",
+    "instructor": "Dr. Martinez",
+    "room": "202 HB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SP",
+    "description": "Special Topics",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 211",
+    "description": "Field Study 1 – Observation of Teaching – Learning in Actual School Environment",
+    "units": "3",
+    "instructor": "Dr. Abiva",
+    "room": "201 CB",
+    "schedule": "9-12 NN (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 212",
+    "description": "Field Study 2 – Participation and Teaching Assistantship",
+    "units": "3",
+    "instructor": "Dr. Abiva",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "GE 2",
+    "description": "Purposive Communication",
+    "units": "3",
+    "instructor": "Mr. Garibay",
+    "room": "204 HB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 101",
+    "description": "Foundation of Social Studies",
+    "units": "3",
+    "instructor": "Ms. Torregosa",
+    "room": "204 HB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 103",
+    "description": "Trends and Issues in Social Studies",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 112",
+    "description": "Asian Studies",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 104",
+    "description": "Places and Landscape in Changing World",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "201 HB",
+    "schedule": "1-4 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 106",
+    "description": "Geography 2 (Physical Geography)",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "201 HB",
+    "schedule": "9-12 NN (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 109",
+    "description": "Macro Economics",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "203 HB",
+    "schedule": "4-7 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 110",
+    "description": "World History 1 (Ancient and Medieval Era)",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "203 HB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 207",
+    "description": "Assessment in Learning 2",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 117",
+    "description": "Teaching Approaches in Secondary Social Studies",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "201 HB",
+    "schedule": "1-4 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 118",
+    "description": "Integrative Methods in Teaching Social Science Discipline in Basic Education",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "203 CB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "SSE 119",
+    "description": "Production of Social Studies Instructional Materials",
+    "units": "3",
+    "instructor": "Dr. Brongcano",
+    "room": "203 HB",
+    "schedule": "1-4 PM (Thu)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 10 ELEC",
+    "description": "Living in the IT Era",
+    "units": "3",
+    "instructor": "Mrs. Cong",
+    "room": "201 HB",
+    "schedule": "1-4 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 201",
+    "description": "The Child and Adolescent Learners and Learning Principles",
+    "units": "3",
+    "instructor": "Mrs. Durango",
+    "room": "202 HB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 103",
+    "description": "Principles and Theories of Language Acquisition and Learning",
+    "units": "3",
+    "instructor": "Mr. Justo",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 107",
+    "description": "Teaching and Assessment of the Macroskills",
+    "units": "3",
+    "instructor": "Mr. Justo",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 108",
+    "description": "Teaching and Assessment of Grammar",
+    "units": "3",
+    "instructor": "Mr. Justo",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 109",
+    "description": "Speech and Theater Arts",
+    "units": "3",
+    "instructor": "Mr. Capon",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PATHFit 2",
+    "description": "Exercise-Based Fitness Activities",
+    "units": "2",
+    "instructor": "Ms. Jamala",
+    "room": "203 CB",
+    "schedule": "1-4 PM Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "Theo 2",
+    "description": "Christian Faith",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Thur)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "NSTP 2",
+    "description": "Civic Welfare Training Service 2",
+    "units": "3",
+    "instructor": "Mr. Anino",
+    "room": "202 HB",
+    "schedule": "1-4PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 204",
+    "description": "Foundation of Special and Inclusive Education",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "203 CB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 206",
+    "description": "Assessment in Learning 1",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "203 HB",
+    "schedule": "4-7 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 208",
+    "description": "Technology for Teaching and Learning 1",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "202 HB",
+    "schedule": "4-7 PM Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 113",
+    "description": "Survey of Philippine Literature in English",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "201 HB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 114",
+    "description": "Survey of Afro-Asian Literature",
+    "units": "3",
+    "instructor": "Ms. Garibay",
+    "room": "201 HB",
+    "schedule": "9-12 NN (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 115",
+    "description": "Survey of English and American Literature",
+    "units": "3",
+    "instructor": "Ms. Garibay",
+    "room": "203 CB",
+    "schedule": "1-4 (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 116",
+    "description": "Contemporary, Popular, and Emergent Literature",
+    "units": "2",
+    "instructor": "Ms. Garibay",
+    "room": "204 HB",
+    "schedule": "4-7 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PATHFIT 4",
+    "description": "Choice of Dance, Sports, Martial Arts, Group Exercise, Outdoor and Adventure Activities",
+    "units": "3",
+    "instructor": "Ms. Jamala",
+    "room": "205 HB",
+    "schedule": "4-7 PM (Thur)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "Theo 4",
+    "description": "Social Teaching of the Church",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 2
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 1",
+    "description": "Ethics",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "9-12 NN (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 4",
+    "description": "Art Appreciation",
+    "units": "3",
+    "instructor": "Dr. Casamayor",
+    "room": "201 HB",
+    "schedule": "1-4 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 5",
+    "description": "Science, Technology and Society",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "204 HB",
+    "schedule": "9-12 NN (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 11 ELEC",
+    "description": "Philippine Indigenous People",
+    "units": "3",
+    "instructor": "Dr. Abiva",
+    "room": "203 CB",
+    "schedule": "9-12 NN (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 105",
+    "description": "Language Learning Materials Development",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "205 HB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 106",
+    "description": "Teaching and Assessment of Literature Studies",
+    "units": "3",
+    "instructor": "Mr. Capon",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL 110",
+    "description": "Language Education Research",
+    "units": "2",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Thurs)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL ELEC 1",
+    "description": "Remedial Instruction (Elective)",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "205 HB",
+    "schedule": "4-7 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "EL ELEC 2",
+    "description": "Creative Writing (Elective)",
+    "units": "3",
+    "instructor": "Mr. Garibay",
+    "room": "203 CB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 213",
+    "description": "Teaching Internship",
+    "units": "6",
+    "instructor": "Dr. Abiva",
+    "room": "203 CB",
+    "schedule": "1-5 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "English",
+        "year_level": 4
+      },
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 4
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 10 ELEC",
+    "description": "Living in the IT Era",
+    "units": "3",
+    "instructor": "Mrs. Cong",
+    "room": "201 HB",
+    "schedule": "5-8 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 105",
+    "description": "Geography 1 (Human Geography)",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "201 CB",
+    "schedule": "9-12 NN (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 108",
+    "description": "Micro Economics",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "204 HB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 113",
+    "description": "Socio-cultural Anthropology",
+    "units": "3",
+    "instructor": "Dr. Brongcano",
+    "room": "201 CB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 116",
+    "description": "Law-related Studies",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "201 CB",
+    "schedule": "9-12 NN (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PATHFit 2",
+    "description": "Exercise-Based Fitness Activities",
+    "units": "2",
+    "instructor": "Ms. Jamla",
+    "room": "203 CB",
+    "schedule": "1-4 (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "Theo 2",
+    "description": "Christian Faith",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Thurs)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "NSTP 2",
+    "description": "Civic Welfare Training Service 2",
+    "units": "3",
+    "instructor": "Mr. Anino",
+    "room": "202 HB",
+    "schedule": "1-4 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 1
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 206",
+    "description": "Assessment in Learning 1",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "203 HB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 208",
+    "description": "Technology for Teaching and Learning 1",
+    "units": "3",
+    "instructor": "Mr. Monteros",
+    "room": "202 HB",
+    "schedule": "4-7 PM (Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      },
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 107",
+    "description": "Geography 3 (Urban Geography)",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "201 CB",
+    "schedule": "1-4 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 111",
+    "description": "World History 2 (Modern and Contemporary Era)",
+    "units": "3",
+    "instructor": "Dr. Lerida",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 114",
+    "description": "Comparative Economic Planning",
+    "units": "3",
+    "instructor": "Ms. Respecia",
+    "room": "202 HB",
+    "schedule": "9-12 (Thurs)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 115",
+    "description": "Comparative Government and Politics",
+    "units": "2",
+    "instructor": "Dr. Brongcano",
+    "room": "203 HB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PATHFIT 4",
+    "description": "Choice of Dance, Sports, Martial Arts, Group Exercise, Outdoor and Adventure Activities",
+    "units": "3",
+    "instructor": "Ms. Jamla",
+    "room": "205 HB",
+    "schedule": "9--12 NN (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 2
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 1",
+    "description": "Ethics",
+    "units": "3",
+    "instructor": "Mr. Caballa",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "GE 4",
+    "description": "Art Appreciation",
+    "units": "3",
+    "instructor": "Dr. Casamayor",
+    "room": "201 HB",
+    "schedule": "1-4 PM Wed)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 102",
+    "description": "Research Social Studies",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "205 HB",
+    "schedule": "5-8 PM (Mon)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 120",
+    "description": "Assessment and Evaluation in the Social Sciences",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "201 HB",
+    "schedule": "5-8 PM (Tue)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE 121",
+    "description": "Technology for Teaching and Learning 2",
+    "units": "2",
+    "instructor": "Dr. Martinez",
+    "room": "203 HB",
+    "schedule": "1-4 PM (Thurs)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE ELEC 1",
+    "description": "Property and Resources Management for Educators (Elective)",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "203 CB",
+    "schedule": "1-4 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "SSE ELEC 2",
+    "description": "Basic School Management and Administration (Elective)",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "201 CB",
+    "schedule": "4-7 PM (Sat)",
+    "sections": [
+      {
+        "program": "BSED",
+        "major": "Social Studies",
+        "year_level": 3
+      }
+    ]
+  },
+  {
+    "semester": "FIRST",
+    "code": "PEd 205 Elec",
+    "description": "Facilitating Learner-Centered Teaching",
+    "units": "3",
+    "instructor": "Mr. Honrejas",
+    "room": "204 HB",
+    "schedule": "5-8 PM (Wed)",
+    "sections": [
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  },
+  {
+    "semester": "SECOND",
+    "code": "PEd 204",
+    "description": "Foundation of Special and Inclusive Education",
+    "units": "3",
+    "instructor": "Mr. Legaria",
+    "room": "203 CB",
+    "schedule": "5-8 PM (Fri)",
+    "sections": [
+      {
+        "program": "TCP",
+        "major": null,
+        "year_level": null
+      }
+    ]
+  }
+]

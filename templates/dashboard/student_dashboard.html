@@ -4,13 +4,13 @@
     {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Your academic overview for the current semester." %}
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {% include "partials/_stat_card.html" with icon="book" label="Enrolled Subjects" value=enrolled_count %}
+        {% include "partials/_stat_card.html" with icon="book" label="Enrolled Subjects" value=subjects_count %}
         {% include "partials/_stat_card.html" with icon="chart" label="Current GWA" value="—" %}
         {% include "partials/_stat_card.html" with icon="alert" label="Warnings" value="—" %}
     </div>
 
     <div class="mt-6">
-        {% if enrollments %}
+        {% if roster_entries %}
         <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">My Subjects</h3>
         <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -23,19 +23,19 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    {% for enrollment in enrollments %}
+                    {% for entry in roster_entries %}
                     <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-3 font-medium text-gray-900">{{ enrollment.class_offering.subject.code }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ enrollment.class_offering.subject.title }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ enrollment.class_offering.subject.total_units }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ enrollment.class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                        <td class="px-4 py-3 font-medium text-gray-900">{{ entry.class_offering.subject.code }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.subject.title }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.subject.units }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.instructor.full_name|default:"Unassigned" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        {% include "partials/_empty_state.html" with icon="book" title="Your subjects will appear here" description="Running grades, progress charts, and your personalized forecast will show up once you are enrolled and grades are encoded." %}
+        {% include "partials/_empty_state.html" with icon="book" title="Your subjects will appear here" description="Running grades, progress charts, and your personalized forecast will show up once you're added to a class list and grades are encoded." %}
         {% endif %}
     </div>
 {% endblock %}

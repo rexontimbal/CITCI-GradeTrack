@@ -1,0 +1,5 @@
+# Dev-only tools — not needed to run the app, only to regenerate
+# docs/source/citci_offerings_2026_2027.json from the Registrar's .docx
+# (see academics/management/commands/import_offerings_docx.py).
+-r requirements.txt
+python-docx==1.2.0

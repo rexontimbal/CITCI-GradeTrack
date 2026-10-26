@@ -5,7 +5,7 @@
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
-<form method="post" hx-post="{% url 'academics:enrollment_add_students_submit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4">
+<form method="post" hx-post="{% url 'academics:class_list_add_students_submit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4">
     {% csrf_token %}
     {% if available_students %}
     <div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
@@ -26,6 +26,6 @@
         </button>
     </div>
     {% else %}
-    <p class="text-sm text-gray-500">All students are already enrolled in this class.</p>
+    <p class="text-sm text-gray-500">All students are already on this class's list.</p>
     {% endif %}
 </form>

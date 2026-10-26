@@ -7,6 +7,7 @@
                 <tr>
                     <th class="px-4 py-3">Section</th>
                     <th class="px-4 py-3">Program</th>
+                    <th class="px-4 py-3">Major</th>
                     <th class="px-4 py-3">Academic Year</th>
                     <th class="px-4 py-3">Year Level</th>
                     <th class="px-4 py-3 text-right">Actions</th>
@@ -17,8 +18,9 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ section }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ section.program.code }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ section.major.code|default:"—" }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ section.academic_year }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ section.get_year_level_display }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ section.get_year_level_display|default:"—" }}</td>
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-1">
                             <button hx-get="{% url 'academics:section_edit' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"

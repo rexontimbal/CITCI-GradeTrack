@@ -1,0 +1,79 @@
+{% load sidebar_icons %}
+<div id="roster-container"
+     {% if class_offering %}hx-trigger="refreshRoster from:body" hx-get="{% url 'academics:class_lists' %}?class={{ class_offering.pk }}" hx-target="this" hx-swap="outerHTML"{% endif %}>
+    {% if class_offering %}
+        {% if summary %}
+        <div class="mb-4 rounded-lg border border-brand-primary-200 bg-brand-primary-50 px-4 py-3 text-sm text-brand-primary-800">
+            {{ summary }}
+        </div>
+        {% endif %}
+
+        <div class="mb-4 flex flex-wrap items-center gap-2">
+            {% for section in class_offering.sections.all %}
+            <button hx-post="{% url 'academics:class_list_add_section' class_offering.pk %}" hx-vals='{"section": "{{ section.pk }}"}'
+                    hx-target="#roster-container" hx-swap="outerHTML"
+                    class="rounded-lg bg-brand-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+                Add entire {{ section }}
+            </button>
+            {% endfor %}
+            <button hx-get="{% url 'academics:class_list_add_students_form' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Add students
+            </button>
+            <button hx-get="{% url 'academics:class_list_import_upload' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Import class list
+            </button>
+        </div>
+
+        {% if roster_entries %}
+        <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <tr>
+                        <th class="px-4 py-3">ID Number</th>
+                        <th class="px-4 py-3">Name</th>
+                        <th class="px-4 py-3">Section</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for entry in roster_entries %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-gray-700">{{ entry.student.id_number|default:"—" }}</td>
+                        <td class="px-4 py-3 font-medium text-gray-900">{{ entry.student.full_name }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ entry.student.student_profile.section|default:"—" }}</td>
+                        <td class="px-4 py-3">
+                            {% if entry.status == "ACTIVE" %}
+                            <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                            {% else %}
+                            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Dropped</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            {% if entry.status == "ACTIVE" %}
+                            <button hx-post="{% url 'academics:class_list_mark_dropped' entry.pk %}" hx-target="#roster-container" hx-swap="outerHTML"
+                                    hx-confirm="Mark {{ entry.student.full_name }} as dropped from this class?"
+                                    class="text-sm font-medium text-red-600 hover:underline">
+                                Mark as Dropped
+                            </button>
+                            {% else %}
+                            <button hx-post="{% url 'academics:class_list_restore' entry.pk %}" hx-target="#roster-container" hx-swap="outerHTML"
+                                    class="text-sm font-medium text-brand-primary-700 hover:underline">
+                                Restore
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        {% include "partials/_empty_state.html" with icon="users" title="No students yet" description="Add an entire section, add students individually, or import a class list from the Registrar." %}
+        {% endif %}
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="clipboard" title="Select a class" description="Choose a class above to manage its class list." %}
+    {% endif %}
+</div>

@@ -12,7 +12,7 @@
             <tr>
                 <th class="px-4 py-3">Class</th>
                 <th class="px-4 py-3">Instructor</th>
-                <th class="px-4 py-3">Enrolled</th>
+                <th class="px-4 py-3">Students</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -22,7 +22,7 @@
                     <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
                 </td>
                 <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ class_offering.enrolled }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ class_offering.roster_size }}</td>
             </tr>
             {% endfor %}
         </tbody>

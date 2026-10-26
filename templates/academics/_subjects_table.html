@@ -7,8 +7,9 @@
                 <tr>
                     <th class="px-4 py-3">Code</th>
                     <th class="px-4 py-3">Title</th>
-                    <th class="px-4 py-3">Units (Lec+Lab)</th>
+                    <th class="px-4 py-3">Units</th>
                     <th class="px-4 py-3">Program</th>
+                    <th class="px-4 py-3">Major</th>
                     <th class="px-4 py-3">Year/Term</th>
                     <th class="px-4 py-3">Status</th>
                     <th class="px-4 py-3 text-right">Actions</th>
@@ -19,9 +20,10 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ subject.code }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ subject.title }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ subject.lec_units }}+{{ subject.lab_units }} = {{ subject.total_units }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ subject.program.code|default:"Gen Ed" }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ subject.get_year_level_display }}, {{ subject.get_term_display }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ subject.units }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ subject.program.code|default:"Shared" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ subject.major.code|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ subject.get_year_level_display|default:"—" }}, {{ subject.get_term_display }}</td>
                     <td class="px-4 py-3">
                         {% if subject.is_active %}
                         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>

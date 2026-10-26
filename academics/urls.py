@@ -24,6 +24,12 @@ urlpatterns = [
     path("programs/<int:pk>/delete/", views.ProgramDeleteView.as_view(), name="program_delete"),
     path("programs/<int:pk>/toggle-active/", views.ProgramToggleActiveView.as_view(), name="program_toggle_active"),
 
+    # Majors
+    path("majors/", views.MajorListView.as_view(), name="majors"),
+    path("majors/create/", views.MajorFormView.as_view(), name="major_create"),
+    path("majors/<int:pk>/edit/", views.MajorFormView.as_view(), name="major_edit"),
+    path("majors/<int:pk>/delete/", views.MajorDeleteView.as_view(), name="major_delete"),
+
     # Sections
     path("sections/", views.SectionListView.as_view(), name="sections"),
     path("sections/create/", views.SectionFormView.as_view(), name="section_create"),
@@ -52,15 +58,22 @@ urlpatterns = [
     # Students (read-only, admin)
     path("students/", views.StudentListView.as_view(), name="students"),
 
-    # Enrollment (admin)
-    path("enrollment/", views.enrollment_home, name="enrollment"),
-    path("enrollment/<int:pk>/enroll-section/", views.enrollment_enroll_section, name="enrollment_enroll_section"),
-    path("enrollment/<int:pk>/add-students/", views.enrollment_add_students_form, name="enrollment_add_students_form"),
+    # Class Lists (admin) — CITCI GradeTrack does not handle enrollment;
+    # this only manages each class's official roster for grading.
+    path("class-lists/", views.class_lists_home, name="class_lists"),
+    path("class-lists/<int:pk>/add-section/", views.class_list_add_section, name="class_list_add_section"),
+    path("class-lists/<int:pk>/add-students/", views.class_list_add_students_form, name="class_list_add_students_form"),
     path(
-        "enrollment/<int:pk>/add-students/submit/",
-        views.enrollment_add_students_submit,
-        name="enrollment_add_students_submit",
+        "class-lists/<int:pk>/add-students/submit/",
+        views.class_list_add_students_submit,
+        name="class_list_add_students_submit",
     ),
-    path("enrollment/drop/<int:pk>/", views.enrollment_drop, name="enrollment_drop"),
-    path("enrollment/re-enroll/<int:pk>/", views.enrollment_reenroll, name="enrollment_reenroll"),
+    path("class-lists/mark-dropped/<int:pk>/", views.class_list_mark_dropped, name="class_list_mark_dropped"),
+    path("class-lists/restore/<int:pk>/", views.class_list_restore, name="class_list_restore"),
+
+    # Import class list (shared by admin's Class Lists page and an
+    # instructor's own class roster)
+    path("class-lists/import/template/", views.class_list_import_template, name="class_list_import_template"),
+    path("classes/<int:pk>/import/", views.class_list_import_upload, name="class_list_import_upload"),
+    path("classes/<int:pk>/import/confirm/", views.class_list_import_confirm, name="class_list_import_confirm"),
 ]

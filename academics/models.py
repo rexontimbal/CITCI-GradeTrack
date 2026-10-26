@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
@@ -83,47 +81,76 @@ class Program(TimeStampedModel):
         return self.code
 
 
+class Major(TimeStampedModel):
+    """Optional specialization within a program (e.g. BSED-English,
+    BSED-Social Studies). A program may have no majors at all (e.g. TCP)."""
+
+    program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="majors")
+    code = models.CharField(max_length=20, help_text="e.g. ENG, SS")
+    name = models.CharField(max_length=150)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["program__code", "code"]
+        constraints = [models.UniqueConstraint(fields=["program", "code"], name="unique_major_per_program")]
+
+    def __str__(self):
+        return f"{self.program.code}-{self.code}"
+
+
 class Section(TimeStampedModel):
     program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="sections")
+    major = models.ForeignKey(
+        Major, on_delete=models.PROTECT, null=True, blank=True, related_name="sections"
+    )
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.PROTECT, related_name="sections")
-    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES)
-    name = models.CharField(max_length=10)
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
+    name = models.CharField(max_length=10, blank=True)
 
     class Meta:
         ordering = ["program__code", "year_level", "name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["program", "academic_year", "year_level", "name"], name="unique_section"
+                fields=["program", "major", "academic_year", "year_level", "name"], name="unique_section"
             )
         ]
 
     def __str__(self):
-        return f"{self.program.code} {self.year_level}-{self.name}"
+        label = f"{self.program.code}-{self.major.code}" if self.major else self.program.code
+        if self.year_level:
+            label += f" {self.year_level}"
+        if self.name:
+            label += f" {self.name}"
+        return label
 
 
 class Subject(TimeStampedModel):
     code = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=200)
-    lec_units = models.DecimalField(max_digits=4, decimal_places=1, default=Decimal("0.0"))
-    lab_units = models.DecimalField(max_digits=4, decimal_places=1, default=Decimal("0.0"))
+    units = models.DecimalField(max_digits=3, decimal_places=1)
     program = models.ForeignKey(
         Program,
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="subjects",
-        help_text="Leave blank for a general education subject.",
+        help_text="Leave blank for a subject shared across programs (most General Education / "
+        "Professional Education subjects).",
     )
-    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES)
+    major = models.ForeignKey(
+        Major,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="subjects",
+        help_text="Leave blank unless this subject belongs to one specific major.",
+    )
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
     term = models.CharField(max_length=10, choices=Term.choices, help_text="Recommended term.")
     is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["code"]
-
-    @property
-    def total_units(self):
-        return self.lec_units + self.lab_units
 
     def __str__(self):
         return self.code
@@ -139,6 +166,9 @@ class StudentProfile(TimeStampedModel):
     program = models.ForeignKey(
         Program, on_delete=models.PROTECT, null=True, blank=True, related_name="student_profiles"
     )
+    major = models.ForeignKey(
+        Major, on_delete=models.PROTECT, null=True, blank=True, related_name="student_profiles"
+    )
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
     section = models.ForeignKey(
         Section, on_delete=models.SET_NULL, null=True, blank=True, related_name="student_profiles"
@@ -149,8 +179,13 @@ class StudentProfile(TimeStampedModel):
 
 
 class ClassOffering(TimeStampedModel):
+    """A class as taught in a semester. Usually one section, but sometimes
+    one class serves multiple sections at once (e.g. a General Education
+    subject shared by two majors in the same year level) — same instructor,
+    room, and schedule for all of them."""
+
     subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="class_offerings")
-    section = models.ForeignKey(Section, on_delete=models.PROTECT, related_name="class_offerings")
+    sections = models.ManyToManyField(Section, related_name="class_offerings")
     semester = models.ForeignKey(Semester, on_delete=models.PROTECT, related_name="class_offerings")
     instructor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -166,42 +201,47 @@ class ClassOffering(TimeStampedModel):
 
     class Meta:
         ordering = ["-semester__academic_year__start_year", "semester__term", "subject__code"]
-        constraints = [
-            models.UniqueConstraint(fields=["subject", "section", "semester"], name="unique_class_offering")
-        ]
 
     def clean(self):
-        if self.section_id and self.semester_id and self.section.academic_year_id != self.semester.academic_year_id:
-            raise ValidationError("The section's academic year must match the semester's academic year.")
+        if self.semester_id and self.pk:
+            mismatched = self.sections.exclude(academic_year_id=self.semester.academic_year_id)
+            if mismatched.exists():
+                raise ValidationError("Every section's academic year must match the semester's academic year.")
 
     @property
-    def enrolled_count(self):
-        return self.enrollments.filter(status=Enrollment.Status.ENROLLED).count()
+    def roster_count(self):
+        return self.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).count()
 
     def __str__(self):
-        return f"{self.subject.code} – {self.section}"
+        section_names = ", ".join(str(s) for s in self.sections.all())
+        return f"{self.subject.code} – {section_names}" if section_names else self.subject.code
 
 
-class Enrollment(TimeStampedModel):
+class ClassRosterEntry(TimeStampedModel):
+    """The official class list for grading — who is on a class's roster,
+    as imported/managed from the Registrar's enrollment records. CITCI
+    GradeTrack does not handle enrollment itself; it only stores the
+    resulting roster."""
+
     class Status(models.TextChoices):
-        ENROLLED = "ENROLLED", "Enrolled"
+        ACTIVE = "ACTIVE", "Active"
         DROPPED = "DROPPED", "Dropped"
 
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         limit_choices_to={"role": User.Role.STUDENT},
-        related_name="enrollments",
+        related_name="class_roster_entries",
     )
-    class_offering = models.ForeignKey(ClassOffering, on_delete=models.PROTECT, related_name="enrollments")
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ENROLLED)
-    date_enrolled = models.DateField(auto_now_add=True)
+    class_offering = models.ForeignKey(ClassOffering, on_delete=models.PROTECT, related_name="roster_entries")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    date_added = models.DateField(auto_now_add=True)
     date_dropped = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["student__last_name", "student__first_name"]
         constraints = [
-            models.UniqueConstraint(fields=["student", "class_offering"], name="unique_enrollment")
+            models.UniqueConstraint(fields=["student", "class_offering"], name="unique_class_roster_entry")
         ]
 
     def __str__(self):

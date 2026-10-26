@@ -1,0 +1,35 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Import Class List — {{ class_offering }}</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    <p class="text-sm text-gray-600">
+        Upload the Registrar's .xlsx or .csv export. The header row must include
+        <strong>ID Number</strong>, <strong>Last Name</strong>, <strong>First Name</strong>, and (optionally) <strong>Middle Name</strong>.
+    </p>
+    <a href="{% url 'academics:class_list_import_template' %}" class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary-700 hover:underline">
+        {% sidebar_icon "document" "w-4 h-4" %} Download the class list template (.xlsx)
+    </a>
+
+    {% if error %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+    {% endif %}
+
+    <form hx-post="{% url 'academics:class_list_import_upload' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data" class="space-y-4">
+        {% csrf_token %}
+        <input type="file" name="file" accept=".xlsx,.csv" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-brand-primary-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-primary-800">
+        <div class="flex justify-end gap-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Upload &amp; Preview
+            </button>
+        </div>
+    </form>
+</div>

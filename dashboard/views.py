@@ -1,7 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from academics.models import ClassOffering, Enrollment, Program, Semester
+from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
 from accounts.decorators import role_required
 from accounts.models import User
 from accounts.utils import coming_soon
@@ -38,7 +38,7 @@ def _instructor_dashboard(request):
     active = _active_semester()
     classes = ClassOffering.objects.filter(instructor=request.user, semester=active) if active else ClassOffering.objects.none()
     total_students = (
-        Enrollment.objects.filter(class_offering__in=classes, status=Enrollment.Status.ENROLLED)
+        ClassRosterEntry.objects.filter(class_offering__in=classes, status=ClassRosterEntry.Status.ACTIVE)
         .values("student")
         .distinct()
         .count()
@@ -49,14 +49,14 @@ def _instructor_dashboard(request):
 
 def _student_dashboard(request):
     active = _active_semester()
-    enrollments = (
-        Enrollment.objects.filter(
-            student=request.user, status=Enrollment.Status.ENROLLED, class_offering__semester=active
+    roster_entries = (
+        ClassRosterEntry.objects.filter(
+            student=request.user, status=ClassRosterEntry.Status.ACTIVE, class_offering__semester=active
         ).select_related("class_offering__subject", "class_offering__instructor")
         if active
-        else Enrollment.objects.none()
+        else ClassRosterEntry.objects.none()
     )
-    context = {"enrollments": enrollments, "enrolled_count": enrollments.count()}
+    context = {"roster_entries": roster_entries, "subjects_count": roster_entries.count()}
     return render(request, "dashboard/student_dashboard.html", context)
 
 

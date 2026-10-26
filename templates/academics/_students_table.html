@@ -8,6 +8,7 @@
                     <th class="px-4 py-3">ID Number</th>
                     <th class="px-4 py-3">Name</th>
                     <th class="px-4 py-3">Program</th>
+                    <th class="px-4 py-3">Major</th>
                     <th class="px-4 py-3">Year Level</th>
                     <th class="px-4 py-3">Section</th>
                 </tr>
@@ -18,6 +19,7 @@
                     <td class="px-4 py-3 text-gray-700">{{ profile.user.id_number|default:"—" }}</td>
                     <td class="px-4 py-3 font-medium text-gray-900">{{ profile.user.full_name }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ profile.program.code|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ profile.major.code|default:"—" }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ profile.get_year_level_display|default:"—" }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ profile.section|default:"—" }}</td>
                 </tr>

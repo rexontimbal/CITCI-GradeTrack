@@ -20,10 +20,11 @@ MENUS = {
             "items": [
                 ("academics:terms", "Academic Years & Semesters", "calendar"),
                 ("academics:programs", "Programs", "folder"),
+                ("academics:majors", "Majors", "folder"),
                 ("academics:sections", "Sections", "grid"),
                 ("academics:subjects", "Subjects", "book"),
                 ("academics:classes", "Classes", "chalkboard"),
-                ("academics:enrollment", "Enrollment", "clipboard"),
+                ("academics:class_lists", "Class Lists", "clipboard"),
             ],
         },
         {

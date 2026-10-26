@@ -1,0 +1,20 @@
+{% load static cache_bust %}
+{% comment %}
+Project override of django_tailwind_cli's bundled template (same relative
+path under templates/tailwind_cli/, found first via TEMPLATES[0]['DIRS']).
+The package's own template has no cache-busting in DEBUG, relying on the dev
+server sending no-cache headers — it doesn't; Django's static serve() view
+sends only Last-Modified, so browsers can heuristically cache tailwind.css
+and keep serving a stale copy after a rebuild. We append ?v=<mtime> in DEBUG
+so the URL changes whenever the file does. In production, ManifestStaticFilesStorage
+(config/settings.py) already content-hashes the filename, so {% static %}
+alone is enough there.
+{% endcomment %}
+{% for css_file in tailwind_css_files %}
+{% if debug %}
+<link rel="stylesheet" href="{% static css_file %}?v={% static_mtime css_file %}">
+{% else %}
+<link rel="preload" href="{% static css_file %}" as="style">
+<link rel="stylesheet" href="{% static css_file %}">
+{% endif %}
+{% endfor %}

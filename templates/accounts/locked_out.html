@@ -1,22 +1,62 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static sidebar_icons %}
 {% block page_title %}Account Locked{% endblock %}
 {% block guest_content %}
-<div class="flex min-h-full items-center justify-center bg-gray-100 px-4 py-12">
-    <div class="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div class="mb-6 flex flex-col items-center text-center">
-            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="mb-4 h-16 w-16 rounded-full object-cover">
-            <h1 class="text-xl font-bold text-gray-900">Account Temporarily Locked</h1>
+<div class="flex min-h-full flex-col bg-slate-50 lg:flex-row">
+
+    {# ---- Left brand panel: lg+ only, same shell as the login page ------- #}
+    <div class="relative hidden w-[55%] shrink-0 overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-primary-800 to-brand-primary-950 lg:flex lg:flex-col lg:justify-between lg:px-16 lg:py-14 lg:xl:px-24">
+        <img src="{% static 'img/citci-seal.png' %}" alt="" aria-hidden="true"
+             class="pointer-events-none absolute -right-48 -top-48 h-[620px] w-[620px] opacity-[0.08]">
+        <div class="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-brand-accent-400/20 blur-3xl"></div>
+
+        <div class="relative z-10 flex items-center gap-3">
+            <img src="{% static 'img/citci-seal.png' %}" alt="CITCI seal" class="h-16 w-16 shrink-0">
+            <div class="text-sm leading-tight">
+                <p class="font-semibold text-white">Candelaria Institute of Technology of Cabadbaran, Inc.</p>
+                <p class="mt-0.5 text-brand-primary-300">College Department</p>
+            </div>
         </div>
 
-        <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Too many failed login attempts. For your security, this account is locked for about
-            15 minutes. Please try again later, or ask your administrator to unlock it.
+        <div class="relative z-10 max-w-md">
+            <h1 class="text-4xl font-bold leading-tight tracking-tight text-white xl:text-5xl">CITCI GradeTrack</h1>
+            <p class="mt-4 text-base leading-relaxed text-brand-primary-200">
+                Grading Management System with Academic Performance Forecasting
+            </p>
         </div>
 
-        <a href="{% url 'accounts:login' %}" class="mt-6 block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50">
-            Back to Login
-        </a>
+        <p class="relative z-10 text-xs text-brand-primary-400">&copy; 2026 CITCI College Department</p>
+    </div>
+
+    {# ---- Compact mobile/tablet header strip: < lg only ------------------- #}
+    <div class="flex items-center gap-3 bg-gradient-to-br from-brand-primary-700 to-brand-primary-900 px-6 py-6 lg:hidden">
+        <img src="{% static 'img/citci-seal.png' %}" alt="CITCI seal" class="h-12 w-12 shrink-0">
+        <div>
+            <p class="text-base font-bold text-white">CITCI GradeTrack</p>
+            <p class="text-xs text-brand-primary-200">Grading Management System</p>
+        </div>
+    </div>
+
+    {# ---- Right panel ------------------------------------------------------ #}
+    <div class="flex w-full flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:w-[45%] lg:px-12">
+        <div class="w-full max-w-sm motion-safe:animate-fade-in-up-sm">
+            <div class="mb-7 text-center">
+                <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                    {% sidebar_icon "lock" "h-6 w-6" %}
+                </div>
+                <h2 class="text-2xl font-bold tracking-tight text-slate-900">Account Temporarily Locked</h2>
+            </div>
+
+            <div class="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-sm text-amber-800" role="alert">
+                <span class="mt-0.5 shrink-0">{% sidebar_icon "alert" "h-4.5 w-4.5" %}</span>
+                <span>Too many failed attempts. Please try again after 15 minutes or contact the administrator.</span>
+            </div>
+
+            <a href="{% url 'accounts:login' %}"
+               class="mt-6 block w-full rounded-xl border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                Back to Login
+            </a>
+        </div>
     </div>
 </div>
 {% endblock %}

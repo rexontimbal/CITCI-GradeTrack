@@ -127,6 +127,22 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Content-hashed filenames (e.g. tailwind.3f2a1b9c.css) in production so a
+# rebuilt static file is always a new URL — browsers can't serve a stale
+# cached copy. Needs `manage.py collectstatic` to generate the manifest. In
+# DEBUG, {% tailwind_css %} appends its own ?v=<mtime> instead (see
+# templates/tailwind_cli/tailwind_css.html) since collectstatic isn't run.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if DEBUG
+            else "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
+        )
+    },
+}
+
 # Media (uploaded files — bulk import sheets, exports, etc.)
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"

@@ -2,69 +2,189 @@
 {% load static sidebar_icons %}
 {% block page_title %}Login{% endblock %}
 {% block guest_content %}
-<div class="relative flex min-h-full items-center justify-center overflow-hidden bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 px-4 py-12">
-    {# Soft ambient brand-colored blobs behind the card — purely decorative. #}
-    <div class="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-brand-primary-400/20 blur-3xl"></div>
-    <div class="pointer-events-none absolute -bottom-24 -right-16 h-80 w-80 rounded-full bg-brand-accent-400/25 blur-3xl"></div>
+<div class="flex min-h-full flex-col bg-slate-50 lg:flex-row"
+     x-data="{
+        loading: false,
+        showPassword: false,
+        capsLockOn: false,
+        forgotOpen: false,
+        privacyOpen: false,
+        onKey(e) { this.capsLockOn = e.getModifierState ? e.getModifierState('CapsLock') : false; }
+     }"
+     @keydown.escape.window="forgotOpen = false; privacyOpen = false">
 
-    <div class="relative z-10 w-full max-w-sm animate-fade-in-up rounded-[20px] bg-white p-10 shadow-[0_10px_25px_-3px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5">
-        <div class="mb-8 flex flex-col items-center text-center">
-            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo"
-                 class="mb-5 h-16 w-16 rounded-full object-cover shadow-sm ring-4 ring-slate-50">
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">CITCI GradeTrack</h1>
-            <p class="mt-1.5 text-sm leading-snug text-slate-500">Grading Management System with Academic Performance Forecasting</p>
+    {# ---- Left brand panel: lg+ only ------------------------------------ #}
+    <div class="relative hidden w-[55%] shrink-0 overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-primary-800 to-brand-primary-950 lg:flex lg:flex-col lg:justify-between lg:px-16 lg:py-14 lg:xl:px-24">
+        <img src="{% static 'img/citci-seal.png' %}" alt="" aria-hidden="true"
+             class="pointer-events-none absolute -right-48 -top-48 h-[620px] w-[620px] opacity-[0.08]">
+        <div class="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-brand-accent-400/20 blur-3xl"></div>
+
+        <div class="relative z-10 flex items-center gap-3">
+            <img src="{% static 'img/citci-seal.png' %}" alt="CITCI seal" class="h-16 w-16 shrink-0">
+            <div class="text-sm leading-tight">
+                <p class="font-semibold text-white">Candelaria Institute of Technology of Cabadbaran, Inc.</p>
+                <p class="mt-0.5 text-brand-primary-300">College Department</p>
+            </div>
         </div>
 
-        {% include "partials/_messages.html" %}
+        <div class="relative z-10 max-w-md">
+            <h1 class="text-4xl font-bold leading-tight tracking-tight text-white xl:text-5xl">CITCI GradeTrack</h1>
+            <p class="mt-4 text-base leading-relaxed text-brand-primary-200">
+                Grading Management System with Academic Performance Forecasting
+            </p>
 
-        {% if form.errors %}
-        <div class="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            Incorrect username or password. Please try again.
+            <ul class="mt-10 space-y-5">
+                <li class="flex items-center gap-3.5">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-brand-accent-400">
+                        {% sidebar_icon "chart" "h-5 w-5" %}
+                    </span>
+                    <span class="text-sm font-medium text-brand-primary-100">Real-time grade tracking</span>
+                </li>
+                <li class="flex items-center gap-3.5">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-brand-accent-400">
+                        {% sidebar_icon "alert" "h-5 w-5" %}
+                    </span>
+                    <span class="text-sm font-medium text-brand-primary-100">Early academic warning</span>
+                </li>
+                <li class="flex items-center gap-3.5">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-brand-accent-400">
+                        {% sidebar_icon "lock" "h-5 w-5" %}
+                    </span>
+                    <span class="text-sm font-medium text-brand-primary-100">Secure &amp; RA 10173 compliant</span>
+                </li>
+            </ul>
         </div>
-        {% endif %}
 
-        <form method="post" class="space-y-5" x-data="{ loading: false, showPassword: false }" @submit="loading = true">
-            {% csrf_token %}
-            <div>
-                <label for="id_username" class="mb-1.5 block text-sm font-medium text-slate-700">Username / Student No.</label>
-                <div class="relative">
-                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                        {% sidebar_icon "profile" "h-4.5 w-4.5" %}
-                    </span>
-                    <input type="text" name="username" id="id_username" autocomplete="username" autofocus required
-                           class="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-3.5 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
-                </div>
-            </div>
-            <div>
-                <label for="id_password" class="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
-                <div class="relative">
-                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                        {% sidebar_icon "lock" "h-4.5 w-4.5" %}
-                    </span>
-                    <input :type="showPassword ? 'text' : 'password'" name="password" id="id_password" autocomplete="current-password" required
-                           class="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
-                    <button type="button" @click="showPassword = !showPassword" tabindex="-1"
-                            class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600"
-                            :aria-label="showPassword ? 'Hide password' : 'Show password'">
-                        <span x-show="!showPassword">{% sidebar_icon "eye" "h-4.5 w-4.5" %}</span>
-                        <span x-show="showPassword" x-cloak>{% sidebar_icon "eye-off" "h-4.5 w-4.5" %}</span>
-                    </button>
-                </div>
-            </div>
-            <input type="hidden" name="next" value="{{ next }}">
-            <button type="submit" :disabled="loading"
-                    class="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-brand-accent-500 to-brand-accent-600 px-4 py-3 text-sm font-bold text-brand-primary-900 shadow-md shadow-brand-accent-600/30 transition duration-150 hover:from-brand-accent-400 hover:to-brand-accent-500 hover:shadow-lg hover:shadow-brand-accent-600/40 focus:outline-none focus:ring-4 focus:ring-brand-accent-500/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-80">
-                <svg x-show="loading" x-cloak class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"></circle>
-                    <path class="opacity-80" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
-                </svg>
-                <span x-text="loading ? 'Signing in…' : 'Log In'"></span>
-            </button>
-        </form>
+        <p class="relative z-10 text-xs text-brand-primary-400">&copy; 2026 CITCI College Department</p>
+    </div>
 
-        <p class="mt-8 text-center text-xs text-slate-400">
-            Candelaria Institute of Technology of Cabadbaran, Inc. &middot; College Department
-        </p>
+    {# ---- Compact mobile/tablet header strip: < lg only ------------------ #}
+    <div class="flex items-center gap-3 bg-gradient-to-br from-brand-primary-700 to-brand-primary-900 px-6 py-6 lg:hidden">
+        <img src="{% static 'img/citci-seal.png' %}" alt="CITCI seal" class="h-12 w-12 shrink-0">
+        <div>
+            <p class="text-base font-bold text-white">CITCI GradeTrack</p>
+            <p class="text-xs text-brand-primary-200">Grading Management System</p>
+        </div>
+    </div>
+
+    {# ---- Right panel: the form ------------------------------------------ #}
+    <div class="flex w-full flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:w-[45%] lg:px-12">
+        <div class="relative w-full max-w-sm motion-safe:animate-fade-in-up-sm {% if form.errors %}motion-safe:animate-shake{% endif %}">
+            <div class="mb-7">
+                <h2 class="text-2xl font-bold tracking-tight text-slate-900">Welcome back</h2>
+                <p class="mt-1.5 text-sm text-slate-500">Sign in to your account to continue</p>
+            </div>
+
+            {% include "partials/_messages.html" %}
+
+            {% if form.errors %}
+            <div class="mb-5 flex items-start gap-2.5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600" role="alert">
+                <span class="mt-0.5 shrink-0">{% sidebar_icon "alert" "h-4.5 w-4.5" %}</span>
+                <span>Incorrect username or password.</span>
+            </div>
+            {% endif %}
+
+            <form method="post" class="space-y-5" @submit="loading = true">
+                {% csrf_token %}
+                <div>
+                    <label for="id_username" class="mb-1.5 block text-sm font-medium text-slate-700">Username / Student No.</label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                            {% sidebar_icon "profile" "h-4.5 w-4.5" %}
+                        </span>
+                        <input type="text" name="username" id="id_username" autocomplete="username" autofocus required
+                               value="{{ form.username.value|default_if_none:'' }}"
+                               aria-invalid="{% if form.errors %}true{% else %}false{% endif %}"
+                               class="w-full rounded-xl border {% if form.errors %}border-red-300{% else %}border-slate-200{% endif %} py-3 pl-10 pr-3.5 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
+                    </div>
+                </div>
+                <div>
+                    <label for="id_password" class="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                            {% sidebar_icon "lock" "h-4.5 w-4.5" %}
+                        </span>
+                        <input :type="showPassword ? 'text' : 'password'" name="password" id="id_password" autocomplete="current-password" required
+                               @keyup="onKey($event)" @keydown="onKey($event)"
+                               aria-invalid="{% if form.errors %}true{% else %}false{% endif %}"
+                               class="w-full rounded-xl border {% if form.errors %}border-red-300{% else %}border-slate-200{% endif %} py-3 pl-10 pr-10 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
+                        <button type="button" @click="showPassword = !showPassword" tabindex="-1"
+                                class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600"
+                                :aria-label="showPassword ? 'Hide password' : 'Show password'">
+                            <span x-show="!showPassword">{% sidebar_icon "eye" "h-4.5 w-4.5" %}</span>
+                            <span x-show="showPassword" x-cloak>{% sidebar_icon "eye-off" "h-4.5 w-4.5" %}</span>
+                        </button>
+                    </div>
+                    <p x-show="capsLockOn" x-cloak class="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+                        {% sidebar_icon "alert" "h-3.5 w-3.5" %} Caps Lock is on
+                    </p>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" name="remember_me" checked
+                               class="h-4 w-4 rounded border-slate-300 text-brand-primary-600 focus:ring-2 focus:ring-brand-primary-500/40">
+                        Remember me
+                    </label>
+                    <div class="relative">
+                        <button type="button" @click="forgotOpen = !forgotOpen" class="text-sm font-medium text-brand-primary-600 hover:text-brand-primary-700 hover:underline">
+                            Forgot password?
+                        </button>
+                        <div x-show="forgotOpen" x-cloak x-transition
+                             @click.outside="forgotOpen = false"
+                             class="absolute right-0 z-20 mt-2 w-64 rounded-xl bg-white p-4 text-left text-sm text-slate-600 shadow-lg ring-1 ring-black/5">
+                            Please contact the system administrator or your Program Head to reset your password.
+                        </div>
+                    </div>
+                </div>
+
+                <input type="hidden" name="next" value="{{ next }}">
+                <button type="submit" :disabled="loading"
+                        class="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-brand-accent-500 to-brand-accent-600 px-4 py-3 text-sm font-bold text-brand-primary-900 shadow-md shadow-brand-accent-600/30 transition duration-150 hover:from-brand-accent-400 hover:to-brand-accent-500 hover:shadow-lg hover:shadow-brand-accent-600/40 focus:outline-none focus:ring-4 focus:ring-brand-accent-500/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-80">
+                    <svg x-show="loading" x-cloak class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"></circle>
+                        <path class="opacity-80" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+                    </svg>
+                    <span x-text="loading ? 'Signing in…' : 'Log In'"></span>
+                </button>
+            </form>
+
+            <p class="mt-6 text-center text-xs leading-relaxed text-slate-400">
+                By signing in, you agree to the CITCI GradeTrack
+                <button type="button" @click="privacyOpen = true" class="font-medium text-slate-500 underline hover:text-slate-700">Data Privacy Notice</button>.
+            </p>
+        </div>
+    </div>
+
+    {# ---- Data Privacy Notice modal --------------------------------------- #}
+    <div x-show="privacyOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/50" @click="privacyOpen = false"></div>
+        <div x-show="privacyOpen" x-transition
+             class="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            <div class="mb-4 flex items-start justify-between gap-4">
+                <h3 class="text-lg font-bold text-slate-900">Data Privacy Notice</h3>
+                <button type="button" @click="privacyOpen = false" class="text-slate-400 hover:text-slate-600">
+                    {% sidebar_icon "close" "h-5 w-5" %}
+                </button>
+            </div>
+            <div class="space-y-3 text-sm leading-relaxed text-slate-600">
+                <p><em>Placeholder text — to be reviewed and finalized by the CITCI Registrar/Data Protection Officer.</em></p>
+                <p>
+                    CITCI GradeTrack collects and processes your personal and academic information
+                    (name, ID number, grades, and related academic records) solely to support
+                    grading, academic performance monitoring, and early-warning forecasting for
+                    Candelaria Institute of Technology of Cabadbaran, Inc.
+                </p>
+                <p>
+                    Your data is stored securely, accessed only by authorized personnel in line
+                    with their role, and is not shared with third parties except as required by
+                    law. In accordance with the Data Privacy Act of 2012 (RA 10173), you have the
+                    right to be informed, to access, and to request correction of your personal
+                    data held by the institution.
+                </p>
+                <p>For questions or concerns, please contact the College Department Registrar.</p>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

@@ -38,6 +38,8 @@
 
   --animate-fade-in-up: fade-in-up 0.5s ease-out both;
   --animate-fade-in: fade-in 0.6s ease-out both;
+  --animate-fade-in-up-sm: fade-in-up-sm 250ms ease-out both;
+  --animate-shake: shake 400ms ease-in-out;
 }
 
 @keyframes fade-in-up {
@@ -58,6 +60,24 @@
   to {
     opacity: 1;
   }
+}
+
+@keyframes fade-in-up-sm {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
 }
 
 @source "../templates";

@@ -1,9 +1,9 @@
-{% load sidebar_icons %}
+{% load sidebar_icons grading_extras %}
 <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
     {% for component in scheme.components.all %}
     <div class="rounded-xl border border-gray-200 bg-white p-3 text-center">
         <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ component.name }}</p>
-        <p class="mt-1 text-lg font-bold text-brand-primary-800">{{ component.weight }}%</p>
+        <p class="mt-1 text-lg font-bold text-brand-primary-800">{{ component.weight|trim_decimal }}%</p>
     </div>
     {% endfor %}
 </div>
@@ -36,7 +36,7 @@
                     <td class="px-4 py-3 text-gray-700">{{ component.name }}</td>
                     <td class="px-4 py-3 font-medium text-gray-900">{{ item.title }}</td>
                     <td class="px-4 py-3"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ item.get_term_display }}</span></td>
-                    <td class="px-4 py-3 text-gray-700">{{ item.max_score }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ item.max_score|trim_decimal }}</td>
                     <td class="px-4 py-3 text-gray-500">{{ item.date|date:"M d, Y"|default:"—" }}</td>
                     {% if can_edit %}
                     <td class="px-4 py-3 text-right">

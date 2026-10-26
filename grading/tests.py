@@ -20,6 +20,7 @@ from accounts.models import User
 
 from .models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate, Score, ScoreChangeLog
 from .services import compute_class, compute_student, format_grade, save_score, validate_component_weights
+from .views import _build_class_record_context
 
 
 def make_user(role, username, **extra):
@@ -268,3 +269,104 @@ class InstructorAccessControlTests(GradingTestBase):
         self.client.force_login(self.instructor)
         response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
+
+
+class RemarksCompletionTests(GradingTestBase):
+    """Regression test for the bug where a student with mostly-unencoded
+    components showed "Passed" despite a running grade of 4.80-5.00 — the
+    FINAL grade quietly excludes components with zero items while blanks on
+    existing items count as 0, so a barely-started gradebook can compute a
+    misleadingly low (good) FINAL grade. Remarks must only read PASSED/
+    FAILED off the FINAL grade once it is actually complete; otherwise show
+    a provisional ON_TRACK/AT_RISK off the RUNNING grade."""
+
+    def test_incomplete_grade_with_bad_running_grade_is_at_risk_not_passed(self):
+        # Mirrors the real bug report: Attendance has items but nobody has
+        # been scored yet; Quizzes has one very-low score.
+        self.make_items("Attendance", [10, 10])
+        quiz_items = self.make_items("Quizzes", [20])
+        self.set_scores(self.roster_entry, quiz_items, [1])  # 1/20 -> component grade 4.80
+
+        result = compute_student(self.roster_entry)
+        self.assertFalse(result.is_grade_complete)
+        self.assertEqual(result.running_grade, Decimal("4.80"))
+        self.assertEqual(result.remarks, "AT_RISK")
+        self.assertNotEqual(result.remarks, "PASSED")
+
+    def test_incomplete_grade_with_good_running_grade_is_on_track(self):
+        self.make_items("Attendance", [10, 10])
+        quiz_items = self.make_items("Quizzes", [20])
+        self.set_scores(self.roster_entry, quiz_items, [19])  # 19/20 -> component grade 1.20
+
+        result = compute_student(self.roster_entry)
+        self.assertFalse(result.is_grade_complete)
+        self.assertEqual(result.remarks, "ON_TRACK")
+
+    def test_complete_grade_of_1_77_is_passed(self):
+        """Same Dela Cruz data as DelaCruzFinalGradeTests — every component
+        has items and every item is scored, so the grade is complete and
+        remarks must read PASSED off the FINAL grade."""
+        attendance_items = self.make_items("Attendance", [10, 10, 10, 10, 10])
+        quiz_items = self.make_items("Quizzes", [20, 20, 30, 20, 30, 40, 50])
+        recitation_items = self.make_items("Recitation", [10, 10, 20, 30, 30, 30, 40])
+        project_items = self.make_items("Project", [50, 70, 60, 80, 90])
+        exam_items = self.make_items("Examination", [80, 100, 80, 100])
+
+        self.set_scores(self.roster_entry, attendance_items, [10, 10, 10, 5, 10])
+        self.set_scores(self.roster_entry, quiz_items, [15, 18, 21, 15, 25, 29, 37])
+        self.set_scores(self.roster_entry, recitation_items, [6, 8, 16, 24, 27, 22, 34])
+        self.set_scores(self.roster_entry, project_items, [45, 65, 50, 76, 82])
+        self.set_scores(self.roster_entry, exam_items, [59, 87, 67, 76])
+
+        result = compute_student(self.roster_entry)
+        self.assertTrue(result.is_grade_complete)
+        self.assertEqual(format_grade(result.final_grade), Decimal("1.77"))
+        self.assertEqual(result.remarks, "PASSED")
+
+    def test_complete_grade_at_exactly_3_00_boundary_is_passed(self):
+        items_by_component = {
+            name: self.make_items(name, [10]) for name in ("Attendance", "Quizzes", "Recitation", "Project", "Examination")
+        }
+        for items in items_by_component.values():
+            self.set_scores(self.roster_entry, items, [5])  # 5/10 -> every component grade == 3.00
+
+        result = compute_student(self.roster_entry)
+        self.assertTrue(result.is_grade_complete)
+        self.assertEqual(result.final_grade, Decimal("3.00"))
+        self.assertEqual(result.remarks, "PASSED")
+
+
+class TermFilterDoesNotAffectTotalsTests(GradingTestBase):
+    """The "Show items for:" term filter only changes which item COLUMNS are
+    visible — it must never change a component's Total/Grade or a student's
+    running grade, which always reflect every term."""
+
+    def test_filtering_by_term_does_not_change_totals_or_running_grade(self):
+        prelim_items = self.make_items("Attendance", [10, 10], term=AssessmentTerm.PRELIM)
+        final_item = AssessmentItem.objects.create(
+            class_offering=self.class_offering,
+            component=self.scheme_components["Attendance"],
+            title="A3",
+            max_score=Decimal("10"),
+            term=AssessmentTerm.FINAL,
+            order=2,
+        )
+        self.set_scores(self.roster_entry, prelim_items, [10, 5])
+        Score.objects.update_or_create(roster_entry=self.roster_entry, item=final_item, defaults={"score": Decimal("8")})
+
+        unfiltered = _build_class_record_context(self.class_offering, term_filter=None)
+        filtered = _build_class_record_context(self.class_offering, term_filter=AssessmentTerm.PRELIM)
+
+        unfiltered_row = next(r for r in unfiltered["rows"] if r["result"].roster_entry.id == self.roster_entry.id)
+        filtered_row = next(r for r in filtered["rows"] if r["result"].roster_entry.id == self.roster_entry.id)
+
+        unfiltered_breakdown = unfiltered_row["result"].components[0]
+        filtered_breakdown = filtered_row["result"].components[0]
+
+        self.assertEqual(unfiltered_breakdown.final_earned, filtered_breakdown.final_earned)
+        self.assertEqual(unfiltered_breakdown.final_possible, filtered_breakdown.final_possible)
+        self.assertEqual(unfiltered_row["result"].running_grade, filtered_row["result"].running_grade)
+
+        # The visible item COLUMNS do differ — that's the whole point of the filter.
+        self.assertEqual(len(unfiltered["columns"][0]["items"]), 3)
+        self.assertEqual(len(filtered["columns"][0]["items"]), 2)

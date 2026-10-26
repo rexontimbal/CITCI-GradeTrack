@@ -1,4 +1,4 @@
-{% load sidebar_icons %}
+{% load sidebar_icons grading_extras %}
 <div id="{{ table_id }}">
     {% if page_obj.object_list %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
@@ -22,9 +22,9 @@
                     </td>
                     <td class="px-4 py-3">
                         {% if tpl.weight_total == 100 %}
-                        <span class="font-medium text-gray-900">{{ tpl.weight_total }}%</span>
+                        <span class="font-medium text-gray-900">{{ tpl.weight_total|trim_decimal }}%</span>
                         {% else %}
-                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title="Must total 100% before it can be applied to a class">{{ tpl.weight_total }}% — fix</span>
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title="Must total 100% before it can be applied to a class">{{ tpl.weight_total|trim_decimal }}% — fix</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ tpl.classes_count }}</td>

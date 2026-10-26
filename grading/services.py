@@ -129,15 +129,38 @@ class StudentGradeResult:
         return total
 
     @property
+    def is_grade_complete(self) -> bool:
+        """True once every component has at least one assessment item and
+        every one of those items has a score — i.e. the FINAL grade reflects
+        real data, not blanks-counted-as-zero filler. A component with zero
+        items (not yet set up) does NOT count as complete."""
+        if not self.components:
+            return False
+        return not self.missing_items and all(c.final_possible > 0 for c in self.components)
+
+    @property
     def remarks(self) -> Optional[str]:
+        """PASSED/FAILED only once the grade is final (no missing cells and
+        every component has items) — a mid-term FINAL grade with half the
+        gradebook still blank is not a real pass/fail, just zeros padding
+        out the average, so showing it as "Passed" would be misleading. Until
+        then, show a provisional ON_TRACK/AT_RISK based on the RUNNING grade
+        (same ≤3.00 threshold), which already ignores unstarted components."""
         if self.roster_entry.status == ClassRosterEntry.Status.DROPPED:
             return "DROPPED"
         if self.roster_entry.is_incomplete:
             return "INC"
-        final = self.final_grade
-        if final is None:
+
+        if self.is_grade_complete:
+            final = self.final_grade
+            if final is None:
+                return None
+            return "PASSED" if final <= PASSING_THRESHOLD else "FAILED"
+
+        running = self.running_grade
+        if running is None:
             return None
-        return "PASSED" if final <= PASSING_THRESHOLD else "FAILED"
+        return "ON_TRACK" if running <= PASSING_THRESHOLD else "AT_RISK"
 
 
 def _encoded_item_ids(item_ids):

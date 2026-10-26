@@ -1,4 +1,4 @@
-{% load sidebar_icons %}
+{% load sidebar_icons grading_extras %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
     <h3 class="text-base font-semibold text-gray-900">Change Grading Template</h3>
     <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
@@ -23,7 +23,7 @@
             <label for="template" class="mb-1 block text-sm font-medium text-gray-700">Template</label>
             <select name="template" id="template" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
                 {% for tpl in templates %}
-                <option value="{{ tpl.pk }}" {% if tpl.pk == current_template_id %}selected{% endif %}>{{ tpl.name }} ({{ tpl.weight_total }}%)</option>
+                <option value="{{ tpl.pk }}" {% if tpl.pk == current_template_id %}selected{% endif %}>{{ tpl.name }} ({{ tpl.weight_total|trim_decimal }}%)</option>
                 {% endfor %}
             </select>
             <p class="mt-1 text-xs text-gray-500">This resets the class's components/weights to match the chosen template — safe to do until the first score is encoded.</p>

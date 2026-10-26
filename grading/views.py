@@ -228,7 +228,13 @@ def _build_class_record_context(class_offering, term_filter=None):
         )
 
     missing_count = sum(len(r["result"].missing_items) for r in rows if r["is_active"])
-    return {"columns": columns, "rows": rows, "missing_count": missing_count}
+    selected_term_label = dict(AssessmentTerm.choices).get(term_filter, "") if term_filter else ""
+    return {
+        "columns": columns,
+        "rows": rows,
+        "missing_count": missing_count,
+        "selected_term_label": selected_term_label,
+    }
 
 
 def _build_summary_context(class_offering):

@@ -12,7 +12,7 @@
         <td class="border-l border-gray-100 px-1 py-1 text-center">
             {% if can_edit and row.is_active %}
             <input type="number" step="0.01" min="0" max="{{ cell.item.max_score }}"
-                   id="{{ cell.cell_id }}" name="value" value="{{ cell.value|default_if_none:'' }}"
+                   id="{{ cell.cell_id }}" name="value" value="{% if cell.value is not None %}{{ cell.value|trim_decimal }}{% endif %}"
                    data-up="{{ cell.up }}" data-down="{{ cell.down }}" data-left="{{ cell.left }}" data-right="{{ cell.right }}"
                    class="grade-cell-input w-16 rounded border px-1 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent-500 {% if error_item_id == cell.item.id %}border-red-400 bg-red-50{% else %}border-gray-200{% endif %}"
                    hx-post="{% url 'grading:save_cell' row.result.roster_entry.id cell.item.id %}{% if term_filter %}?term={{ term_filter }}{% endif %}"
@@ -22,21 +22,25 @@
             <p class="mt-0.5 whitespace-nowrap text-[10px] text-red-600">{{ error_message }}</p>
             {% endif %}
             {% else %}
-            <span class="text-sm text-gray-700">{{ cell.value|default_if_none:"—" }}</span>
+            <span class="text-sm text-gray-700">{{ cell.value|trim_decimal }}</span>
             {% endif %}
         </td>
         {% endfor %}
-        <td class="border-l border-gray-100 bg-gray-50/60 px-2 py-2 text-center text-sm text-gray-700">{{ block.breakdown.final_earned }}/{{ block.breakdown.final_possible }}</td>
-        <td class="px-2 py-2 text-center text-sm font-semibold text-gray-900">{{ block.breakdown.final_grade|grade_display }}</td>
+        <td class="border-l border-gray-100 bg-gray-50/60 px-2 py-2 text-center text-sm text-gray-700" title="All terms">{{ block.breakdown.final_earned|trim_decimal }}/{{ block.breakdown.final_possible|trim_decimal }}</td>
+        <td class="px-2 py-2 text-center text-sm font-semibold text-gray-900" title="All terms">{{ block.breakdown.final_grade|grade_display }}</td>
     {% endfor %}
 
-    <td class="border-l border-gray-200 px-2 py-2 text-center text-sm font-semibold text-brand-primary-800">{{ row.result.running_grade|grade_display }}</td>
+    <td class="border-l border-gray-200 px-2 py-2 text-center text-sm font-semibold text-brand-primary-800" title="All terms">{{ row.result.running_grade|grade_display }}</td>
     <td class="px-2 py-2 text-center">
         {% with remarks=row.result.remarks %}
         {% if remarks == "PASSED" %}
         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Passed</span>
         {% elif remarks == "FAILED" %}
         <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Failed</span>
+        {% elif remarks == "ON_TRACK" %}
+        <span class="rounded-full border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700" title="Provisional — based on encoded items only">On track</span>
+        {% elif remarks == "AT_RISK" %}
+        <span class="rounded-full border border-amber-400 px-2 py-0.5 text-xs font-medium text-amber-700" title="Provisional — based on encoded items only">At risk</span>
         {% elif remarks == "INC" %}
         <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title="{{ row.result.roster_entry.incomplete_reason }}">INC</span>
         {% elif remarks == "DROPPED" %}

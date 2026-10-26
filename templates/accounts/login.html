@@ -1,43 +1,68 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static sidebar_icons %}
 {% block page_title %}Login{% endblock %}
 {% block guest_content %}
-<div class="flex min-h-full items-center justify-center bg-gray-100 px-4 py-12">
-    <div class="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div class="mb-6 flex flex-col items-center text-center">
-            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="mb-4 h-16 w-16 rounded-full object-cover">
-            <h1 class="text-xl font-bold text-gray-900">CITCI GradeTrack</h1>
-            <p class="mt-1 text-xs text-gray-500">Grading Management System with Academic Performance Forecasting</p>
+<div class="relative flex min-h-full items-center justify-center overflow-hidden bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 px-4 py-12">
+    {# Soft ambient brand-colored blobs behind the card — purely decorative. #}
+    <div class="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-brand-primary-400/20 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-24 -right-16 h-80 w-80 rounded-full bg-brand-accent-400/25 blur-3xl"></div>
+
+    <div class="relative z-10 w-full max-w-sm animate-fade-in-up rounded-[20px] bg-white p-10 shadow-[0_10px_25px_-3px_rgba(15,23,42,0.08)] ring-1 ring-slate-900/5">
+        <div class="mb-8 flex flex-col items-center text-center">
+            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo"
+                 class="mb-5 h-16 w-16 rounded-full object-cover shadow-sm ring-4 ring-slate-50">
+            <h1 class="text-2xl font-bold tracking-tight text-slate-900">CITCI GradeTrack</h1>
+            <p class="mt-1.5 text-sm leading-snug text-slate-500">Grading Management System with Academic Performance Forecasting</p>
         </div>
 
         {% include "partials/_messages.html" %}
 
         {% if form.errors %}
-        <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div class="mb-5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
             Incorrect username or password. Please try again.
         </div>
         {% endif %}
 
-        <form method="post" class="space-y-4">
+        <form method="post" class="space-y-5" x-data="{ loading: false, showPassword: false }" @submit="loading = true">
             {% csrf_token %}
             <div>
-                <label for="id_username" class="mb-1 block text-sm font-medium text-gray-700">Username / Student No.</label>
-                <input type="text" name="username" id="id_username" autofocus required
-                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <label for="id_username" class="mb-1.5 block text-sm font-medium text-slate-700">Username / Student No.</label>
+                <div class="relative">
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                        {% sidebar_icon "profile" "h-4.5 w-4.5" %}
+                    </span>
+                    <input type="text" name="username" id="id_username" autocomplete="username" autofocus required
+                           class="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-3.5 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
+                </div>
             </div>
             <div>
-                <label for="id_password" class="mb-1 block text-sm font-medium text-gray-700">Password</label>
-                <input type="password" name="password" id="id_password" required
-                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <label for="id_password" class="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+                <div class="relative">
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                        {% sidebar_icon "lock" "h-4.5 w-4.5" %}
+                    </span>
+                    <input :type="showPassword ? 'text' : 'password'" name="password" id="id_password" autocomplete="current-password" required
+                           class="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-10 text-sm text-slate-900 placeholder-slate-400 transition duration-150 focus:border-brand-primary-500 focus:outline-none focus:ring-4 focus:ring-brand-primary-500/15">
+                    <button type="button" @click="showPassword = !showPassword" tabindex="-1"
+                            class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition hover:text-slate-600"
+                            :aria-label="showPassword ? 'Hide password' : 'Show password'">
+                        <span x-show="!showPassword">{% sidebar_icon "eye" "h-4.5 w-4.5" %}</span>
+                        <span x-show="showPassword" x-cloak>{% sidebar_icon "eye-off" "h-4.5 w-4.5" %}</span>
+                    </button>
+                </div>
             </div>
             <input type="hidden" name="next" value="{{ next }}">
-            <button type="submit"
-                    class="w-full rounded-lg bg-brand-accent-600 px-4 py-2.5 text-sm font-semibold text-brand-primary-900 transition hover:bg-brand-accent-700 focus:outline-none focus:ring-2 focus:ring-brand-accent-500 focus:ring-offset-2">
-                Log In
+            <button type="submit" :disabled="loading"
+                    class="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-brand-accent-500 to-brand-accent-600 px-4 py-3 text-sm font-bold text-brand-primary-900 shadow-md shadow-brand-accent-600/30 transition duration-150 hover:from-brand-accent-400 hover:to-brand-accent-500 hover:shadow-lg hover:shadow-brand-accent-600/40 focus:outline-none focus:ring-4 focus:ring-brand-accent-500/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-80">
+                <svg x-show="loading" x-cloak class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"></circle>
+                    <path class="opacity-80" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+                </svg>
+                <span x-text="loading ? 'Signing in…' : 'Log In'"></span>
             </button>
         </form>
 
-        <p class="mt-6 text-center text-xs text-gray-400">
+        <p class="mt-8 text-center text-xs text-slate-400">
             Candelaria Institute of Technology of Cabadbaran, Inc. &middot; College Department
         </p>
     </div>

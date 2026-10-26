@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/*
+ * CITCI GradeTrack brand palette.
+ * Extracted from static/img/citci-logo.png (Pillow dominant-color scan):
+ *   navy  #283082  -> brand-primary  (sidebar, headers)
+ *   gold  #f0dc1e  -> brand-accent   (active states, primary buttons, focus rings)
+ * Shades 50-950 are generated from those two measured colors. Change the base
+ * hexes here (and regenerate the scale) if the logo ever changes — this file
+ * is the single source of truth for the theme.
+ */
+@theme {
+  --color-brand-primary-50: #f2f3f8;
+  --color-brand-primary-100: #e1e2ee;
+  --color-brand-primary-200: #c3c5dc;
+  --color-brand-primary-300: #9ca0c5;
+  --color-brand-primary-400: #6d72aa;
+  --color-brand-primary-500: #424991;
+  --color-brand-primary-600: #283082;
+  --color-brand-primary-700: #21276b;
+  --color-brand-primary-800: #1a2056;
+  --color-brand-primary-900: #141841;
+  --color-brand-primary-950: #0d0f2a;
+
+  --color-brand-accent-50: #fefdf2;
+  --color-brand-accent-100: #fdfae0;
+  --color-brand-accent-200: #fbf5c0;
+  --color-brand-accent-300: #f8ef98;
+  --color-brand-accent-400: #f5e766;
+  --color-brand-accent-500: #f2e039;
+  --color-brand-accent-600: #f0dc1e;
+  --color-brand-accent-700: #c5b419;
+  --color-brand-accent-800: #9e9114;
+  --color-brand-accent-900: #786e0f;
+  --color-brand-accent-950: #4d460a;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --animate-fade-in-up: fade-in-up 0.5s ease-out both;
+  --animate-fade-in: fade-in 0.6s ease-out both;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@source "../templates";
+@source "../accounts";
+@source "../academics";
+@source "../grading";
+@source "../approvals";
+@source "../forecasting";
+@source "../reports";
+@source "../dashboard";
+
+[x-cloak] {
+  display: none !important;
+}

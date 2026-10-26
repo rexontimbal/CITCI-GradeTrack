@@ -1,7 +1,7 @@
 {% load sidebar_icons %}
-<li class="relative group/item">
+<li class="relative group/item" data-active="{% if url_name == active_url_name %}true{% else %}false{% endif %}">
     <a href="{% url url_name %}"
-       class="flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm transition
+       class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition
               {% if url_name == active_url_name %}bg-brand-primary-700 text-white font-semibold{% else %}text-brand-primary-200 hover:bg-brand-primary-700/60 hover:text-white{% endif %}"
        :class="(forMobile || !collapsed) ? '' : 'justify-center'">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg

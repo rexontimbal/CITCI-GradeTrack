@@ -24,19 +24,48 @@
     </a>
 </div>
 
-<nav class="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
-    {% for group in sidebar_menu %}
-    <div class="mb-4">
-        <p class="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-primary-300"
-           x-show="forMobile || !collapsed">{{ group.label }}</p>
-        <ul class="space-y-1">
-            {% for url_name, label, icon in group.items %}
-            {% include "partials/_sidebar_item.html" with url_name=url_name label=label icon=icon %}
-            {% endfor %}
-        </ul>
-    </div>
-    {% endfor %}
-</nav>
+{% comment %}
+Scroll fades only appear when there's actually more menu above/below; the
+active item is scrolled into view on load so it's never hidden below the
+fold without the user knowing.
+{% endcomment %}
+<div class="relative min-h-0 flex-1"
+     x-data="{
+        atTop: true,
+        atBottom: true,
+        updateFades() {
+            const el = $refs.nav;
+            if (!el) return;
+            this.atTop = el.scrollTop <= 0;
+            this.atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+        }
+     }"
+     x-init="$nextTick(() => {
+        updateFades();
+        const activeItem = $refs.nav.querySelector('[data-active=\'true\']');
+        if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+     })"
+     @resize.window="updateFades()">
+    <div class="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-brand-primary-800 to-transparent transition-opacity duration-150"
+         :class="atTop ? 'opacity-0' : 'opacity-100'"></div>
+
+    <nav x-ref="nav" @scroll="updateFades()" class="sidebar-scroll h-full overflow-y-auto overflow-x-hidden px-2 py-2">
+        {% for group in sidebar_menu %}
+        <div class="mt-4 first:mt-0">
+            <p class="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-primary-300"
+               x-show="forMobile || !collapsed">{{ group.label }}</p>
+            <ul class="space-y-0.5">
+                {% for url_name, label, icon in group.items %}
+                {% include "partials/_sidebar_item.html" with url_name=url_name label=label icon=icon %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </nav>
+
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-brand-primary-800 to-transparent transition-opacity duration-150"
+         :class="atBottom ? 'opacity-0' : 'opacity-100'"></div>
+</div>
 
 {# User card: click to open a popover (Profile / Help / Change Password / Logout). #}
 <div class="relative px-2 pb-2" x-data="{ userMenuOpen: false }" @keydown.escape.window="userMenuOpen = false">

@@ -71,7 +71,7 @@ class GradingTestBase(TestCase):
                     class_offering=self.class_offering,
                     component=component,
                     title=f"{component_name} {i + 1}",
-                    max_score=Decimal(str(max_score)),
+                    max_score=int(max_score),
                     term=term,
                     order=i,
                 )
@@ -81,7 +81,7 @@ class GradingTestBase(TestCase):
     def set_scores(self, roster_entry, items, values):
         for item, value in zip(items, values):
             Score.objects.update_or_create(
-                roster_entry=roster_entry, item=item, defaults={"score": None if value is None else Decimal(str(value))}
+                roster_entry=roster_entry, item=item, defaults={"score": None if value is None else int(value)}
             )
 
 
@@ -370,3 +370,110 @@ class TermFilterDoesNotAffectTotalsTests(GradingTestBase):
         # The visible item COLUMNS do differ — that's the whole point of the filter.
         self.assertEqual(len(unfiltered["columns"][0]["items"]), 3)
         self.assertEqual(len(filtered["columns"][0]["items"]), 2)
+
+
+class WholeNumberValidationTests(GradingTestBase):
+    """Scores and max scores are whole numbers — decimals/negatives must be
+    rejected with a clear message, both via the save_cell view (raw string
+    parsing) and the model field itself."""
+
+    def test_save_cell_rejects_decimal_input(self):
+        item = self.make_items("Attendance", [10])[0]
+        self.client.force_login(self.instructor)
+        response = self.client.post(
+            reverse("grading:save_cell", args=[self.roster_entry.pk, item.pk]), {"value": "0.5"}
+        )
+        self.assertContains(response, "Whole numbers only.")
+        score_obj = Score.objects.filter(roster_entry=self.roster_entry, item=item).first()
+        self.assertTrue(score_obj is None or score_obj.score is None)
+
+    def test_save_cell_rejects_negative_input(self):
+        item = self.make_items("Attendance", [10])[0]
+        self.client.force_login(self.instructor)
+        response = self.client.post(
+            reverse("grading:save_cell", args=[self.roster_entry.pk, item.pk]), {"value": "-1"}
+        )
+        self.assertContains(response, "Whole numbers only.")
+
+    def test_save_cell_accepts_whole_number(self):
+        item = self.make_items("Attendance", [10])[0]
+        self.client.force_login(self.instructor)
+        self.client.post(reverse("grading:save_cell", args=[self.roster_entry.pk, item.pk]), {"value": "8"})
+        self.assertEqual(Score.objects.get(roster_entry=self.roster_entry, item=item).score, 8)
+
+    def test_assessment_item_form_rejects_max_score_below_1(self):
+        from .forms import AssessmentItemForm
+
+        form = AssessmentItemForm(
+            data={
+                "component": self.scheme_components["Attendance"].pk,
+                "title": "A1",
+                "max_score": "0",
+                "term": AssessmentTerm.PRELIM,
+                "order": "0",
+            },
+            scheme=self.scheme,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("max_score", form.errors)
+
+
+class HiddenComponentsTests(GradingTestBase):
+    """A component with zero assessment items ("not yet set up") never
+    appears as a grid column; the grid points instructors at Setup instead."""
+
+    def test_components_without_items_are_hidden_and_listed_as_not_set_up(self):
+        self.make_items("Attendance", [10])
+        self.make_items("Quizzes", [20])
+        # Recitation, Project, Examination are left with zero items.
+
+        record = _build_class_record_context(self.class_offering, term_filter=None)
+        visible_names = {col["component"].name for col in record["columns"]}
+        self.assertEqual(visible_names, {"Attendance", "Quizzes"})
+
+        not_set_up_names = {c.name for c in record["not_yet_set_up"]}
+        self.assertEqual(not_set_up_names, {"Recitation", "Project", "Examination"})
+
+    def test_term_filter_hides_a_component_with_no_items_in_that_term_but_not_from_not_yet_set_up(self):
+        self.make_items("Attendance", [10], term=AssessmentTerm.PRELIM)
+        self.make_items("Quizzes", [20], term=AssessmentTerm.FINAL)
+
+        record = _build_class_record_context(self.class_offering, term_filter=AssessmentTerm.PRELIM)
+        visible_names = {col["component"].name for col in record["columns"]}
+        self.assertEqual(visible_names, {"Attendance"})  # Quizzes has items, just none in Prelim
+
+        # Quizzes IS set up (has items overall) so it must not appear in the "not set up" note.
+        not_set_up_names = {c.name for c in record["not_yet_set_up"]}
+        self.assertNotIn("Quizzes", not_set_up_names)
+        self.assertIn("Recitation", not_set_up_names)
+
+
+class UnencodedComponentDisplayTests(GradingTestBase):
+    """A component that has items but none scored yet for anyone in the
+    class shows "—" for its Total/Grade in the grid — same rule the running
+    grade already uses (running_included), so the grid never implies a
+    student is doing great (component grade 5.00) on something nobody has
+    started recording."""
+
+    def test_grid_shows_dash_for_a_component_nobody_has_scored_yet(self):
+        self.make_items("Attendance", [10, 10])  # created but left entirely blank
+        quiz_item = self.make_items("Quizzes", [20])[0]
+        self.set_scores(self.roster_entry, [quiz_item], [10])
+
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]) + "?tab=record")
+        content = response.content.decode()
+
+        # Header text is title-case in the DOM; uppercase is CSS-only (text-transform).
+        attendance_idx = content.find("Attendance")
+        quizzes_idx = content.find("Quizzes")
+        self.assertNotEqual(attendance_idx, -1)
+        self.assertNotEqual(quizzes_idx, -1)
+        self.assertLess(attendance_idx, quizzes_idx)
+
+        # Service-level check (unambiguous, not dependent on HTML structure).
+        result = compute_student(self.roster_entry)
+        attendance = next(c for c in result.components if c.component.name == "Attendance")
+        quizzes = next(c for c in result.components if c.component.name == "Quizzes")
+        self.assertFalse(attendance.running_included)
+        self.assertTrue(quizzes.running_included)

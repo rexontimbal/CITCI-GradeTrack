@@ -149,7 +149,7 @@ class AssessmentItem(TimeStampedModel):
     class_offering = models.ForeignKey(ClassOffering, on_delete=models.CASCADE, related_name="assessment_items")
     component = models.ForeignKey(SchemeComponent, on_delete=models.PROTECT, related_name="items")
     title = models.CharField(max_length=100)
-    max_score = models.DecimalField(max_digits=6, decimal_places=2)
+    max_score = models.PositiveIntegerField(help_text="Whole numbers only — matches CITCI's class record.")
     term = models.CharField(
         max_length=10,
         choices=AssessmentTerm.choices,
@@ -162,8 +162,8 @@ class AssessmentItem(TimeStampedModel):
         ordering = ["component__order", "order", "id"]
 
     def clean(self):
-        if self.max_score is not None and self.max_score <= 0:
-            raise ValidationError("Max score must be greater than zero.")
+        if self.max_score is not None and self.max_score < 1:
+            raise ValidationError("Max score must be at least 1.")
 
     @property
     def has_scores(self):
@@ -179,7 +179,7 @@ class Score(TimeStampedModel):
 
     roster_entry = models.ForeignKey(ClassRosterEntry, on_delete=models.CASCADE, related_name="scores")
     item = models.ForeignKey(AssessmentItem, on_delete=models.CASCADE, related_name="scores")
-    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    score = models.PositiveIntegerField(null=True, blank=True, help_text="Whole numbers only.")
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -200,8 +200,8 @@ class ScoreChangeLog(models.Model):
     sheets go through the approval workflow in a later phase."""
 
     score = models.ForeignKey(Score, on_delete=models.CASCADE, related_name="change_logs")
-    old_value = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
-    new_value = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    old_value = models.PositiveIntegerField(null=True, blank=True)
+    new_value = models.PositiveIntegerField(null=True, blank=True)
     changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
     changed_at = models.DateTimeField(auto_now_add=True)
 

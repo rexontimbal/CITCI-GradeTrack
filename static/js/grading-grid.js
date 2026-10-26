@@ -1,7 +1,8 @@
-// Keyboard navigation for the Class Record score-encoding grid. Autosave
-// itself is plain htmx (hx-trigger="blur changed" on each input, see
-// templates/grading/_grid_row.html) — this file only moves focus between
-// cells so Up/Down/Left/Right/Enter feel like a spreadsheet.
+// Class Record score-encoding grid behavior: keyboard navigation between
+// cells, and keeping each cell's value to digits only (scores/max scores are
+// whole numbers — see grading/services.py). Autosave itself is plain htmx
+// (hx-trigger="blur changed" on each input, see templates/grading/_grid_row.html).
+
 document.addEventListener("keydown", function (event) {
     var input = event.target;
     if (!input.classList || !input.classList.contains("grade-cell-input")) return;
@@ -19,15 +20,33 @@ document.addEventListener("keydown", function (event) {
         case "ArrowDown":
         case "Enter":
             focusCell(input.dataset.down);
-            break;
+            return;
         case "ArrowUp":
             focusCell(input.dataset.up);
-            break;
+            return;
         case "ArrowRight":
             if (input.selectionStart === input.value.length) focusCell(input.dataset.right);
-            break;
+            return;
         case "ArrowLeft":
             if (input.selectionStart === 0) focusCell(input.dataset.left);
-            break;
+            return;
     }
+
+    // Everything else: only digits and basic editing/navigation keys are
+    // allowed through — no '.', '-', 'e', letters, etc. No mouse-wheel/
+    // spinner concerns either since the input is type="text", not "number".
+    var editingKeys = ["Backspace", "Delete", "Tab", "Home", "End"];
+    var isDigit = event.key.length === 1 && event.key >= "0" && event.key <= "9";
+    var isClipboardShortcut = (event.ctrlKey || event.metaKey) && ["a", "c", "v", "x"].includes(event.key.toLowerCase());
+    if (!isDigit && !isClipboardShortcut && editingKeys.indexOf(event.key) === -1) {
+        event.preventDefault();
+    }
+});
+
+// Safety net for paste/drag-drop/autofill, which keydown can't catch.
+document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (!input.classList || !input.classList.contains("grade-cell-input")) return;
+    var cleaned = input.value.replace(/[^0-9]/g, "");
+    if (cleaned !== input.value) input.value = cleaned;
 });

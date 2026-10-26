@@ -225,6 +225,13 @@ def _get_scheme_components(class_offering):
     )
 
 
+def get_encoded_item_ids(item_ids):
+    """Public wrapper — views need to know which specific items already
+    have at least one score in the class (to highlight still-blank cells on
+    an item that's "in progress"), not just which components do."""
+    return _encoded_item_ids(item_ids)
+
+
 def get_scheme_components(class_offering):
     """Public wrapper around the scheme/component lookup used internally by
     compute_student/compute_class — views need the raw component/item

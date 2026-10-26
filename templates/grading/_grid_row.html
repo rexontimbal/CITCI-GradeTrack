@@ -1,57 +1,76 @@
-{% load grading_extras %}
-<tr id="row-{{ row.result.roster_entry.id }}" class="{% if not row.is_active %}bg-gray-50 text-gray-400{% else %}hover:bg-gray-50{% endif %}">
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-2 text-center text-xs" style="left:0;width:48px;">{{ row.row_number|default:"—" }}</td>
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-2 text-xs" style="left:48px;width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
-    <td class="sticky z-10 border-r border-gray-200 bg-inherit px-2 py-2 text-sm font-medium text-gray-900" style="left:144px;min-width:160px;">
+{% load grading_extras sidebar_icons %}
+<tr id="row-{{ row.result.roster_entry.id }}"
+    class="h-10 {% if not row.is_active %}bg-gray-100 text-gray-400{% else %}odd:bg-white even:bg-gray-50/70 hover:bg-brand-primary-50/50{% endif %} transition-colors">
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;">{{ row.row_number|default:"—" }}</td>
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
+    <td class="sticky-shadow sticky z-10 border-r border-gray-200 bg-inherit px-2 py-1.5 text-sm font-medium text-gray-900" style="left:144px;min-width:160px;">
         {{ row.result.roster_entry.student.last_name }}, {{ row.result.roster_entry.student.first_name }}
         {% if not row.is_active %}<span class="ml-1 text-xs text-gray-400">(Dropped)</span>{% endif %}
     </td>
 
     {% for block in row.component_blocks %}
         {% for cell in block.cells %}
-        <td class="border-l border-gray-100 px-1 py-1 text-center">
+        <td class="border-l border-gray-100 p-0 text-center">
             {% if can_edit and row.is_active %}
-            <input type="number" step="0.01" min="0" max="{{ cell.item.max_score }}"
-                   id="{{ cell.cell_id }}" name="value" value="{% if cell.value is not None %}{{ cell.value|trim_decimal }}{% endif %}"
+            <input type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+                   id="{{ cell.cell_id }}" name="value" value="{% if cell.value is not None %}{{ cell.value }}{% endif %}"
+                   data-max="{{ cell.item.max_score }}"
                    data-up="{{ cell.up }}" data-down="{{ cell.down }}" data-left="{{ cell.left }}" data-right="{{ cell.right }}"
-                   class="grade-cell-input w-16 rounded border px-1 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent-500 {% if error_item_id == cell.item.id %}border-red-400 bg-red-50{% else %}border-gray-200{% endif %}"
+                   title="{% if error_item_id == cell.item.id %}{{ error_message }}{% endif %}"
+                   class="grade-cell-input h-10 w-14 border-2 border-transparent bg-transparent text-center text-sm tabular-nums text-gray-800 outline-none focus:border-brand-accent-600 focus:bg-white
+                          {% if error_item_id == cell.item.id %}border-red-400 bg-red-50{% elif saved_item_id == cell.item.id %}cell-flash{% elif cell.needs_score %}bg-yellow-50{% endif %}"
                    hx-post="{% url 'grading:save_cell' row.result.roster_entry.id cell.item.id %}{% if term_filter %}?term={{ term_filter }}{% endif %}"
                    hx-trigger="blur changed"
                    hx-target="closest tr" hx-swap="outerHTML">
-            {% if error_item_id == cell.item.id and error_message %}
-            <p class="mt-0.5 whitespace-nowrap text-[10px] text-red-600">{{ error_message }}</p>
-            {% endif %}
             {% else %}
-            <span class="text-sm text-gray-700">{{ cell.value|trim_decimal }}</span>
+            <span class="flex h-10 w-14 items-center justify-center text-sm tabular-nums text-gray-700">{{ cell.value|trim_decimal }}</span>
             {% endif %}
         </td>
         {% endfor %}
-        <td class="border-l border-gray-100 bg-gray-50/60 px-2 py-2 text-center text-sm text-gray-700" title="All terms">{{ block.breakdown.final_earned|trim_decimal }}/{{ block.breakdown.final_possible|trim_decimal }}</td>
-        <td class="px-2 py-2 text-center text-sm font-semibold text-gray-900" title="All terms">{{ block.breakdown.final_grade|grade_display }}</td>
+        <td class="border-l border-gray-100 bg-gray-100/70 px-2 py-1.5 text-center text-xs tabular-nums text-gray-600" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.final_earned|trim_decimal }}/{{ block.breakdown.final_possible|trim_decimal }}{% else %}—{% endif %}
+        </td>
+        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-sm font-semibold text-gray-900" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.final_grade|grade_display }}{% else %}—{% endif %}
+        </td>
     {% endfor %}
 
-    <td class="border-l border-gray-200 px-2 py-2 text-center text-sm font-semibold text-brand-primary-800" title="All terms">{{ row.result.running_grade|grade_display }}</td>
-    <td class="px-2 py-2 text-center">
-        {% with remarks=row.result.remarks %}
-        {% if remarks == "PASSED" %}
-        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Passed</span>
-        {% elif remarks == "FAILED" %}
-        <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Failed</span>
-        {% elif remarks == "ON_TRACK" %}
-        <span class="rounded-full border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700" title="Provisional — based on encoded items only">On track</span>
-        {% elif remarks == "AT_RISK" %}
-        <span class="rounded-full border border-amber-400 px-2 py-0.5 text-xs font-medium text-amber-700" title="Provisional — based on encoded items only">At risk</span>
-        {% elif remarks == "INC" %}
-        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title="{{ row.result.roster_entry.incomplete_reason }}">INC</span>
-        {% elif remarks == "DROPPED" %}
-        <span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Dropped</span>
-        {% else %}
-        <span class="text-xs text-gray-400">—</span>
-        {% endif %}
-        {% endwith %}
-        {% if can_edit and row.is_active %}
-        <button hx-get="{% url 'grading:mark_incomplete' row.result.roster_entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="mt-1 block text-[10px] text-gray-400 underline hover:text-gray-600">Mark INC</button>
-        {% endif %}
+    <td class="border-l border-gray-200 px-2 py-1.5 text-center text-sm font-bold tabular-nums {% if row.running_grade_over_threshold %}text-red-600{% else %}text-brand-primary-800{% endif %}" title="All terms">
+        {{ row.result.running_grade|grade_display }}
+    </td>
+    <td class="px-2 py-1.5">
+        <div class="flex items-center justify-center gap-1">
+            {% with remarks=row.result.remarks %}
+            {% if remarks == "PASSED" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-green-100 px-2 py-0.5 text-center text-xs font-medium text-green-700">Passed</span>
+            {% elif remarks == "FAILED" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-center text-xs font-medium text-red-700">Failed</span>
+            {% elif remarks == "ON_TRACK" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-green-300 px-2 py-0.5 text-center text-xs font-medium text-green-700" title="Provisional — based on encoded items only">On track</span>
+            {% elif remarks == "AT_RISK" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-amber-400 px-2 py-0.5 text-center text-xs font-medium text-amber-700" title="Provisional — based on encoded items only">At risk</span>
+            {% elif remarks == "INC" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-center text-xs font-medium text-amber-800" title="{{ row.result.roster_entry.incomplete_reason }}">INC</span>
+            {% elif remarks == "DROPPED" %}
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs font-medium text-gray-600">Dropped</span>
+            {% else %}
+            <span class="text-xs text-gray-400">—</span>
+            {% endif %}
+            {% endwith %}
+
+            {% if can_edit and row.is_active %}
+            <div x-data="{ open: false }" class="relative">
+                <button type="button" @click="open = !open" @click.outside="open = false"
+                        class="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600" title="Row actions">
+                    {% sidebar_icon "dots-vertical" "w-4 h-4" %}
+                </button>
+                <div x-show="open" x-cloak @click="open = false"
+                     class="absolute right-0 z-40 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg">
+                    <button hx-get="{% url 'grading:mark_incomplete' row.result.roster_entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                            class="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50">Mark INC</button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
     </td>
 </tr>

@@ -1,4 +1,4 @@
-from decimal import Decimal, InvalidOperation
+import re
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count
@@ -16,12 +16,27 @@ from core.htmx import is_htmx
 
 from .forms import AssessmentItemForm, GradingComponentForm, GradingTemplateForm, MarkIncompleteForm
 from .models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate, Score
-from .services import compute_class, compute_student, get_scheme_components, save_score
+from .services import PASSING_THRESHOLD, compute_class, compute_student, get_encoded_item_ids, get_scheme_components, save_score
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
 INSTRUCTOR = User.Role.INSTRUCTOR
 STUDENT = User.Role.STUDENT
+
+_WHOLE_NUMBER_RE = re.compile(r"^\d+$")
+
+
+def _parse_whole_number(raw_value):
+    """Blank -> (None, None). A non-negative integer string -> (int, None).
+    Anything else (decimals, negatives, letters) -> (None, "Whole numbers
+    only.") — scores/max-scores are whole numbers, matching CITCI's class
+    record; the above-max case is a separate message from save_score."""
+    raw_value = raw_value.strip()
+    if raw_value == "":
+        return None, None
+    if not _WHOLE_NUMBER_RE.match(raw_value):
+        return None, "Whole numbers only."
+    return int(raw_value), None
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +184,21 @@ def _item_columns(components, term_filter):
 def _build_class_record_context(class_offering, term_filter=None):
     results = compute_class(class_offering)
     components = get_scheme_components(class_offering)
-    columns = _item_columns(components, term_filter)
+
+    # A component with zero items anywhere is "not yet set up" — always
+    # hidden from the grid regardless of the term filter, and called out in
+    # a muted note above it. Computed independent of term_filter, otherwise
+    # a component that simply has no items *for the selected term* would be
+    # wrongly reported as unset-up.
+    not_yet_set_up = [col["component"] for col in _item_columns(components, None) if not col["items"]]
+
+    # Visible columns: filtered by term, then any component left with zero
+    # visible items (not set up at all, or just not in this term) is hidden
+    # — the info bar above the grid already explains totals include every
+    # term, so an empty column here would only be confusing clutter.
+    columns = [col for col in _item_columns(components, term_filter) if col["items"]]
     flat_item_ids = [item.id for col in columns for item in col["items"]]
+    encoded_item_ids = get_encoded_item_ids(flat_item_ids)
 
     scores_lookup = {}
     if flat_item_ids:
@@ -186,13 +214,15 @@ def _build_class_record_context(class_offering, term_filter=None):
         entry = result.roster_entry
         is_active = entry.status == ClassRosterEntry.Status.ACTIVE
         entry_index = active_entry_ids.index(entry.id) if is_active else None
+        breakdown_by_component_id = {b.component.id: b for b in result.components}
 
-        # One block per component: its column definition, this student's
-        # already-computed breakdown (for Total/Grade), and the editable
-        # score cells — bundled together so the row template never has to
-        # index two parallel lists by the same loop counter.
+        # One block per visible component: its column definition, this
+        # student's already-computed breakdown (for Total/Grade), and the
+        # editable score cells — bundled together so the row template never
+        # has to index two parallel lists by the same loop counter.
         component_blocks = []
-        for col, breakdown in zip(columns, result.components):
+        for col in columns:
+            breakdown = breakdown_by_component_id[col["component"].id]
             cells = []
             for item in col["items"]:
                 value = scores_lookup.get((entry.id, item.id))
@@ -200,6 +230,7 @@ def _build_class_record_context(class_offering, term_filter=None):
                     "item": item,
                     "value": value,
                     "cell_id": f"score-{entry.id}-{item.id}",
+                    "needs_score": value is None and item.id in encoded_item_ids,
                     "up": "",
                     "down": "",
                     "left": "",
@@ -218,12 +249,14 @@ def _build_class_record_context(class_offering, term_filter=None):
                 cells.append(cell)
             component_blocks.append({"component": col["component"], "breakdown": breakdown, "cells": cells})
 
+        running_grade = result.running_grade
         rows.append(
             {
                 "result": result,
                 "component_blocks": component_blocks,
                 "is_active": is_active,
                 "row_number": (entry_index + 1) if is_active else None,
+                "running_grade_over_threshold": running_grade is not None and running_grade > PASSING_THRESHOLD,
             }
         )
 
@@ -234,6 +267,7 @@ def _build_class_record_context(class_offering, term_filter=None):
         "rows": rows,
         "missing_count": missing_count,
         "selected_term_label": selected_term_label,
+        "not_yet_set_up": not_yet_set_up,
     }
 
 
@@ -406,16 +440,7 @@ def save_cell(request, roster_entry_pk, item_pk):
         raise PermissionDenied
     item = get_object_or_404(AssessmentItem, pk=item_pk, class_offering=class_offering)
 
-    raw_value = request.POST.get("value", "").strip()
-    error = None
-    if raw_value == "":
-        new_value = None
-    else:
-        try:
-            new_value = Decimal(raw_value)
-        except InvalidOperation:
-            new_value = None
-            error = "Enter a number."
+    new_value, error = _parse_whole_number(request.POST.get("value", ""))
 
     if error is None:
         _, error = save_score(roster_entry, item, new_value, request.user)
@@ -430,6 +455,7 @@ def save_cell(request, roster_entry_pk, item_pk):
             "row": row,
             "columns": record["columns"],
             "can_edit": True,
+            "saved_item_id": item.id if error is None else None,
             "term_filter": term_filter,
             "error_item_id": item.id if error else None,
             "error_message": error,

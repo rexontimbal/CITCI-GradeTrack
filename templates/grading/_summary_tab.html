@@ -45,7 +45,10 @@
             {% for result in summary.results %}
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 font-medium text-gray-900">{{ result.roster_entry.student.last_name }}, {{ result.roster_entry.student.first_name }}</td>
-                {% for breakdown in result.components %}<td class="px-4 py-3 text-gray-700">{{ breakdown.final_grade|grade_display }}</td>{% endfor %}
+                {% for col in record.columns %}
+                {% component_breakdown result col.component as breakdown %}
+                <td class="px-4 py-3 text-gray-700">{% if breakdown.running_included %}{{ breakdown.final_grade|grade_display }}{% else %}—{% endif %}</td>
+                {% endfor %}
                 <td class="px-4 py-3 font-semibold text-brand-primary-800">{{ result.running_grade|grade_display }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ result.remarks|default:"—" }}</td>
             </tr>

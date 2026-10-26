@@ -94,7 +94,7 @@ class Command(BaseCommand):
                     class_offering=class_offering,
                     component=scheme_component,
                     title=f"{name[:1]}{i + 1}" if name != "Examination" else ["Prelim Exam", "Midterm Exam", "Semi-Final Exam", "Final Exam"][i],
-                    defaults={"max_score": Decimal(str(max_score)), "term": term, "order": i},
+                    defaults={"max_score": max_score, "term": term, "order": i},
                 )
                 items.append(item)
             items_by_component[name] = items
@@ -117,5 +117,5 @@ class Command(BaseCommand):
                     if skip_final_exam and item is final_exam_item:
                         continue  # left blank on purpose to demo the running grade
                     fraction = rng.uniform(*score_range)
-                    value = (Decimal(str(round(fraction, 4))) * item.max_score).quantize(Decimal("0.01"))
+                    value = max(0, min(item.max_score, round(fraction * item.max_score)))
                     save_score(roster_entry, item, value, instructor)

@@ -20,6 +20,15 @@ def dict_get(d, key):
     return d.get(key)
 
 
+@register.simple_tag
+def component_breakdown(result, component):
+    """Find a StudentGradeResult's ComponentBreakdown for a given (scheme)
+    component — used wherever a table's columns are the *visible* (set-up)
+    components but a result's `.components` list still covers every
+    component, so a plain zip()/index lookup would misalign."""
+    return next((b for b in result.components if b.component.id == component.id), None)
+
+
 @register.filter
 def trim_decimal(value):
     """Strip unnecessary trailing zeros from a weight/score/max-score Decimal

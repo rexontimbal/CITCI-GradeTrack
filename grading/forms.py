@@ -53,6 +53,8 @@ GradingComponentFormSet = forms.inlineformset_factory(
 
 
 class AssessmentItemForm(StyledModelForm):
+    max_score = forms.IntegerField(min_value=1, label="Max Score", help_text="Whole numbers only.")
+
     class Meta:
         model = AssessmentItem
         fields = ["component", "title", "max_score", "term", "date", "order"]

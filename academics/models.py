@@ -69,7 +69,7 @@ class Program(TimeStampedModel):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={"role": User.Role.PROGRAM_HEAD},
+        limit_choices_to={"role": User.Role.PROGRAM_HEAD, "is_active": True},
         related_name="headed_programs",
     )
     is_active = models.BooleanField(default=True)

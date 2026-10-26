@@ -55,9 +55,6 @@ urlpatterns = [
     path("my-classes/", views.my_classes, name="my_classes"),
     path("program-head/classes/", views.program_head_classes, name="program_head_classes"),
 
-    # Students (read-only, admin)
-    path("students/", views.StudentListView.as_view(), name="students"),
-
     # Class Lists (admin) — CITCI GradeTrack does not handle enrollment;
     # this only manages each class's official roster for grading.
     path("class-lists/", views.class_lists_home, name="class_lists"),
@@ -76,4 +73,8 @@ urlpatterns = [
     path("class-lists/import/template/", views.class_list_import_template, name="class_list_import_template"),
     path("classes/<int:pk>/import/", views.class_list_import_upload, name="class_list_import_upload"),
     path("classes/<int:pk>/import/confirm/", views.class_list_import_confirm, name="class_list_import_confirm"),
+
+    # Searchable-select endpoints
+    path("search/instructors/", views.instructor_search, name="instructor_search"),
+    path("search/classes/", views.class_search, name="class_search"),
 ]

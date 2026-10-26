@@ -26,8 +26,8 @@ def _active_semester():
 def _admin_dashboard(request):
     active = _active_semester()
     context = {
-        "total_students": User.objects.filter(role=User.Role.STUDENT).count(),
-        "total_instructors": User.objects.filter(role=User.Role.INSTRUCTOR).count(),
+        "total_students": User.objects.filter(role=User.Role.STUDENT, is_active=True).count(),
+        "total_instructors": User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True).count(),
         "active_classes": ClassOffering.objects.filter(semester=active).count() if active else 0,
         "total_programs": Program.objects.count(),
     }

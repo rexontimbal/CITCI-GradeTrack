@@ -1,0 +1,127 @@
+{% load sidebar_icons %}
+<div x-data="{ role: '{{ selected_role|default:form.role.value|default:"" }}' }">
+    <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+        <h3 class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
+        <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+            {% sidebar_icon "close" "w-5 h-5" %}
+        </button>
+    </div>
+
+    <form method="post" hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div>
+            <label for="id_role" class="mb-1 block text-sm font-medium text-gray-700">Role</label>
+            <select name="role" id="id_role" x-model="role"
+                    hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="">— Select a role —</option>
+                {% for value, label in form.fields.role.choices %}
+                {% if value %}<option value="{{ value }}" {% if form.role.value == value %}selected{% endif %}>{{ label }}</option>{% endif %}
+                {% endfor %}
+            </select>
+            {% for error in form.role.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label for="{{ form.id_number.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">ID Number</label>
+                {{ form.id_number }}
+                {% for error in form.id_number.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+            </div>
+            <div x-show="role && role !== 'STUDENT'" x-cloak>
+                <label for="{{ form.username.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Username</label>
+                <div class="flex gap-2">
+                    {{ form.username }}
+                    <button type="button" title="Suggest from surname"
+                            @click="document.getElementById('{{ form.username.id_for_label }}').value = document.getElementById('{{ form.last_name.id_for_label }}').value.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user'"
+                            class="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+                        Suggest
+                    </button>
+                </div>
+                {% if form.username.help_text %}<p class="mt-1 text-xs text-gray-500">{{ form.username.help_text }}</p>{% endif %}
+                {% for error in form.username.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label for="{{ form.last_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Last Name</label>
+                {{ form.last_name }}
+            </div>
+            <div>
+                <label for="{{ form.first_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">First Name</label>
+                {{ form.first_name }}
+            </div>
+            <div>
+                <label for="{{ form.middle_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Middle Name</label>
+                {{ form.middle_name }}
+            </div>
+        </div>
+
+        <div>
+            <label for="{{ form.email.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Email (optional)</label>
+            {{ form.email }}
+            {% for error in form.email.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        </div>
+
+        <div x-show="role === 'STUDENT'" x-cloak class="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="id_program" class="mb-1 block text-sm font-medium text-gray-700">Program</label>
+                    <select name="program" id="id_program"
+                            hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
+                            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                        <option value="">— Select a program —</option>
+                        {% for p in form.fields.program.queryset %}
+                        <option value="{{ p.pk }}" {% if form.program.value|stringformat:"s" == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.code }}</option>
+                        {% endfor %}
+                    </select>
+                    {% for error in form.program.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="id_major" class="mb-1 block text-sm font-medium text-gray-700">Major (if any)</label>
+                    <select name="major" id="id_major"
+                            hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
+                            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                        <option value="">— None —</option>
+                        {% for m in form.fields.major.queryset %}
+                        <option value="{{ m.pk }}" {% if form.major.value|stringformat:"s" == m.pk|stringformat:"s" %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="id_year_level" class="mb-1 block text-sm font-medium text-gray-700">Year Level</label>
+                    <select name="year_level" id="id_year_level"
+                            hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
+                            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                        <option value="">—</option>
+                        <option value="1" {% if form.year_level.value == "1" %}selected{% endif %}>1st Year</option>
+                        <option value="2" {% if form.year_level.value == "2" %}selected{% endif %}>2nd Year</option>
+                        <option value="3" {% if form.year_level.value == "3" %}selected{% endif %}>3rd Year</option>
+                        <option value="4" {% if form.year_level.value == "4" %}selected{% endif %}>4th Year</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="{{ form.section.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Section</label>
+                    {{ form.section }}
+                    {% for error in form.section.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Save
+            </button>
+        </div>
+    </form>
+</div>

@@ -32,7 +32,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.forms",  # needed so FORM_RENDERER=TemplatesSetting can still find Django's own widget templates
     "django_tailwind_cli",
+    "axes",
     # CITCI GradeTrack apps
     "core",
     "accounts",
@@ -53,6 +55,12 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "accounts.middleware.ForceFirstLoginStepsMiddleware",
+    "axes.middleware.AxesMiddleware",
+]
+
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",  # must be first — enforces the lockout
+    "django.contrib.auth.backends.ModelBackend",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -125,6 +133,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Form widget templates (e.g. core.widgets.SearchableSelectWidget) live under
+# templates/partials/ like everything else — Django's default form renderer
+# uses its own template engine that ignores TEMPLATES[0]['DIRS'], so without
+# this it can't find them (TemplateDoesNotExist) even though regular views can.
+FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
+
 
 # Auth redirects
 LOGIN_URL = "accounts:login"
@@ -137,3 +151,21 @@ LOGOUT_REDIRECT_URL = "accounts:login"
 TAILWIND_CLI_VERSION = "4.1.3"
 TAILWIND_CLI_SRC_CSS = BASE_DIR / ".django_tailwind_cli" / "source.css"
 TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
+
+
+# django-axes — lock an account out for 15 minutes after 5 failed logins (RA 10173
+# login-security requirement). Locks by username, not IP, so a shared campus IP
+# can't lock other students out. Admin can clear a lockout from the user's row
+# ("Unlock" action — see accounts.views.unlock_user).
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 0.25  # hours = 15 minutes
+AXES_LOCKOUT_PARAMETERS = ["username"]
+AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
+AXES_LOCKOUT_TEMPLATE = "accounts/locked_out.html"
+
+
+# Session: expires after 30 minutes of inactivity (SAVE_EVERY_REQUEST slides the
+# expiry forward on each request) and when the browser closes.
+SESSION_COOKIE_AGE = 60 * 30
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True

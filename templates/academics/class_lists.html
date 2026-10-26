@@ -3,15 +3,19 @@
 {% block content %}
 {% include "partials/_page_header.html" with title="Class Lists" subtitle="Pick a class to manage its official student list for grading." %}
 
-<div class="mb-4 max-w-md">
-    <label class="mb-1 block text-sm font-medium text-gray-700">Class</label>
-    <select name="class" hx-get="{% url 'academics:class_lists' %}" hx-target="#roster-container" hx-swap="outerHTML" hx-trigger="change"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-        <option value="">— Select a class —</option>
-        {% for c in classes %}
-        <option value="{{ c.pk }}" {% if selected_class.pk == c.pk %}selected{% endif %}>{{ c }} ({{ c.semester }})</option>
-        {% endfor %}
-    </select>
+<div class="mb-4 flex max-w-lg items-end gap-2">
+    <div class="flex-1">
+        <label class="mb-1 block text-sm font-medium text-gray-700">Class</label>
+        {% if selected_class %}
+        {% include "partials/_searchable_select_widget.html" with widget_name="class" widget_id="class-picker" search_url=class_search_url selected_value=selected_class.pk selected_label=selected_class|stringformat:"s" %}
+        {% else %}
+        {% include "partials/_searchable_select_widget.html" with widget_name="class" widget_id="class-picker" search_url=class_search_url selected_value="" selected_label="" %}
+        {% endif %}
+    </div>
+    <button hx-get="{% url 'academics:class_lists' %}" hx-include="[name='class']" hx-target="#roster-container" hx-swap="outerHTML"
+            class="shrink-0 rounded-lg bg-brand-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+        View
+    </button>
 </div>
 
 {% include "academics/_class_list_roster.html" %}

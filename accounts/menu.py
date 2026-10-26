@@ -30,7 +30,7 @@ MENUS = {
         {
             "label": "Management",
             "items": [
-                ("academics:students", "Users", "users"),
+                ("accounts:users", "Users", "users"),
                 ("grading:templates", "Grading Templates", "sliders"),
                 ("forecasting:model", "Forecast Model", "chart"),
             ],

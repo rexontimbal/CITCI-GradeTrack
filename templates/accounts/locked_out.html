@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load static %}
+{% block page_title %}Account Locked{% endblock %}
+{% block guest_content %}
+<div class="flex min-h-full items-center justify-center bg-gray-100 px-4 py-12">
+    <div class="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+        <div class="mb-6 flex flex-col items-center text-center">
+            <img src="{% static 'img/citci-logo.png' %}" alt="CITCI logo" class="mb-4 h-16 w-16 rounded-full object-cover">
+            <h1 class="text-xl font-bold text-gray-900">Account Temporarily Locked</h1>
+        </div>
+
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Too many failed login attempts. For your security, this account is locked for about
+            15 minutes. Please try again later, or ask your administrator to unlock it.
+        </div>
+
+        <a href="{% url 'accounts:login' %}" class="mt-6 block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Back to Login
+        </a>
+    </div>
+</div>
+{% endblock %}

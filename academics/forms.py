@@ -1,6 +1,9 @@
 from django import forms
+from django.urls import reverse_lazy
 
+from accounts.models import User
 from core.forms import StyledModelForm
+from core.widgets import SearchableSelectWidget
 
 from .models import AcademicYear, ClassOffering, Major, Program, Section, Semester, Subject
 
@@ -50,6 +53,14 @@ class ClassOfferingForm(StyledModelForm):
         queryset=Section.objects.select_related("program", "major"),
         widget=forms.SelectMultiple(attrs={"size": 6}),
         help_text="Select every section this class serves (hold Ctrl/Cmd to pick more than one).",
+    )
+    instructor = forms.ModelChoiceField(
+        queryset=User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True),
+        required=False,
+        widget=SearchableSelectWidget(
+            search_url=reverse_lazy("academics:instructor_search"),
+            queryset=User.objects.filter(role=User.Role.INSTRUCTOR),
+        ),
     )
 
     class Meta:

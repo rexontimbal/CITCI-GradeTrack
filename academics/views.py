@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.views import View
 
 from accounts.decorators import role_required
@@ -23,7 +24,6 @@ from .models import (
     Program,
     Section,
     Semester,
-    StudentProfile,
     Subject,
 )
 from .roster_import import RosterImportError, build_preview, commit_import, parse_roster_file
@@ -468,39 +468,6 @@ def program_head_classes(request):
 
 
 # ---------------------------------------------------------------------------
-# Students (read-only list, reached from the admin "Users" menu item until
-# full user management is built in a later phase)
-# ---------------------------------------------------------------------------
-
-
-class StudentListView(RoleRequiredMixin, EntityListView):
-    allowed_roles = (ADMIN,)
-    model = StudentProfile
-    list_template = "academics/students.html"
-    table_template = "academics/_students_table.html"
-    table_id = "students-table"
-    page_title = "Students"
-    search_fields = ["user__first_name__icontains", "user__last_name__icontains", "user__id_number__icontains"]
-    refresh_event = "refreshStudents"
-
-    def apply_filters(self, request, qs):
-        qs = qs.select_related("user", "program", "major", "section")
-        program = request.GET.get("program")
-        year_level = request.GET.get("year_level")
-        section = request.GET.get("section")
-        if program:
-            qs = qs.filter(program_id=program)
-        if year_level:
-            qs = qs.filter(year_level=year_level)
-        if section:
-            qs = qs.filter(section_id=section)
-        return qs
-
-    def get_extra_context(self, request):
-        return {"programs": Program.objects.all(), "sections": Section.objects.select_related("program")}
-
-
-# ---------------------------------------------------------------------------
 # Class Lists (admin) — pick a class, manage its roster. CITCI GradeTrack
 # does not handle enrollment (that's the Registrar's process); this only
 # stores each class's official student list for grading.
@@ -517,20 +484,21 @@ def _roster_context(class_offering):
 @role_required(ADMIN)
 def class_lists_home(request):
     active = Semester.objects.filter(is_active=True).first()
-    classes = ClassOffering.objects.select_related("subject").prefetch_related("sections").order_by(
-        "-semester__academic_year__start_year", "subject__code"
-    )
     class_id = request.GET.get("class")
     class_offering = None
     if class_id:
         class_offering = get_object_or_404(ClassOffering, pk=class_id)
     elif active:
-        class_offering = classes.filter(semester=active).first()
+        class_offering = (
+            ClassOffering.objects.filter(semester=active)
+            .order_by("-semester__academic_year__start_year", "subject__code")
+            .first()
+        )
 
     context = {
         "page_title": "Class Lists",
-        "classes": classes,
         "selected_class": class_offering,
+        "class_search_url": reverse("academics:class_search"),
     }
     if class_offering:
         context.update(_roster_context(class_offering))
@@ -570,11 +538,15 @@ def class_list_add_students_form(request, pk):
         .exclude(id__in=already_listed_ids)
         .order_by("last_name", "first_name")
     )
-    return render(
-        request,
-        "academics/_class_list_add_students_modal.html",
-        {"class_offering": class_offering, "available_students": available_students},
-    )
+    query = request.GET.get("q", "").strip()
+    if query:
+        available_students = available_students.filter(
+            Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(id_number__icontains=query)
+        )
+    context = {"class_offering": class_offering, "available_students": available_students[:50], "query": query}
+    if is_htmx(request) and "q" in request.GET:
+        return render(request, "academics/_class_list_students_checklist.html", context)
+    return render(request, "academics/_class_list_add_students_modal.html", context)
 
 
 @role_required(ADMIN)
@@ -706,3 +678,29 @@ def class_list_import_confirm(request, pk):
     # refreshRoster is picked up both by the Class Lists page's #roster-container
     # and by class_roster.html (read-only roster, reloads itself on this event).
     return trigger_response("refreshRoster")
+
+
+# ---------------------------------------------------------------------------
+# Searchable-select endpoints (core.widgets.SearchableSelectWidget) — each
+# renders partials/_searchable_select_options.html with a list of (pk, label).
+# ---------------------------------------------------------------------------
+
+
+@role_required(ADMIN)
+def instructor_search(request):
+    query = request.GET.get("q", "").strip()
+    qs = User.objects.filter(role=INSTRUCTOR, is_active=True)
+    if query:
+        qs = qs.filter(Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(username__icontains=query))
+    options = [(u.pk, u.full_name) for u in qs.order_by("last_name", "first_name")[:20]]
+    return render(request, "partials/_searchable_select_options.html", {"options": options})
+
+
+@role_required(ADMIN)
+def class_search(request):
+    query = request.GET.get("q", "").strip()
+    qs = ClassOffering.objects.select_related("subject").prefetch_related("sections")
+    if query:
+        qs = qs.filter(Q(subject__code__icontains=query) | Q(subject__title__icontains=query))
+    options = [(c.pk, str(c)) for c in qs.order_by("-semester__academic_year__start_year", "subject__code")[:20]]
+    return render(request, "partials/_searchable_select_options.html", {"options": options})

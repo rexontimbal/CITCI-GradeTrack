@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Users{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Users" subtitle="Manage every account — admins, program heads, instructors, and students." %}
+
+<div class="mb-4 flex flex-wrap justify-end gap-2">
+    <button hx-get="{% url 'accounts:import_students' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Import Students
+    </button>
+    <button hx-get="{% url 'accounts:import_instructors' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Import Instructors
+    </button>
+    <button hx-get="{% url 'accounts:user_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        {% sidebar_icon "plus" "w-4 h-4" %} Add User
+    </button>
+</div>
+
+{% include table_template %}
+{% endblock %}

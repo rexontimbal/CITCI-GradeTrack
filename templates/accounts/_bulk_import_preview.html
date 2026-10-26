@@ -1,0 +1,75 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">
+        Preview — {% if kind == "students" %}Students{% else %}Instructors{% endif %}
+    </h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<div class="mt-4 space-y-4">
+    <div class="grid grid-cols-3 gap-2 text-sm">
+        <div class="rounded-lg bg-green-50 px-3 py-2 text-green-800"><strong>{{ new_count }}</strong> new</div>
+        <div class="rounded-lg bg-blue-50 px-3 py-2 text-blue-800"><strong>{{ update_count }}</strong> will update</div>
+        <div class="rounded-lg bg-red-50 px-3 py-2 text-red-700"><strong>{{ invalid_count }}</strong> invalid</div>
+    </div>
+
+    <div class="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-3 py-2">Row</th>
+                    <th class="px-3 py-2">ID Number</th>
+                    <th class="px-3 py-2">Name</th>
+                    <th class="px-3 py-2">Result</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for row in preview %}
+                <tr>
+                    <td class="px-3 py-2 text-gray-500">{{ row.row_number }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ row.id_number|default:"—" }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ row.last_name }}{% if row.last_name %}, {% endif %}{{ row.first_name }} {{ row.middle_name }}</td>
+                    <td class="px-3 py-2">
+                        {% if row.kind == "new" %}
+                        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">New</span>
+                        {% elif row.kind == "update" %}
+                        <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Will update</span>
+                        {% else %}
+                        <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700" title="{{ row.reason }}">Invalid</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if new_count or update_count %}
+    <form action="{% if kind == 'students' %}{% url 'accounts:import_students_confirm' %}{% else %}{% url 'accounts:import_instructors_confirm' %}{% endif %}"
+          method="post" target="_blank"
+          onsubmit="setTimeout(() => { modalOpen = false; htmx.trigger(document.body, 'refreshUsers'); }, 300)">
+        {% csrf_token %}
+        <p class="text-xs text-gray-500">
+            Confirming downloads an .xlsx of temporary passwords for any newly created accounts — it's generated
+            once and not stored anywhere, so save it now.
+        </p>
+        <div class="mt-3 flex justify-end gap-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Confirm Import
+            </button>
+        </div>
+    </form>
+    {% else %}
+    <p class="text-sm text-gray-500">Nothing to import — fix the invalid rows and upload again.</p>
+    <div class="flex justify-end">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Close
+        </button>
+    </div>
+    {% endif %}
+</div>

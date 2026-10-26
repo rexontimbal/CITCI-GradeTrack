@@ -1,0 +1,7 @@
+{% for pk, label in options %}
+<div data-option @click="select('{{ pk }}', '{{ label|escapejs }}')" class="cursor-pointer px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
+    {{ label }}
+</div>
+{% empty %}
+<div class="px-3 py-2 text-sm text-gray-400">No matches.</div>
+{% endfor %}

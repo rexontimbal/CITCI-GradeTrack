@@ -141,7 +141,7 @@ class ClassListTests(TestCase):
         # pre-add one student manually
         ClassRosterEntry.objects.create(student=self.students_in_section[0], class_offering=self.class_offering)
 
-        self.client.login(username="admin1", password="pw12345!")
+        self.client.force_login(User.objects.get(username="admin1"))
         response = self.client.post(
             reverse("academics:class_list_add_section", args=[self.class_offering.pk]),
             {"section": self.section.pk},
@@ -158,7 +158,7 @@ class ClassListTests(TestCase):
     def test_mark_dropped_keeps_the_roster_record(self):
         entry = ClassRosterEntry.objects.create(student=self.students_in_section[0], class_offering=self.class_offering)
 
-        self.client.login(username="admin1", password="pw12345!")
+        self.client.force_login(User.objects.get(username="admin1"))
         self.client.post(reverse("academics:class_list_mark_dropped", args=[entry.pk]))
 
         entry.refresh_from_db()
@@ -173,7 +173,7 @@ class ClassListTests(TestCase):
             status=ClassRosterEntry.Status.DROPPED,
             date_dropped=date.today(),
         )
-        self.client.login(username="admin1", password="pw12345!")
+        self.client.force_login(User.objects.get(username="admin1"))
         self.client.post(reverse("academics:class_list_restore", args=[entry.pk]))
 
         entry.refresh_from_db()
@@ -207,7 +207,7 @@ class SharedClassTests(TestCase):
 
     def test_shared_class_roster_includes_students_from_both_sections(self):
         admin = make_user(User.Role.ADMIN, "admin_shared")
-        self.client.login(username="admin_shared", password="pw12345!")
+        self.client.force_login(User.objects.get(username="admin_shared"))
         response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
@@ -240,17 +240,17 @@ class RoleAndObjectLevelAccessTests(TestCase):
         self.student = make_user(User.Role.STUDENT, "stud_role_test")
 
     def test_student_gets_403_on_admin_classes_page(self):
-        self.client.login(username="stud_role_test", password="pw12345!")
+        self.client.force_login(User.objects.get(username="stud_role_test"))
         response = self.client.get(reverse("academics:classes"))
         self.assertEqual(response.status_code, 403)
 
     def test_instructor_cannot_open_another_instructors_roster(self):
-        self.client.login(username="inst2", password="pw12345!")
+        self.client.force_login(User.objects.get(username="inst2"))
         response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 403)
 
     def test_owning_instructor_can_open_their_own_roster(self):
-        self.client.login(username="inst1", password="pw12345!")
+        self.client.force_login(User.objects.get(username="inst1"))
         response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
 
@@ -259,19 +259,19 @@ class RoleAndObjectLevelAccessTests(TestCase):
         other_class = ClassOffering.objects.create(subject=other_subject, semester=self.semester, instructor=self.instructor2)
         other_class.sections.set([self.section])
 
-        self.client.login(username="inst1", password="pw12345!")
+        self.client.force_login(User.objects.get(username="inst1"))
         response = self.client.get(reverse("academics:my_classes"))
         body = response.content.decode()
         self.assertIn("IT101", body)
         self.assertNotIn("IT102", body)
 
     def test_program_head_cannot_open_another_programs_class(self):
-        self.client.login(username="ph_other", password="pw12345!")
+        self.client.force_login(User.objects.get(username="ph_other"))
         response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 403)
 
     def test_owning_program_head_can_open_the_roster(self):
-        self.client.login(username="ph_owner", password="pw12345!")
+        self.client.force_login(User.objects.get(username="ph_owner"))
         response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
 

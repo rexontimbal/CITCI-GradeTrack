@@ -1,70 +1,25 @@
-"""Parsing + preview logic for the "Import class list" feature. CITCI
+"""Preview + commit logic for the "Import class list" feature. CITCI
 GradeTrack doesn't handle enrollment — this just turns a Registrar-exported
 spreadsheet (ID Number, Last Name, First Name, Middle Name) into roster
-rows, matching existing students by ID number and flagging new ones."""
+rows, matching existing students by ID number and flagging new ones.
+File parsing itself is shared — see core.importing."""
 
-import csv
-import io
-
-import openpyxl
 from django.utils.crypto import get_random_string
 
 from accounts.models import User
+from core.importing import SpreadsheetImportError, get_cell, parse_spreadsheet_file  # noqa: F401 (re-exported)
 
 from .models import ClassRosterEntry, StudentProfile
 
 REQUIRED_HEADERS = ["id number", "last name", "first name"]
 OPTIONAL_HEADERS = ["middle name"]
 
-
-class RosterImportError(Exception):
-    pass
-
-
-def _read_xlsx_rows(file_obj):
-    workbook = openpyxl.load_workbook(file_obj, data_only=True)
-    sheet = workbook.active
-    rows = list(sheet.iter_rows(values_only=True))
-    return rows
-
-
-def _read_csv_rows(file_obj):
-    text = file_obj.read().decode("utf-8-sig")
-    return list(csv.reader(io.StringIO(text)))
-
-
-def _normalize_header(cell):
-    return str(cell or "").strip().lower()
+# Backwards-compatible alias (this module used to raise its own exception type).
+RosterImportError = SpreadsheetImportError
 
 
 def parse_roster_file(uploaded_file):
-    """Returns (header_index_map, data_rows) or raises RosterImportError."""
-    name = uploaded_file.name.lower()
-    if name.endswith(".xlsx"):
-        rows = _read_xlsx_rows(uploaded_file)
-    elif name.endswith(".csv"):
-        rows = _read_csv_rows(uploaded_file)
-    else:
-        raise RosterImportError("Only .xlsx or .csv files are supported.")
-
-    if not rows:
-        raise RosterImportError("The file is empty.")
-
-    header = [_normalize_header(c) for c in rows[0]]
-    index = {}
-    for wanted in REQUIRED_HEADERS + OPTIONAL_HEADERS:
-        if wanted in header:
-            index[wanted] = header.index(wanted)
-
-    missing = [h for h in REQUIRED_HEADERS if h not in index]
-    if missing:
-        raise RosterImportError(
-            f"Missing required column(s): {', '.join(h.title() for h in missing)}. "
-            f"Expected a header row with: ID Number, Last Name, First Name, Middle Name."
-        )
-
-    data_rows = rows[1:]
-    return index, data_rows
+    return parse_spreadsheet_file(uploaded_file, REQUIRED_HEADERS, OPTIONAL_HEADERS)
 
 
 def build_preview(class_offering, index, data_rows):
@@ -79,16 +34,10 @@ def build_preview(class_offering, index, data_rows):
         if row is None or not any(row):
             continue
 
-        def cell(key):
-            idx = index.get(key)
-            if idx is None or idx >= len(row):
-                return ""
-            return str(row[idx] or "").strip()
-
-        id_number = cell("id number")
-        last_name = cell("last name")
-        first_name = cell("first name")
-        middle_name = cell("middle name")
+        id_number = get_cell(row, index, "id number")
+        last_name = get_cell(row, index, "last name")
+        first_name = get_cell(row, index, "first name")
+        middle_name = get_cell(row, index, "middle name")
 
         entry = {
             "row_number": row_number,

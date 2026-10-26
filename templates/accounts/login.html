@@ -19,33 +19,33 @@
 
         <div class="relative z-10 flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] motion-safe:animate-fade-in-up-sm md:h-[500px] md:flex-row {% if form.errors %}motion-safe:animate-shake{% endif %}">
 
-            {# ---- Left half: CITCI gold panel ------------------------------ #}
-            <div class="relative flex h-[180px] shrink-0 flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-brand-accent-400 to-brand-accent-500 px-6 py-8 md:h-auto md:w-[45%] md:py-12">
+            {# ---- Left half: CITCI blue panel ------------------------------ #}
+            <div class="relative flex h-[180px] shrink-0 flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-brand-primary-600 to-brand-primary-800 px-6 py-8 md:h-auto md:w-[45%] md:py-12">
 
-                {# Layered wave decorations, top and bottom. #}
-                <svg class="pointer-events-none absolute inset-x-0 top-0 h-24 w-full text-white" viewBox="0 0 500 120" preserveAspectRatio="none" aria-hidden="true">
-                    <path d="M0,0 L0,55 C120,95 260,15 500,65 L500,0 Z" fill="currentColor" fill-opacity="0.10"></path>
-                    <path d="M0,0 L0,35 C170,85 330,5 500,45 L500,0 Z" fill="currentColor" fill-opacity="0.14"></path>
-                    <path d="M0,0 L0,18 C200,55 300,0 500,22 L500,0 Z" fill="currentColor" fill-opacity="0.18"></path>
+                {# Layered wave decorations, top and bottom — lighter blues on the navy. #}
+                <svg class="pointer-events-none absolute inset-x-0 top-0 h-24 w-full" viewBox="0 0 500 120" preserveAspectRatio="none" aria-hidden="true">
+                    <path d="M0,0 L0,55 C120,95 260,15 500,65 L500,0 Z" class="fill-brand-primary-400" fill-opacity="0.15"></path>
+                    <path d="M0,0 L0,35 C170,85 330,5 500,45 L500,0 Z" class="fill-brand-primary-400" fill-opacity="0.22"></path>
+                    <path d="M0,0 L0,18 C200,55 300,0 500,22 L500,0 Z" class="fill-brand-primary-500" fill-opacity="0.30"></path>
                 </svg>
-                <svg class="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full text-white" viewBox="0 0 500 120" preserveAspectRatio="none" aria-hidden="true">
-                    <path d="M0,120 L0,65 C140,25 260,105 500,55 L500,120 Z" fill="currentColor" fill-opacity="0.10"></path>
-                    <path d="M0,120 L0,85 C180,35 320,115 500,75 L500,120 Z" fill="currentColor" fill-opacity="0.14"></path>
-                    <path d="M0,120 L0,102 C220,75 300,120 500,98 L500,120 Z" fill="currentColor" fill-opacity="0.18"></path>
+                <svg class="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full" viewBox="0 0 500 120" preserveAspectRatio="none" aria-hidden="true">
+                    <path d="M0,120 L0,65 C140,25 260,105 500,55 L500,120 Z" class="fill-brand-primary-400" fill-opacity="0.15"></path>
+                    <path d="M0,120 L0,85 C180,35 320,115 500,75 L500,120 Z" class="fill-brand-primary-400" fill-opacity="0.22"></path>
+                    <path d="M0,120 L0,102 C220,75 300,120 500,98 L500,120 Z" class="fill-brand-primary-500" fill-opacity="0.30"></path>
                 </svg>
 
-                {# Sparkle stars scattered around the seal. #}
-                <svg class="pointer-events-none absolute left-[6%] top-[16%] h-4 w-4 text-white/90 md:left-[18%] md:top-[16%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
+                {# Sparkle stars scattered around the seal — mostly white, one gold. #}
+                <svg class="pointer-events-none absolute left-[6%] top-[16%] h-4 w-4 text-white/80 md:left-[18%] md:top-[16%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
                 <svg class="pointer-events-none absolute right-[6%] top-[26%] h-3 w-3 text-white/70 md:right-[14%] md:top-[26%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
-                <svg class="pointer-events-none absolute left-[8%] bottom-[12%] h-3 w-3 text-brand-primary-900/20 md:left-[22%] md:bottom-[22%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
+                <svg class="pointer-events-none absolute left-[8%] bottom-[12%] h-3 w-3 text-brand-accent-400/90 md:left-[22%] md:bottom-[22%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
                 <svg class="pointer-events-none absolute right-[8%] bottom-[12%] h-4 w-4 text-white/80 md:right-[20%] md:bottom-[20%]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 L14.3 9.7 L22 12 L14.3 14.3 L12 22 L9.7 14.3 L2 12 L9.7 9.7 Z"></path></svg>
 
                 <div class="relative z-10 flex flex-col items-center text-center">
-                    <div class="mb-4 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-white shadow-lg md:h-[120px] md:w-[120px]">
+                    <div class="mb-4 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-white shadow-lg ring-2 ring-brand-accent-400 md:h-[120px] md:w-[120px] md:ring-[3px]">
                         <img src="{% static 'img/citci-seal-256.png' %}" alt="CITCI seal" class="h-[56px] w-[56px] md:h-[96px] md:w-[96px]">
                     </div>
-                    <h1 class="text-base font-bold uppercase tracking-wider text-brand-primary-900 md:text-xl">CITCI GradeTrack</h1>
-                    <p class="mt-2 max-w-[220px] text-xs leading-snug text-brand-primary-900/70">
+                    <h1 class="text-base font-bold uppercase tracking-wider text-white md:text-xl">CITCI GradeTrack</h1>
+                    <p class="mt-2 max-w-[220px] text-xs leading-snug text-brand-primary-100/90">
                         Candelaria Institute of Technology of Cabadbaran, Inc.
                     </p>
                 </div>

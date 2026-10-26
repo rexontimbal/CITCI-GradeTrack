@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import User
@@ -77,6 +78,7 @@ class Command(BaseCommand):
         classes = self._seed_classes(classes_data, subjects, sections, instructors, first_sem, second_sem)
         students = self._seed_students(bsed, tcp, eng_major, ss_major, sections)
         self._seed_rosters(students, sections, classes)
+        call_command("seed_grading_demo")
 
         self.stdout.write(self.style.SUCCESS("\nCITCI academic data ready."))
 
@@ -141,6 +143,20 @@ class Command(BaseCommand):
         for name in names:
             if name in mapping:
                 continue
+
+            # Match an instructor already seeded by a previous run before
+            # generating a new username — otherwise re-running this command
+            # creates suffixed duplicates (garibay2, garibay3, ...) instead
+            # of reusing the account from the last run.
+            existing = (
+                User.objects.filter(role=User.Role.INSTRUCTOR, first_name="", last_name=name)
+                .exclude(username="instructor")
+                .first()
+            )
+            if existing:
+                mapping[name] = existing
+                continue
+
             username = slugify_username(name, taken_usernames)
             user, _ = User.objects.update_or_create(
                 username=username,

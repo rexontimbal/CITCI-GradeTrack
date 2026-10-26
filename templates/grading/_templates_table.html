@@ -1,0 +1,71 @@
+{% load sidebar_icons %}
+<div id="{{ table_id }}">
+    {% if page_obj.object_list %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Name</th>
+                    <th class="px-4 py-3">Weight Total</th>
+                    <th class="px-4 py-3">Classes Using It</th>
+                    <th class="px-4 py-3">Default</th>
+                    <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for tpl in page_obj %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">
+                        <a href="{% url 'grading:template_components' tpl.pk %}" class="hover:underline">{{ tpl.name }}</a>
+                        {% if tpl.description %}<p class="text-xs font-normal text-gray-500">{{ tpl.description }}</p>{% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if tpl.weight_total == 100 %}
+                        <span class="font-medium text-gray-900">{{ tpl.weight_total }}%</span>
+                        {% else %}
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title="Must total 100% before it can be applied to a class">{{ tpl.weight_total }}% — fix</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-gray-700">{{ tpl.classes_count }}</td>
+                    <td class="px-4 py-3">
+                        {% if tpl.is_default %}
+                        <span class="rounded-full bg-brand-accent-100 px-2 py-0.5 text-xs font-medium text-brand-primary-800">Default</span>
+                        {% else %}
+                        <button hx-post="{% url 'grading:template_set_default' tpl.pk %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
+                                class="text-xs font-medium text-gray-500 underline hover:text-brand-primary-700">Set as default</button>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if tpl.is_active %}
+                        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                        {% else %}
+                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex justify-end gap-1">
+                            <a href="{% url 'grading:template_components' tpl.pk %}"
+                               class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Components">
+                                {% sidebar_icon "sliders" "w-4 h-4" %}
+                            </a>
+                            <button hx-get="{% url 'grading:template_edit' tpl.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                {% sidebar_icon "pencil" "w-4 h-4" %}
+                            </button>
+                            <button hx-get="{% url 'grading:template_delete' tpl.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                {% sidebar_icon "trash" "w-4 h-4" %}
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="sliders" title="No grading templates yet" description="Add a template to start building class grading schemes." %}
+    {% endif %}
+</div>

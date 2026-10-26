@@ -1,0 +1,544 @@
+# CITCI GradeTrack — Build Specification for Claude Code
+
+> **2026-10-25:** This file previously specified a Laravel/PHP/MySQL build. That has been
+> superseded by the Django stack below (confirmed with the user), which is what now actually
+> exists in the repository at `CITCI GradeTrack/`. The domain spec (roles, grading rules,
+> forecasting design, screens, DB concepts) carries over unchanged — only the tech stack and phase
+> framing changed. Phase 1 (auth/RBAC + navigation shell), Phase 2 (academic structure, revised in
+> Phase 2.1), and Phase 2.2 (full user management — see below) are built; later phases below are
+> the plan, not yet implemented.
+>
+> **2026-10-26:** This file now lives at the repository root (previously tracked one level up,
+> outside the repo it describes). **Phase 4 (Grading) = this phase** — i.e. the work tracked below
+> as "Phase 3 — Grading engine" in this file's own numbering (templates, assessment items, score
+> encoding, grade computation) is done; see the Phase 3 bullet under "Build Phases" and section 4
+> for what was actually built, which also supersedes section 4's old placeholder rules (Midterm/
+> Final only, 25/25/10/40 weights) with CITCI's real class record — confirmed against
+> `grading-system.xlsx` at the repo root.
+
+**Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
+Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
+student list (the "class list" / roster), imported or managed by hand, so instructors have someone
+to encode grades for. Never use the word "enroll"/"enrollment" in code, UI copy, or model names for
+this — the model is `academics.ClassRosterEntry`, not `Enrollment`; menu item and pages say "Class
+Lists", not "Enrollment".
+
+You are building **CITCI GradeTrack: A Grading Management System with Academic Performance
+Forecasting** for the College Department of Candelaria Institute of Technology in Cabadbaran Inc.
+(CITCI), Philippines. This is an undergraduate capstone project, built one phase at a time. When
+something is unclear, choose the simplest option that satisfies the objectives below.
+
+**This is a grading management system, NOT a full LMS.** Do not build course-material uploads,
+student assignment submission, online quizzes, or login-activity tracking.
+
+---
+
+## 1. Approved Objectives (everything must trace back to these)
+
+| # | Objective | Delivered by |
+|---|---|---|
+| O1 | Design system architecture, ERD, and mobile-responsive UI | `docs/` diagrams, Tailwind responsive layouts |
+| O2 | Instructor module: grade encoding, automated GWA computation, PDF/Excel grade sheets | Grading + Workflow phases |
+| O3 | Student module: grade viewing, progress visualization, personalized forecasts | Student portal + Integration phases |
+| O4 | Academic performance forecasting using logistic regression | Forecasting service + Integration phases |
+| O5 | Testing: ISO/IEC 25010 evaluation + model accuracy, precision, recall, F1 | Testing & evaluation phase |
+
+---
+
+## 2. Tech Stack
+
+**Main app**
+- Python 3.12+, Django 5.2 LTS
+- PostgreSQL (via psycopg 3); credentials from `.env` (django-environ, `.env.example` committed)
+- Auth: Django's built-in auth, custom `User` model (`accounts.User`), self-registration **disabled**
+- UI: Django Templates + HTMX + Alpine.js (downloaded, served locally from `static/vendor/` — no
+  CDN) + Tailwind CSS via `django-tailwind-cli` (no Node.js build step) + Chart.js (added when
+  charts are actually needed, same local-vendoring rule)
+- PDF/Excel export: added in the grading-workflow phase (e.g. `weasyprint`/`reportlab` and `openpyxl`)
+- Tests: Django's test runner (`manage.py test`), app-per-module test files
+- Queue: added when forecasting jobs need one (Django's own management commands + cron, or
+  `django-rq`/Celery if warranted — decide when that phase starts)
+- Local dev: PostgreSQL running locally; see `README.md` for Windows setup
+
+**Forecasting service** (`/ml-service`, separate folder in the same repo, added in its own phase)
+- Python 3.11+, FastAPI, scikit-learn, pandas, numpy, joblib, pydantic, pytest
+- Called by Django over HTTP with a shared API key header (`X-API-KEY`, from `.env` on both sides)
+- Django must keep working if the ML service is down (show "Forecast unavailable", log the error,
+  retry via a scheduled job)
+
+## Brand palette
+
+Extracted from `static/img/citci-logo.png` via a Pillow dominant-color scan:
+- `brand-primary` (navy, measured `#283082`) — sidebar background, headers, dark surfaces.
+- `brand-accent` (gold, measured `#f0dc1e`) — active menu state, primary buttons, focus rings.
+- Full 50–950 Tailwind shade scales for both live as `@theme` tokens in
+  `.django_tailwind_cli/source.css` — the single source of truth for the palette. Change the two
+  base hexes there (and regenerate the scale) if the logo ever changes.
+- White text on `brand-primary-600`/`-700` and dark text on `brand-accent-600` both clear WCAG AA
+  (11–15:1 measured) — no adjustment was needed.
+
+---
+
+## 3. User Roles & Accounts
+
+No public registration. Admin creates accounts manually (Users page) or via .xlsx/.csv bulk import
+(Phase 2.2 — "Import Students"/"Import Instructors", both built on the shared parser in
+`core/importing.py`). All new accounts must change password on first login, then acknowledge the
+Data Privacy notice (RA 10173) — both enforced before any other page is reachable. Students log in
+with student number or email. 5 failed logins locks that username for 15 minutes (django-axes, by
+username not IP); sessions expire after 30 minutes of inactivity or on browser close.
+
+| Role | Can do |
+|---|---|
+| **admin** (Registrar/System Admin) | Manage users (CRUD, bulk import, activate/deactivate, reset password); manage programs, academic terms, subjects, class offerings (sections); assign instructors; manage class lists (import from the Registrar); configure grading templates and transmutation table; lock/unlock terms; import historical data; train/activate ML model versions and view model metrics; view audit logs; system-wide reports |
+| **program_head** | View department dashboard (grade distribution, at-risk counts per class/subject); view at-risk list with contributing factors; approve or return submitted grade sheets; release approved grades; export reports |
+| **instructor** | View assigned classes only; adjust grading component weights for own class (within template rules); create assessments; encode scores (inline table + Excel import using downloadable template); see auto-computed grades live; submit grade sheet; export PDF/Excel grade sheet; view class at-risk list with factors; add intervention notes per student |
+| **student** | View own class-list subjects, running grades per component, period grades, released final grades; term GWA + cumulative GWA; progress charts; own forecast shown as **"Needs Attention" / "On Track"** (never the words "at-risk") with plain-language contributing factors and generic tips; notifications |
+
+Enforce access with middleware + Django Policies (view-level `role_required`/`RoleRequiredMixin`
+today; move to per-object permission checks once there's per-object data to protect). Instructors
+must never see classes not assigned to them; students only their own data. Write tests for every
+authorization rule — `accounts/tests.py` has the pattern (login, menu visibility, 403s).
+
+---
+
+## 4. Grading Rules (built, Phase 3 — confirmed against CITCI's actual class record)
+
+`grading-system.xlsx` (repo root) is CITCI's official class record — the rules below are verified
+against it to full Decimal precision, not a placeholder default. Weights/components are DB-backed
+(`grading.GradingTemplate` + `GradingComponent`) so CITCI can change them without code changes; a
+class never references the template directly — see the frozen-snapshot note below.
+
+**Grading periods ("terms", `grading.AssessmentTerm`):** Prelim, Midterm, Semi-Final, Final — not
+to be confused with `academics.Term` (1st Sem/2nd Sem/Summer). Each `AssessmentItem` is tagged with
+one of these four; this is the checkpoint forecasting will key off later.
+
+**Default components (the seeded "CITCI Default" template, weights total 100%):**
+- Attendance — 5%
+- Quizzes — 30%
+- Recitation — 15%
+- Project — 10%
+- Examination — 40% (its four items are literally named Prelim/Midterm/Semi-Final/Final Exam)
+
+**Computation** (`grading/services.py` — pure functions, Decimal throughout, never float)
+1. Component grade = 5 − 4 × (Σ scores ÷ Σ max scores) for that component's assessment items.
+   1.00 is the best possible grade, 5.00 the worst — **not** a 0–100% scale.
+2. Final grade = Σ (component grade × weight). **Passing** = final grade ≤ 3.00.
+3. **Running grade** (shown mid-term, `StudentGradeResult.running_grade`): only components with at
+   least one score encoded *anywhere in the class* count, remaining weights re-normalized to 100%
+   — a component nobody has started yet is excluded rather than dragging the grade toward 5.00.
+4. **Final grade** (`StudentGradeResult.final_grade`): always every component and every item; any
+   still-blank cell counts as 0. `StudentGradeResult.missing_items` lists the blanks for the UI's
+   warning banner.
+5. Round only for display (`settings.GRADE_DISPLAY_DECIMALS`, default 2 — e.g. 1.77); the
+   stored/computed value keeps full Decimal precision throughout.
+6. Hand-verified test case: `grading/tests.py::DelaCruzFinalGradeTests` (row 11 of the xlsx — Dela
+   Cruz, Juan B. → component grades 1.4000/1.9524/1.7765/1.3657/1.7889 → final grade
+   1.7743118580765638... → displayed 1.77 → PASSED).
+
+**No transmutation table** — unlike the original placeholder spec, CITCI's real class record
+transmutes nothing; the component-grade formula above already lands directly on the 1.00–5.00
+scale. The transmutation-table idea from the superseded spec does not apply here.
+
+Special marks: **INC** (Incomplete, `ClassRosterEntry.is_incomplete` + `incomplete_reason`, set
+manually by the instructor per student with a required reason) and **DROPPED** (roster status,
+already existed). No **DRP** mark separate from roster status — a dropped student's remarks is
+just "DROPPED".
+
+**Frozen snapshot:** a class never references a `GradingTemplate` directly. The first time anyone
+opens its grading page, `ClassGradingScheme.get_or_create_default` copies the template's
+components onto a per-class `ClassGradingScheme` + `SchemeComponent` rows — editing the template
+later never changes a class already using it. Admin can re-apply a different template to a class
+only while it has zero scores encoded (`ClassGradingScheme.has_scores`).
+
+GWA (term/cumulative, `is_included_in_gwa`, "Provisional" until released) is **not built yet** —
+that's still Phase 4 (Workflow & reports), once grade sheets have a submit/release lifecycle to
+hang "Provisional" off of.
+
+**GWA**
+- Term GWA = Σ(final grade × units) ÷ Σ(units), for subjects in that term where `is_included_in_gwa = true`
+- Exclude INC/DRP from GWA and show a note
+- Show **"Provisional"** until all of the student's subjects in that term are released
+- Cumulative GWA across all released terms
+- Write unit tests with hand-computed examples for every formula above
+
+---
+
+## 5. Grade Sheet Workflow (not yet built)
+
+`draft → submitted → approved → released → locked`, plus `returned` (program head sends back with
+remarks → instructor edits → resubmits).
+
+- Instructor edits only in `draft`/`returned`
+- Students see **running (unofficial) component scores** during the term, clearly labeled
+  "Unofficial"; official final grades only after `released`
+- Admin locks a whole term; locked grades can only change through an admin "grade correction" with
+  a required reason, recorded in audit logs
+- Notify the relevant users at each transition (in-app notifications)
+
+---
+
+## 6. Database Schema
+
+Use migrations, foreign keys, indexes, and soft deletes where sensible. Minimum tables, one Django
+app per group (`accounts`, `academics`, `grading`, `approvals`, `forecasting`, `reports`). `core`
+holds only the abstract `TimeStampedModel` (`created_at`/`updated_at`) every model below extends.
+
+**Built (`accounts`, Phase 1):**
+- `accounts.User` — username, email, id_number, role enum, is_active, must_change_password,
+  privacy_consent_at, middle_name, timestamps
+
+**Built (`academics`, Phase 2 + Phase 2.1 revisions)** — academic FKs use `on_delete=PROTECT`
+(friendly error + a "Deactivate instead" escape hatch in the UI where the model has `is_active`),
+not cascade-delete. The hierarchy is **Program → Major (optional) → Section**:
+- `academics.AcademicYear` — start_year (unique), end_year (derived in `save()`, not form-editable)
+- `academics.Semester` — academic_year FK (PROTECT), term enum (FIRST/SECOND/SUMMER, see `Term`),
+  start_date, end_date, is_active — `save()` deactivates every other semester in a transaction, so
+  exactly one (or zero) is ever active app-wide
+- `academics.Program` — code (unique), name, program_head FK User (role=PROGRAM_HEAD, nullable), is_active
+- `academics.Major` — program FK (PROTECT), code, name, is_active; unique per (program, code). A
+  program may have zero majors (e.g. TCP) — this is why Section/Subject/StudentProfile.major is nullable.
+- `academics.Section` — program + major (nullable) + academic_year FK (PROTECT), year_level
+  (1–4, nullable — some programs have no year levels), name (blank allowed); unique per (program,
+  major, academic_year, year_level, name). `__str__` e.g. "BSED-ENG 1", or just "TCP" with no major/year/name.
+- `academics.Subject` — code (unique), title, **units** (single Decimal — not split lec/lab),
+  program FK (PROTECT, nullable = shared across programs — most Gen Ed/Prof Ed subjects), major FK
+  (PROTECT, nullable — only for major-specific subjects), year_level (nullable), term, is_active
+- `academics.StudentProfile` — user OneToOne (role=STUDENT; auto-created by a `post_save` signal in
+  `academics/signals.py`), program/major/year_level/section (all nullable until admin assigns them)
+- `academics.ClassOffering` ("Class") — subject FK (PROTECT) + **sections** `ManyToManyField`
+  (a class can serve several sections at once — e.g. one Gen Ed class shared by two majors — same
+  instructor/room/schedule for all of them) + semester FK (PROTECT), instructor FK User
+  (role=INSTRUCTOR, nullable), schedule, room, is_active; `roster_count` property. `clean()` can only
+  check the sections-vs-semester academic-year match once the instance has a pk (M2M needs one), so
+  the real enforcement is in `ClassOfferingForm.clean()` (forms.py), not the model.
+- `academics.ClassRosterEntry` — **not enrollment** (see the scope note at the top of this file) —
+  student FK User (role=STUDENT) + class_offering FK (both PROTECT), status enum (ACTIVE/DROPPED),
+  date_added (auto), date_dropped; unique per (student, class_offering) — dropping sets status +
+  date, never deletes the row. Built/managed via `academics/roster_import.py` (the "Import class
+  list" .xlsx/.csv flow — matches by `id_number`, creates a new STUDENT user if none exists) and the
+  Class Lists page's manual add-entire-section / add-students / mark-dropped / restore actions.
+
+The active semester is available in every template as `active_semester` via
+`academics.context_processors.active_semester` (registered in `TEMPLATES.OPTIONS.context_processors`).
+
+Also added this phase: `academics.ClassRosterEntry.is_incomplete` (bool) + `incomplete_reason`
+(text) — the INC special mark, set by the instructor per student.
+
+**Built (`grading`, Phase 3)** — names differ from the original placeholder spec below (that spec
+assumed a 2-period Midterm/Final design with a separate transmutation table; the real CITCI class
+record needed neither — see section 4):
+- `grading.GradingTemplate` — name (unique), description, is_default (only one at a time —
+  `save()` unsets every other default in a transaction), is_active
+- `grading.GradingComponent` — template FK (CASCADE), name, weight (Decimal %), order; unique per
+  (template, name)
+- `grading.ClassGradingScheme` — class_offering OneToOne (CASCADE), source_template FK (PROTECT —
+  blocks deleting a template still referenced by a class's snapshot). `apply_template()` copies the
+  template's current components onto fresh `SchemeComponent` rows (validates weights total 100%
+  first); `get_or_create_default()` lazily creates one using the default/first active template.
+- `grading.SchemeComponent` — scheme FK (CASCADE), name, weight, order — the frozen per-class copy
+  of a `GradingComponent`; `AssessmentItem` points here, never at `GradingComponent` directly.
+- `grading.AssessmentItem` — class_offering FK (CASCADE) + component FK (PROTECT, blocks deleting a
+  component that has items), title, max_score (Decimal), term (`AssessmentTerm`: PRELIM/MIDTERM/
+  SEMIFINAL/FINAL), date (nullable), order
+- `grading.Score` — roster_entry FK (CASCADE) + item FK (CASCADE), score (Decimal, nullable = not
+  yet encoded), updated_by FK User; unique per (roster_entry, item)
+- `grading.ScoreChangeLog` — score FK (CASCADE), old_value, new_value, changed_by FK User,
+  changed_at — written by `grading.services.save_score()` on every value change (not on saves that
+  don't actually change the value)
+
+**Still to add:**
+- `grading.TermGrade` or equivalent (status enum draft/submitted/approved/released/locked,
+  submitted_at, approved_by, released_at, remarks) — the grade-sheet workflow this phase explicitly
+  did not build (no submit/approval, no student-facing pages yet)
+- `approvals.GradeSheetLog` (class_offering, from_status, to_status, user, remarks, timestamp)
+- `grading.GwaRecord` (student, academic_term, term_gwa, units_counted, is_provisional, computed_at)
+- `forecasting.MlModelVersion` (version, trained_at, training_source enum synthetic/historical, n_samples, threshold, accuracy, precision, recall, f1, ci_json, confusion_matrix_json, coefficients_json, is_active)
+- `forecasting.Prediction` (roster_entry, ml_model_version, probability, risk_label enum needs_attention/on_track, features_json, contributions_json, created_at)
+- `forecasting.Intervention` (roster_entry, instructor, note, created_at)
+- `forecasting.HistoricalRecord` (masked_student_key, subject_code, school_year, semester, feature columns, final_outcome) — for model training only, no names
+- Django's own notifications / a small `dashboard.Notification` model
+- `accounts.AuditLog` (user, action, auditable model/id, old_values json, new_values json, ip, created_at)
+
+Produce `docs/ERD.md` as a Mermaid `erDiagram` that matches the final migrations exactly, once these exist.
+
+---
+
+## 7. Forecasting Module (Logistic Regression — not yet built)
+
+**Goal:** predict, **mid-semester**, whether a student will fail a subject, so the instructor can
+intervene early.
+
+**Target label (y = 1):** final grade 5.00, INC, or DRP. Otherwise 0.
+
+**Features** (grade-based only, all available by midterm, all scaled 0–100):
+1. `midterm_grade_pct`
+2. `quiz_avg_pct`
+3. `activity_avg_pct`
+4. `attendance_pct`
+5. `midterm_exam_pct`
+6. `missing_rate_pct` (% of assessments with no score so far)
+
+**Pipeline:** `StandardScaler` → `LogisticRegression(class_weight="balanced", max_iter=1000)`,
+fitted with maximum likelihood (scikit-learn default solver).
+
+**Threshold:** default 0.5, stored per model version, adjustable by admin. Prioritize recall in the
+evaluation write-up.
+
+**Explainability:** for each prediction return per-feature contribution = coefficient × standardized
+value, sorted by impact, plus a plain-language message (e.g., "Quiz average is lower than usual for
+passing students"). Store in `predictions.contributions_json`.
+
+**Training data**
+- `ml-service/scripts/generate_synthetic.py` — realistic synthetic dataset (≈2,000 rows, ~15–25%
+  positive class, correlated features, random seed fixed). Used for initial deployment and demo.
+- Historical import: admin uploads CSV/Excel of past CITCI records → Django **masks** student
+  identifiers (SHA-256 with app-secret salt, names dropped) before saving to `historical_records`.
+  Only masked data is ever sent to the ML service.
+
+**Evaluation** (on every training run)
+- Stratified 80/20 train-test split, fixed random seed
+- Accuracy, precision, recall, F1, confusion matrix, ROC-AUC
+- 95% confidence intervals via 1,000 bootstrap resamples of the test set
+- Results saved to `ml_model_versions` and shown on an admin "Model Performance" page; exportable as
+  PDF for Chapter 4
+
+**ML service endpoints**
+- `GET /health`
+- `POST /train` — body: training rows + threshold → returns version, metrics, CIs, coefficients
+- `POST /predict` — body: list of feature rows → returns probability, label, contributions per row
+- `GET /model` — active model info
+- Save models with joblib under `ml-service/models/{version}.joblib`
+
+**When predictions run (Django)**
+- Queued/scheduled job after an instructor saves scores, debounced per class
+- "Recompute forecasts" button for instructors/program heads
+- Nightly scheduled job for all active class-list entries in the current term
+- Only predict when at least the midterm period has some scores; otherwise show "Not enough data yet"
+
+**Early warning:** when a student's label changes to `needs_attention`, notify the instructor (and
+program head summary). Notify the student with a supportive message and generic study tips. Never
+show raw probability to students; instructors and program heads see probability + factors.
+
+---
+
+## 8. Screens
+
+**Shared (built):** login (locked-out message via django-axes), forced password change (doubles as
+a voluntary "Change Password" page — `accounts:force_password_change` has no must-change-password
+guard, it just also redirects to privacy consent if that's still outstanding), profile (view all
+fields; the only one the user can edit themselves is email — name/ID/role changes are admin-only),
+help (placeholder), notifications bell (placeholder, topbar only), responsive sidebar/topbar
+layout, Data Privacy notice/consent shown on first login (RA 10173), styled 403 page.
+
+Layout specifics worth preserving: the sidebar is flush against the left edge (no outer margin/
+rounded corners/shadow — only inner elements like the active-item tile and popover are rounded);
+its header row and the topbar share one `h-16` height with borders that line up into a single
+horizontal divider; the topbar carries only the page title/subtitle and the notification bell — no
+duplicate user info; the sidebar footer's user card is a single clickable element (Alpine popover,
+opens upward, closes on outside-click/Escape) with Profile/Help/Change Password/Logout — there is no
+separate quick-action icon row. Every page sets `{% block page_title %}` directly in `base.html`
+(not in an included partial — Django block tags don't cross an `{% include %}` boundary) to drive
+both that topbar heading and, implicitly, what the page is for; the `<title>` tag itself is static
+("CITCI GradeTrack") since Django disallows the same block name appearing twice in one template.
+
+**Admin (built, Phase 2):** dashboard with real counts (active students/instructors/active
+classes/programs) · Academic Years & Semesters (two tables, one page, "Set as active") · Programs
+(program_head dropdown only lists active PROGRAM_HEAD users) · Sections · Subjects · Classes
+(+ read-only roster; instructor field uses the searchable-select widget) · Class Lists (pick a
+class via the searchable-select widget → roster, Add Entire Section, Add Students multi-select
+with live search, Mark as Dropped/Restore, Import class list from an .xlsx/.csv). All these
+list pages share one generic pattern — search + filters + pagination, HTMX-swapped table, Add/Edit
+via a modal form, Delete via a modal confirm that offers "Deactivate instead" when a `PROTECT` FK
+blocks it — implemented once in `core/crud.py` (`EntityListView`/`EntityFormView`/
+`EntityDeleteView`/`ToggleActiveView`) rather than per page.
+
+**Admin — Users (built, Phase 2.2):** replaces the old read-only Students list. Tabs (All/Admins/
+Program Heads/Instructors/Students, each with a live count) + search (name/username/ID number) +
+filters (role, status, and for students program/major/year level/section) + pagination, same
+generic list pattern as above (`accounts.views.UserListView`, extends `core.crud.EntityListView`).
+Add/Edit via a modal (`accounts.forms.UserForm`) with HTMX-cascading program → major → section
+dropdowns for students; username is forced to the ID number for students, admin-chosen (with a
+surname-based suggestion) for staff. A new or password-reset account gets a generated temporary
+password shown once in a copyable box (`accounts/_user_password_reveal.html`) and must change it
+on next login. Row actions: Edit, Reset Password, Deactivate/Reactivate (blocked for your own
+account and for the last active admin — `accounts.views.user_toggle_active`), Unlock (clears a
+django-axes lockout). "Import Students"/"Import Instructors" (.xlsx/.csv) share one upload →
+preview (new/update/invalid-with-reason) → confirm flow with the Phase 2.1 class-list importer,
+built on the same parser (`core/importing.py`); confirming returns a downloadable `.xlsx` of new
+accounts' temporary passwords, generated in memory for that response only.
+
+**Admin — Grading Templates (built, Phase 3):** list/add/edit templates (`grading:templates`),
+live weight-total badge (green at 100%, amber otherwise — a template over/under 100% can't be
+applied to a class until fixed), "Classes Using It" count, set-default, deactivate. Each template's
+components get their own add/edit/delete sub-page (`grading:template_components`). Editing a
+template never touches a class's existing `ClassGradingScheme` snapshot. Admin can also view any
+class's grading page read-only and change its template via "Change Template" (blocked once the
+class has any score encoded).
+
+*(Transmutation scale doesn't apply here — see section 4. Historical data import, model training,
+and audit logs are still placeholder pages.)*
+
+**Program Head:** Classes (built, Phase 2 — read-only, classes in the active semester for programs
+they head, object-level-checked: a different program head gets 403) · dashboard (grade distribution
+chart, pass/fail rates, at-risk counts), At-Risk Students, Grade Sheet Approvals, Reports export
+*(still placeholders)*
+
+**Instructor:** My Classes (built, Phase 2 — card layout, active-semester classes; "Encode Grades"
+button now live, built Phase 3 — links to the class grading page below) · Class Grading page
+(`grading:class_grading`, built Phase 3) with three tabs, all server-rendered together and switched
+client-side via Alpine `x-show` (no per-tab page load):
+  - **Setup** — read-only scheme (component/weight cards) + assessment-item CRUD (add/edit/delete,
+    delete blocked with a warning if the item already has scores, confirmable anyway)
+  - **Class Record** — the spreadsheet-style encoding grid: sticky header + first three columns,
+    gold scrollbar (`.gold-scroll`, same look as the sidebar's), inline cell autosave on blur
+    (`hx-trigger="blur changed"`, re-renders just that row), keyboard Up/Down/Left/Right/Enter
+    navigation (`static/js/grading-grid.js`), per-item "Fill Column" (blanks only, confirm first),
+    term filter (display-only — doesn't change what counts toward a grade), per-student "Mark INC",
+    missing-score warning banner
+  - **Summary** — passed/failed/INC/dropped counts, class average, Chart.js grade-distribution bar
+    chart (vendored, `static/vendor/chartjs/`), per-student component/running-grade table
+  Excel template import/export for score encoding is **not built this phase** (explicitly out of
+  scope — see the Phase 3 note below) · Forecast · Submit Grade Sheet · Export PDF/Excel are still
+  placeholders (Phase 4+)
+
+**Student:** Dashboard (built, Phase 2 — real class-list subject count and subject list for the
+active semester; term/cumulative GWA still placeholder) · Subject detail (component breakdown,
+assessment scores, period grades, progress chart, forecast card) · Grade history per term (GWA
+trend chart) · Downloadable grade report PDF *(still placeholders)*
+
+**PDF grade sheet layout (future):** institution name, college department, subject code/title,
+section, term, instructor, table of students (student no., name, midterm, final term, final grade,
+remarks), signature lines for Instructor and Program Head. Excel export uses the same columns.
+
+---
+
+## 9. Non-Functional Requirements
+
+- Django's password hashing (PBKDF2 default), CSRF, session regeneration on login, login lockout
+  after 5 failed attempts (django-axes, by username, 15 min cooloff — Phase 2.2), 30-minute sliding
+  session expiry + expire-on-browser-close (Phase 2.2), HTTPS-ready config for production
+- RBAC enforced server-side on every route; IDOR tests as data ownership exists
+- Audit log for: logins, user changes, score changes, grade status transitions, grade corrections,
+  model training/activation (added alongside the features they audit)
+- Response time < 2 s for normal pages with seeded data of 500 users; `select_related`/
+  `prefetch_related`, add indexes, paginate lists
+- Deployable on an institution-controlled server (on-prem or institution-managed VPS); write
+  `docs/DEPLOYMENT.md` when a deployment target is chosen
+- Accessible: labels on inputs, sufficient color contrast (WCAG AA verified for the brand palette),
+  works at 360 px width
+- All dates/times in `Asia/Manila` (set in `config/settings.py`)
+
+---
+
+## 10. Build Phases
+
+Work one phase at a time. At the end of each phase: run all tests, fix failures, commit with a
+clear message, and give a short summary of what was built and what's next. Do not start a phase
+until the previous one passes its tests.
+
+- **Phase 1 — Auth & RBAC + navigation shell (done):** custom user model, login/logout, forced
+  password change, privacy consent, role-based sidebar + topbar layout (desktop collapsible rail,
+  mobile drawer), per-role dashboards with placeholder stats, a role-gated placeholder page for
+  every planned menu item, `seed_demo_users` management command, brand palette extraction.
+- **Phase 2 — Academic structure (done, revised by Phase 2.1):** academic years/semesters
+  (single-active-semester rule), programs, sections, subjects, class offerings, instructor
+  assignment, student profiles (auto-created via signal), real dashboard counts for
+  admin/instructor/student, object-level access checks (instructor/program-head roster ownership).
+  Full user management is still Phase 3.
+- **Phase 2.1 — Real CITCI data + scope correction (done):** dropped the "enrollment" concept
+  entirely in favor of class lists (`academics.ClassRosterEntry`) built/imported for grading, with
+  an .xlsx/.csv "Import class list" flow (`academics/roster_import.py`: match-by-id_number preview
+  → confirm, auto-creates missing student accounts) available to admin for any class and to an
+  instructor for their own. Added `academics.Major` (Program → Major → Section hierarchy) and made
+  `ClassOffering.sections` a M2M (one class can serve several sections at once). Replaced the demo
+  BSIT data with real CITCI BSED/TCP A.Y. 2026–2027 offerings parsed from the Registrar's .docx
+  (`import_offerings_docx` → `docs/source/citci_offerings_2026_2027.json` →
+  `seed_citci_academics`); the old `seed_demo_academics` command is gone.
+- **Phase 2.2 — User management (done):** admin Users page (tabs/search/filters/pagination,
+  replacing the read-only Students list), add/edit user modal with HTMX-cascading student
+  program/major/section fields, generated one-time-reveal temporary passwords (create + reset),
+  deactivate/reactivate with self- and last-admin guards, "Import Students"/"Import Instructors"
+  bulk import sharing the Phase 2.1 parser, Profile page (email-only self-edit), django-axes login
+  lockout + 30-minute sliding session expiry, and the reusable `SearchableSelectWidget` (now used
+  for the instructor/class/student pickers). See the README "Gotcha" note on `FORM_RENDERER` if a
+  future custom form widget throws `TemplateDoesNotExist`.
+- **Phase 3 — Grading engine (O2, done):** grading templates + components (live weight-total
+  validation), per-class frozen `ClassGradingScheme` snapshot, assessment items (Prelim/Midterm/
+  Semi-Final/Final), the spreadsheet-style score-encoding grid (autosave, keyboard nav, fill-column,
+  mark INC, term filter, missing-score warning), Setup/Class Record/Summary tabs with a Chart.js
+  distribution chart, and `grading/services.py`'s computation functions with full unit tests
+  (including the hand-verified `grading-system.xlsx` row-11 case). Deliberately **not** built this
+  phase (see the task brief that drove it): grade-sheet submit/approval workflow, student-facing
+  grade pages, Excel class-record import. Also fixed this phase: `seed_citci_academics` is now
+  actually idempotent (`_seed_instructors` matches an existing instructor by `last_name` before
+  generating a new username), and `CLAUDE.md` moved into the repo it describes.
+- **Phase 4 — Workflow & reports (O2):** grade sheet status flow, approvals, release, lock, grade
+  corrections, GWA computation service, PDF/Excel exports.
+- **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.
+- **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
+  predict endpoint with contributions, pytest.
+- **Phase 7 — Integration (O3, O4):** Django ↔ ML client, queued/scheduled predictions, forecast
+  UIs for all roles, interventions, early-warning notifications, historical data import with
+  masking, model performance page.
+- **Phase 8 — Testing & evaluation (O5):**
+  - Feature/unit tests for all modules; target ≥ 80% coverage of services and access-control logic
+  - Seeder: 1 admin, 2 program heads, 15 instructors, 450 students, current + 2 past terms with
+    realistic scores
+  - Simple performance check script (timed requests on key pages with seeded data), results in
+    `docs/PERFORMANCE.md`
+  - `docs/UAT_QUESTIONNAIRE.md`: ISO/IEC 25010 Likert (1–5) questionnaire covering Functional
+    Suitability, Performance Efficiency, Usability, Reliability, Security, Maintainability,
+    Compatibility, Portability — separate versions for instructors and students
+  - `tools/uat_analysis.py`: reads a CSV of responses, outputs per-item and per-characteristic
+    weighted mean, SD, percentage distribution, interpretation (4.21–5.00 Excellent, 3.41–4.20 Very
+    Good, 2.61–3.40 Good, 1.81–2.60 Fair, 1.00–1.80 Poor), and one-way ANOVA between instructor and
+    student groups
+  - Final `docs/` set: ERD, architecture diagram, data flow diagram, user manual per role,
+    deployment guide
+
+---
+
+## 11. Rules for You (Claude Code)
+
+- Follow Django conventions: thin views, business logic in app-level services once real logic
+  exists (e.g. `GradeComputationService`, `GwaService`, `ForecastClient`), Django Forms for
+  validation.
+- Never hardcode grading weights or the transmutation scale — they're DB-backed config once that
+  phase is built.
+- Never send names or real student numbers to the ML service.
+- No features outside the current phase's scope (no LMS, chat, file submissions) unless asked.
+- Keep code readable for undergraduate students: clear names, short comments only on non-obvious
+  logic.
+- The sidebar menu is defined once in `accounts/menu.py`; icons are inline SVG via
+  `accounts/templatetags/sidebar_icons.py` (no icon CDN, per the original design constraint).
+- For a new admin list+CRUD page, extend `core.crud.EntityListView`/`EntityFormView`/
+  `EntityDeleteView` (see any class in `academics/views.py` for the pattern) rather than writing
+  list/create/update/delete from scratch — it's already wired for search, filters, pagination, the
+  shared modal, and `PROTECT`-vs-"Deactivate instead" handling.
+- `static/js/htmx-csrf.js` attaches the CSRF header to every HTMX request already — don't add
+  `{% csrf_token %}` workarounds to bare `hx-post`/`hx-delete` buttons, they don't need one.
+- When a server response needs to both close the shared modal and update page content outside it in
+  one round trip, use `response["HX-Trigger"] = "modal-success"` on a normal (200) render — htmx
+  processes `HX-Trigger` on any status, not just 204 — and give the two elements matching
+  `hx-target`s (don't render the same `id="..."` fragment into both the modal and the page, or
+  you'll get two elements sharing one id; see `class_list_import_confirm` in `academics/views.py`
+  for the pattern, and use `HX-Retarget`/`HX-Reswap` headers if an error response needs to land
+  back in the modal instead).
+- Re-deriving `docs/source/citci_offerings_2026_2027.json` from a new Registrar .docx: run
+  `python manage.py import_offerings_docx docs/source/<file>.docx`, review
+  `docs/source/DATA_ISSUES.md` (flagged instructor-name pairs — confirm with CITCI, never
+  auto-merge), then `python manage.py seed_citci_academics`. Both commands only understand the
+  specific table shape of the 2026–2027 sheet (see the docstring in `import_offerings_docx.py`) —
+  a materially different sheet layout needs parser changes first. `seed_citci_academics` is
+  idempotent (`_seed_instructors` matches an existing instructor by `last_name` before generating a
+  new username, so re-running it is safe) and also seeds demo grading data at the end
+  (`seed_grading_demo` — default template + assessment items/scores for the first two classes it
+  finds with an instructor and a roster).
+- Tests that log a user in must use `self.client.force_login(user)`, not
+  `self.client.login(username=..., password=...)` — django-axes' `AxesStandaloneBackend` needs a
+  real `request` object passed to `authenticate()`, which Django's test `Client.login()` doesn't
+  provide, so it raises `AxesBackendRequestParameterRequired`. `force_login()` sets the session
+  directly and bypasses the backend chain entirely (this is django-axes' own documented fix for
+  test suites).
+- If a requirement conflicts with another, or with this file, stop and ask before building.

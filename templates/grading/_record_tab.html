@@ -1,0 +1,58 @@
+{% load grading_extras %}
+<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <form method="get" class="flex items-center gap-2 text-sm">
+        <input type="hidden" name="tab" value="record">
+        <label for="term-filter" class="text-gray-500">Term:</label>
+        <select id="term-filter" name="term" onchange="this.form.submit()"
+                class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+            <option value="">All terms</option>
+            {% for value, label in assessment_terms %}
+            <option value="{{ value }}" {% if term_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% if record.missing_count %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+        {{ record.missing_count }} missing score{{ record.missing_count|pluralize }} among active students.
+    </div>
+    {% endif %}
+</div>
+
+<div class="overflow-auto rounded-2xl border border-gray-200 bg-white gold-scroll" style="max-height: 75vh;">
+    <table class="min-w-full border-collapse text-sm">
+        <thead class="sticky top-0 z-20 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th rowspan="2" class="sticky z-30 border-r border-b border-gray-200 bg-gray-50 px-2 py-2" style="left:0;width:48px;">No.</th>
+                <th rowspan="2" class="sticky z-30 border-r border-b border-gray-200 bg-gray-50 px-2 py-2" style="left:48px;width:96px;">ID No.</th>
+                <th rowspan="2" class="sticky z-30 border-r border-b border-gray-200 bg-gray-50 px-2 py-2 text-left" style="left:144px;min-width:160px;">Name</th>
+                {% for col in record.columns %}
+                <th colspan="{{ col.items|length|add:2 }}" class="border-b border-l border-gray-200 px-2 py-2 text-center">{{ col.component.name }} ({{ col.component.weight }}%)</th>
+                {% endfor %}
+                <th rowspan="2" class="border-b border-l border-gray-200 px-2 py-2">Running<br>Grade</th>
+                <th rowspan="2" class="border-b border-gray-200 px-2 py-2">Remarks</th>
+            </tr>
+            <tr>
+                {% for col in record.columns %}
+                    {% for item in col.items %}
+                    <th class="border-l border-b border-gray-100 px-1 py-2 text-center font-normal normal-case">
+                        <div class="font-semibold uppercase text-gray-600">{{ item.title }}</div>
+                        <div class="text-gray-400">{{ item.get_term_display }} · /{{ item.max_score }}</div>
+                        {% if can_edit %}
+                        <button type="button"
+                                hx-post="{% url 'grading:fill_column' item.pk %}{% if term_filter %}?term={{ term_filter }}{% endif %}"
+                                hx-target="#grid-body" hx-swap="outerHTML"
+                                hx-confirm="Fill every blank cell in &quot;{{ item.title }}&quot; with the max score ({{ item.max_score }})?"
+                                class="mt-0.5 text-[10px] font-normal normal-case text-brand-primary-700 underline">
+                            Fill
+                        </button>
+                        {% endif %}
+                    </th>
+                    {% endfor %}
+                    <th class="border-b border-l border-gray-100 bg-gray-50/60 px-2 py-2 text-center font-normal normal-case">Total</th>
+                    <th class="border-b border-gray-100 px-2 py-2 text-center font-normal normal-case">Grade</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        {% include "grading/_grid_body.html" with rows=record.rows can_edit=can_edit term_filter=term_filter %}
+    </table>
+</div>

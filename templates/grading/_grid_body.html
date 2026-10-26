@@ -1,0 +1,5 @@
+<tbody id="grid-body">
+{% for row in rows %}
+{% include "grading/_grid_row.html" with row=row can_edit=can_edit term_filter=term_filter %}
+{% endfor %}
+</tbody>

@@ -237,6 +237,10 @@ class ClassRosterEntry(TimeStampedModel):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
     date_added = models.DateField(auto_now_add=True)
     date_dropped = models.DateField(null=True, blank=True)
+    is_incomplete = models.BooleanField(
+        default=False, help_text="Instructor marks INC (Incomplete) for this class manually."
+    )
+    incomplete_reason = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["student__last_name", "student__first_name"]

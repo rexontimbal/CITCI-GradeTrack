@@ -1,0 +1,49 @@
+{% load sidebar_icons %}
+<div class="mb-3 flex items-center gap-2 text-sm">
+    <span class="text-gray-500">Weight total:</span>
+    {% with total=template.weight_total %}
+    {% if total == 100 %}
+    <span class="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">{{ total }}%</span>
+    {% else %}
+    <span class="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">{{ total }}% — must equal 100%</span>
+    {% endif %}
+    {% endwith %}
+</div>
+
+{% if components %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Order</th>
+                <th class="px-4 py-3">Component</th>
+                <th class="px-4 py-3">Weight</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for component in components %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-gray-500">{{ component.order }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ component.name }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ component.weight }}%</td>
+                <td class="px-4 py-3 text-right">
+                    <div class="flex justify-end gap-1">
+                        <button hx-get="{% url 'grading:component_edit' component.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                            {% sidebar_icon "pencil" "w-4 h-4" %}
+                        </button>
+                        <button hx-get="{% url 'grading:component_delete' component.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                            {% sidebar_icon "trash" "w-4 h-4" %}
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="sliders" title="No components yet" description="Add at least one component — weights must total 100%." %}
+{% endif %}

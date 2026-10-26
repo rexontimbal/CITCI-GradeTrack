@@ -180,6 +180,11 @@ AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
 AXES_LOCKOUT_TEMPLATE = "accounts/locked_out.html"
 
 
+# Grading — raw grades are always computed/stored at full Decimal precision;
+# this only controls how many decimal places are shown in the UI (e.g. 1.77).
+GRADE_DISPLAY_DECIMALS = 2
+
+
 # Session: expires after 30 minutes of inactivity (SAVE_EVERY_REQUEST slides the
 # expiry forward on each request) and when the browser closes.
 SESSION_COOKIE_AGE = 60 * 30

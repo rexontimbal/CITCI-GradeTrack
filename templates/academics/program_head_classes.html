@@ -13,6 +13,7 @@
                 <th class="px-4 py-3">Class</th>
                 <th class="px-4 py-3">Instructor</th>
                 <th class="px-4 py-3">Students</th>
+                <th class="px-4 py-3">Grading</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -23,6 +24,9 @@
                 </td>
                 <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ class_offering.roster_size }}</td>
+                <td class="px-4 py-3">
+                    <a href="{% url 'grading:class_grading' class_offering.pk %}" class="text-brand-primary-700 hover:underline">View</a>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

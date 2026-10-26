@@ -1,0 +1,75 @@
+{% load grading_extras %}
+<div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Passed</p>
+        <p class="mt-1 text-2xl font-bold text-green-700">{{ summary.counts.PASSED }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Failed</p>
+        <p class="mt-1 text-2xl font-bold text-red-700">{{ summary.counts.FAILED }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">INC</p>
+        <p class="mt-1 text-2xl font-bold text-amber-700">{{ summary.counts.INC }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Dropped</p>
+        <p class="mt-1 text-2xl font-bold text-gray-500">{{ summary.counts.DROPPED }}</p>
+    </div>
+</div>
+
+<div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Class Average (Final Grade)</p>
+        <p class="mt-1 text-2xl font-bold text-brand-primary-800">{{ summary.average|grade_display }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="mb-2 text-sm font-semibold text-gray-700">Grade Distribution</p>
+        <canvas id="distribution-chart" height="90"
+                data-labels='["1.00–1.99","2.00–2.99","3.00–3.99","4.00–4.99","5.00"]'
+                data-values="[{{ summary.distribution.1 }}, {{ summary.distribution.2 }}, {{ summary.distribution.3 }}, {{ summary.distribution.4 }}, {{ summary.distribution.5 }}]"></canvas>
+    </div>
+</div>
+
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Student</th>
+                {% for col in record.columns %}<th class="px-4 py-3">{{ col.component.name }}</th>{% endfor %}
+                <th class="px-4 py-3">Running Grade</th>
+                <th class="px-4 py-3">Remarks</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for result in summary.results %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ result.roster_entry.student.last_name }}, {{ result.roster_entry.student.first_name }}</td>
+                {% for breakdown in result.components %}<td class="px-4 py-3 text-gray-700">{{ breakdown.final_grade|grade_display }}</td>{% endfor %}
+                <td class="px-4 py-3 font-semibold text-brand-primary-800">{{ result.running_grade|grade_display }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ result.remarks|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    window.renderDistributionChart = function () {
+        var canvas = document.getElementById('distribution-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+        if (canvas._chartInstance) { canvas._chartInstance.destroy(); }
+        canvas._chartInstance = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: JSON.parse(canvas.dataset.labels),
+                datasets: [{ label: 'Students', data: JSON.parse(canvas.dataset.values), backgroundColor: '#283082' }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            },
+        });
+    };
+</script>

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Components — {{ template.name }}{% endblock %}
+{% block content %}
+<div class="mb-5 flex items-center justify-between">
+    <div>
+        <a href="{% url 'grading:templates' %}" class="text-sm text-gray-500 hover:underline">&larr; Grading Templates</a>
+        <h2 class="mt-1 text-xl font-bold text-gray-900">{{ template.name }}</h2>
+        <p class="mt-1 text-sm text-gray-500">{{ template.description|default:"Components and weights for this template." }}</p>
+    </div>
+    <button hx-get="{% url 'grading:component_create' template.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        {% sidebar_icon "plus" "w-4 h-4" %} Add Component
+    </button>
+</div>
+
+<div hx-get="{% url 'grading:template_components' template.pk %}" hx-trigger="refreshComponents from:body" hx-swap="innerHTML">
+    {% include "grading/_template_components_table.html" %}
+</div>
+{% endblock %}

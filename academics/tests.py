@@ -383,3 +383,43 @@ class DocxParserTests(TestCase):
 
         pairs = find_suspicious_name_pairs(["Mr. Garibay", "Ms. Garibay", "Mr. Caballa"])
         self.assertIn(("Mr. Garibay", "Ms. Garibay"), pairs)
+
+
+class SeedCitciAcademicsIdempotencyTests(TestCase):
+    """seed_citci_academics must be safe to re-run: no duplicate instructor
+    accounts (garibay2, garibay3, ...) and no duplicate anything else."""
+
+    def _counts(self):
+        from grading.models import AssessmentItem, ClassGradingScheme, GradingTemplate, Score
+
+        return {
+            "users": User.objects.count(),
+            "instructors": User.objects.filter(role=User.Role.INSTRUCTOR).count(),
+            "students": User.objects.filter(role=User.Role.STUDENT).count(),
+            "programs": Program.objects.count(),
+            "majors": Major.objects.count(),
+            "sections": Section.objects.count(),
+            "subjects": Subject.objects.count(),
+            "classes": ClassOffering.objects.count(),
+            "roster_entries": ClassRosterEntry.objects.count(),
+            "grading_templates": GradingTemplate.objects.count(),
+            "grading_schemes": ClassGradingScheme.objects.count(),
+            "assessment_items": AssessmentItem.objects.count(),
+            "scores": Score.objects.count(),
+        }
+
+    def test_running_twice_does_not_duplicate_records(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        call_command("seed_citci_academics", stdout=StringIO())
+        counts_after_first_run = self._counts()
+
+        call_command("seed_citci_academics", stdout=StringIO())
+        counts_after_second_run = self._counts()
+
+        self.assertEqual(counts_after_first_run, counts_after_second_run)
+        # Specifically guard against the known "garibay2" duplicate-username bug.
+        garibay_usernames = User.objects.filter(last_name="Mr. Garibay").values_list("username", flat=True)
+        self.assertLessEqual(len(garibay_usernames), 1)

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Grading — {{ class_offering.subject.code }}{% endblock %}
+{% block content %}
+<div x-data="{ tab: '{{ tab|default:'setup' }}' }">
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            {% if can_edit %}
+            <a href="{% url 'academics:my_classes' %}" class="text-sm text-gray-500 hover:underline">&larr; My Classes</a>
+            {% elif is_admin %}
+            <a href="{% url 'academics:classes' %}" class="text-sm text-gray-500 hover:underline">&larr; Classes</a>
+            {% else %}
+            <a href="{% url 'academics:program_head_classes' %}" class="text-sm text-gray-500 hover:underline">&larr; Classes</a>
+            {% endif %}
+            <h2 class="mt-1 text-xl font-bold text-gray-900">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</h2>
+            <p class="mt-1 text-sm text-gray-500">
+                {% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                · {{ class_offering.semester }}
+                {% if not can_edit %}· <span class="font-medium text-amber-600">Read-only</span>{% endif %}
+            </p>
+        </div>
+        {% if is_admin and scheme %}
+        <button hx-get="{% url 'grading:class_change_template' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Change Template
+        </button>
+        {% endif %}
+    </div>
+
+    {% if scheme_error %}
+    {% include "partials/_empty_state.html" with icon="alert" title="No grading template available" description=scheme_error %}
+    {% else %}
+
+    <div class="mb-4 flex gap-1 border-b border-gray-200">
+        <button type="button" @click="tab='setup'"
+                :class="tab==='setup' ? 'border-brand-primary-700 text-brand-primary-800' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="border-b-2 px-4 py-2 text-sm font-medium">Setup</button>
+        <button type="button" @click="tab='record'"
+                :class="tab==='record' ? 'border-brand-primary-700 text-brand-primary-800' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="border-b-2 px-4 py-2 text-sm font-medium">Class Record</button>
+        <button type="button" @click="tab='summary'"
+                :class="tab==='summary' ? 'border-brand-primary-700 text-brand-primary-800' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                class="border-b-2 px-4 py-2 text-sm font-medium">Summary</button>
+    </div>
+
+    <div x-show="tab==='setup'">
+        {% include "grading/_setup_tab.html" %}
+    </div>
+    <div x-show="tab==='record'" x-cloak>
+        {% include "grading/_record_tab.html" %}
+    </div>
+    <div x-show="tab==='summary'" x-cloak x-effect="tab === 'summary' && window.renderDistributionChart && window.renderDistributionChart()">
+        {% include "grading/_summary_tab.html" %}
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Grading Templates{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Grading Templates" subtitle="Reusable component/weight sets. Editing a template never changes classes already using it — they keep a frozen snapshot." %}
+
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <form hx-get="{% url 'grading:templates' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
+          hx-trigger="keyup changed delay:400ms from:input, refreshTemplates from:body"
+          class="flex flex-wrap items-center gap-2">
+        <div class="relative">
+            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" %}
+            <input type="text" name="q" value="{{ query }}" placeholder="Search name"
+                   class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+        </div>
+    </form>
+    <button hx-get="{% url 'grading:template_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        {% sidebar_icon "plus" "w-4 h-4" %} Add Template
+    </button>
+</div>
+
+{% include table_template %}
+{% endblock %}

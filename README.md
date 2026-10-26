@@ -3,14 +3,19 @@
 Grading Management System with Academic Performance Forecasting — College Department, Candelaria
 Institute of Technology of Cabadbaran, Inc. (CITCI).
 
-Built in phases; see `CLAUDE.md` (project root, one level up) for the full build specification.
+Built in phases; see `CLAUDE.md` (project root — see the housekeeping note at its top for the
+phase-numbering mapping) for the full build specification.
 **Phase 1** covered authentication, role-based access control, and the navigation shell.
 **Phase 2 / 2.1** added the academic structure: academic years/semesters, programs, majors,
 sections, subjects, classes (which can serve several sections at once), student profiles, and
-class lists. **Phase 3** (this state of the repo) adds full user management: the admin Users page
-(replacing the read-only Students list), bulk import of students/instructors, login lockout
-(django-axes) and sliding session expiry, and a reusable searchable-select widget. Grading,
-approvals, and forecasting are still role-gated "Coming soon" placeholders.
+class lists. **Phase 2.2** added full user management: the admin Users page (replacing the
+read-only Students list), bulk import of students/instructors, login lockout (django-axes) and
+sliding session expiry, and a reusable searchable-select widget. **Phase 3 / "Phase 4" in the
+original spec doc** (this state of the repo) adds the grading engine: grading templates, a
+class's frozen grading-scheme snapshot, assessment items, the spreadsheet-style score-encoding
+grid (Setup / Class Record / Summary tabs), and the CITCI-verified grade computation service.
+Approvals and forecasting are still role-gated "Coming soon" placeholders — no submit/approval
+workflow or student-facing grade pages exist yet.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -47,7 +52,9 @@ copy .env.example .env
 # 5. Run migrations
 python manage.py migrate
 
-# 6. Seed demo accounts (one per role) and real CITCI A.Y. 2026-2027 academic data
+# 6. Seed demo accounts (one per role), real CITCI A.Y. 2026-2027 academic data, and demo
+#    grading data (default template + assessment items/scores for 2 classes) — the last step
+#    runs automatically at the end of seed_citci_academics, no need to call it separately
 python manage.py seed_demo_users
 python manage.py seed_citci_academics
 
@@ -89,12 +96,18 @@ be "Mr. Honrejas" so it shows real classes), and ~10 demo students per section (
 `Demo@1234`, no forced password change) all on their sections' class lists. The existing `student`
 account is linked to BSED-ENG 1 and `program_head` heads both BSED and TCP.
 
-> **Known issue:** `seed_citci_academics` is *not* actually idempotent — its instructor-username
-> slugifier only checks usernames already taken at the start of that run, so re-running the
-> command creates a fresh set of suffixed duplicate accounts (`garibay2`, `garibay3`, ...) instead
-> of reusing the ones from the previous run. Only re-run it against a database you're prepared to
-> clean up afterwards (delete the `INSTRUCTOR` accounts with zero `ClassOffering`s pointing at
-> them), or fix `_seed_instructors` to match by `last_name` before creating a new user.
+`seed_citci_academics` is idempotent — re-running it is safe and produces the exact same counts of
+users/programs/sections/subjects/classes/roster entries/grading data (`_seed_instructors` matches
+an existing instructor by `last_name` before generating a new username, so it no longer creates
+`garibay2`-style duplicates on a second run).
+
+`python manage.py seed_grading_demo` (also runs automatically at the end of `seed_citci_academics`)
+seeds the "CITCI Default" grading template (Attendance 5% / Quizzes 30% / Recitation 15% /
+Project 10% / Examination 40%, matching `grading-system.xlsx`) and, for the first two classes it
+finds with both an instructor and an active roster, realistic assessment items + scores (a few
+deliberately low-scoring students so FAILED/at-risk cases exist). The first of those two classes
+leaves its Final Exam unencoded on purpose, so its Class Record tab visibly demonstrates the
+running-grade re-normalization rule.
 
 That JSON is generated from the Registrar's .docx via
 `python manage.py import_offerings_docx docs/source/all_subject_per_major.docx` (needs
@@ -121,6 +134,29 @@ instead of creating duplicates. Download the column template from the import mod
 building a sheet by hand. After confirming an import, download the `.xlsx` of temporary passwords
 for newly-created accounts immediately — it's generated in memory from that request only and is
 never stored or shown again.
+
+## Grading rules
+
+Verified against `grading-system.xlsx` (CITCI's actual class record) to full Decimal precision —
+see `grading/tests.py::DelaCruzFinalGradeTests` for the hand-checked example (row 11, Dela Cruz,
+Juan B. → final grade 1.7743118580765638..., displayed 1.77, PASSED).
+
+- **Components/weights** (seeded as the default `GradingTemplate`, "CITCI Default"): Attendance 5%,
+  Quizzes 30%, Recitation 15%, Project 10%, Examination 40%.
+- **Component grade** = 5 − 4 × (Σ scores ÷ Σ max scores) for that component's assessment items.
+  1.00 is the best possible grade, 5.00 the worst.
+- **Final grade** = Σ (component grade × weight). **Passing** = final grade ≤ 3.00.
+- **Running grade** (shown mid-term): only components with at least one score encoded *anywhere in
+  the class* count, with the remaining weights re-normalized to 100% — a component nobody has
+  started yet is excluded rather than dragging the running grade toward 5.00.
+- **Final grade**: always every component and every item; any still-blank cell counts as 0.
+- All of the above is Decimal arithmetic end to end (never float) — see `grading/services.py`.
+  Display rounding (`settings.GRADE_DISPLAY_DECIMALS`, default 2) only affects what's shown; the
+  stored/computed value keeps full precision.
+- A class never references a `GradingTemplate` directly — the first time anyone opens its grading
+  page, `ClassGradingScheme.get_or_create_default` snapshots the template's components onto a
+  per-class `ClassGradingScheme`, so editing the template later never changes a class already using
+  it. Admin can re-apply a different template to a class only while it has zero scores encoded.
 
 ## Running tests
 
@@ -164,6 +200,17 @@ python manage.py test
 - **Registrar .docx → seed data pipeline:** `academics/management/commands/import_offerings_docx.py`
   parses `docs/source/all_subject_per_major.docx` into `docs/source/citci_offerings_2026_2027.json`
   (+ `docs/source/DATA_ISSUES.md`); `seed_citci_academics` loads that JSON into the database.
+- **Grading engine** (templates, per-class scheme snapshot, assessment items, scores, computation):
+  `grading/models.py`, `grading/services.py` (pure functions — `compute_student`, `compute_class`,
+  `save_score`, `validate_component_weights`; no view/HTTP concerns), `grading/views.py` +
+  `grading/urls.py` for the admin Grading Templates pages and the instructor Class Grading page
+  (Setup / Class Record / Summary tabs, all three rendered server-side and switched client-side via
+  Alpine `x-show` — no separate page load per tab). The score-encoding grid autosaves one cell at a
+  time via `hx-trigger="blur changed"` (see `templates/grading/_grid_row.html`); keyboard
+  Up/Down/Left/Right/Enter navigation between cells is `static/js/grading-grid.js` (plain DOM focus
+  moves between inputs via server-rendered `data-up`/`data-down`/`data-left`/`data-right` ids — no
+  grid-position math in JS). Chart.js (vendored, `static/vendor/chartjs/`) draws the Summary tab's
+  grade-distribution bar chart.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js
@@ -174,8 +221,9 @@ python manage.py test
 ## Tech stack
 
 Django 5.2, PostgreSQL (via psycopg 3), Django Templates + HTMX + Alpine.js, Tailwind CSS via the
-standalone CLI (`django-tailwind-cli`, no Node.js required), Pillow, openpyxl (class list /
-bulk-import templates and exports), django-axes (login lockout). `requirements-dev.txt` adds
+standalone CLI (`django-tailwind-cli`, no Node.js required), Chart.js (vendored, grade-distribution
+chart only), Pillow, openpyxl (class list / bulk-import templates and exports), django-axes (login
+lockout). `requirements-dev.txt` adds
 python-docx, needed only to regenerate the seed data JSON from a Registrar .docx. See `CLAUDE.md`
 for the full rationale and later-phase plans (grading engine, ML forecasting service, etc.).
 

@@ -1,11 +1,7 @@
 {% load sidebar_icons grading_extras %}
-<div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-    {% for component in scheme.components.all %}
-    <div class="rounded-xl border border-gray-200 bg-white p-3 text-center">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ component.name }}</p>
-        <p class="mt-1 text-lg font-bold text-brand-primary-800">{{ component.weight|trim_decimal }}%</p>
-    </div>
-    {% endfor %}
+<div class="mb-5 rounded-2xl border border-gray-200 bg-white p-4">
+    <h3 class="mb-3 text-sm font-semibold text-gray-700">Grading Components</h3>
+    {% include "grading/_components_panel.html" with scheme=components.scheme formset=components.formset can_edit=components.can_edit instructor_share=components.instructor_share change_logs=components.change_logs class_offering=class_offering %}
 </div>
 
 {% if can_edit %}

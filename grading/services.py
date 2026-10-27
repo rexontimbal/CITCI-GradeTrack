@@ -21,7 +21,7 @@ from django.db.models import Prefetch
 
 from academics.models import ClassRosterEntry
 
-from .models import AssessmentItem, ClassGradingScheme, Score, ScoreChangeLog
+from .models import AssessmentItem, ClassGradingScheme, Score, ScoreChangeLog, SchemeComponentChangeLog
 
 PASSING_THRESHOLD = Decimal("3.00")
 
@@ -53,6 +53,48 @@ def save_score(roster_entry, item, new_value, user):
 
     ScoreChangeLog.objects.create(score=score_obj, old_value=old_value, new_value=new_value, changed_by=user)
     return score_obj, None
+
+
+def component_snapshot(component):
+    """Plain-dict snapshot of a SchemeComponent's editable fields, for
+    SchemeComponentChangeLog's before/after JSON."""
+    return {"name": component.name, "category": component.category, "weight": component.weight}
+
+
+def ensure_locked_component_unchanged(instance, name, category, weight):
+    """Raise if an edit would change a locked component's name/category/
+    weight — CITCI policy: Examination's weight (and whichever other
+    components an admin locks) is fixed by the school, not the instructor."""
+    if instance.pk and instance.is_locked:
+        if name != instance.name or category != instance.category or weight != instance.weight:
+            raise ValidationError(
+                "This component is set by the school and can't be renamed, recategorized, or reweighted."
+            )
+
+
+def check_can_delete_scheme_component(component):
+    """Returns (can_delete, reason). A locked component can never be
+    deleted; an unlocked one only once none of its items have a score yet
+    (matching the single-item delete rule — move or delete those first)."""
+    if component.is_locked:
+        return False, "This component is set by the school and can't be deleted."
+    if component.has_scored_items:
+        return False, "This component has scored items — move or delete those items first."
+    return True, ""
+
+
+def delete_scheme_component(component):
+    """Delete a component and any assessment items still pointing at it —
+    safe to call only after check_can_delete_scheme_component() confirms
+    none of those items have scores (AssessmentItem.component is PROTECT)."""
+    component.items.all().delete()
+    component.delete()
+
+
+def log_component_change(scheme, action, component_name, user, before=None, after=None):
+    SchemeComponentChangeLog.objects.create(
+        scheme=scheme, action=action, component_name=component_name, before=before, after=after, changed_by=user
+    )
 
 
 def _component_grade(earned: Decimal, possible: Decimal) -> Optional[Decimal]:

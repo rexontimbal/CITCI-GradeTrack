@@ -18,7 +18,17 @@ from academics.models import (
 )
 from accounts.models import User
 
-from .models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate, Score, ScoreChangeLog
+from .models import (
+    AssessmentItem,
+    AssessmentTerm,
+    ClassGradingScheme,
+    ComponentCategory,
+    GradingComponent,
+    GradingTemplate,
+    Score,
+    SchemeComponentChangeLog,
+    ScoreChangeLog,
+)
 from .services import compute_class, compute_student, format_grade, save_score, validate_component_weights
 from .views import _build_class_record_context
 
@@ -53,11 +63,28 @@ class GradingTestBase(TestCase):
         self.roster_entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
 
         self.template = GradingTemplate.objects.create(name="CITCI Default", is_default=True)
-        self.attendance = GradingComponent.objects.create(template=self.template, name="Attendance", weight=Decimal("5"), order=1)
-        self.quizzes = GradingComponent.objects.create(template=self.template, name="Quizzes", weight=Decimal("30"), order=2)
-        self.recitation = GradingComponent.objects.create(template=self.template, name="Recitation", weight=Decimal("15"), order=3)
-        self.project = GradingComponent.objects.create(template=self.template, name="Project", weight=Decimal("10"), order=4)
-        self.examination = GradingComponent.objects.create(template=self.template, name="Examination", weight=Decimal("40"), order=5)
+        self.attendance = GradingComponent.objects.create(
+            template=self.template, name="Attendance", category=ComponentCategory.ATTENDANCE, weight=5, order=1
+        )
+        self.quizzes = GradingComponent.objects.create(
+            template=self.template, name="Quizzes", category=ComponentCategory.QUIZ, weight=30, order=2
+        )
+        self.recitation = GradingComponent.objects.create(
+            template=self.template, name="Recitation", category=ComponentCategory.RECITATION, weight=15, order=3
+        )
+        self.project = GradingComponent.objects.create(
+            template=self.template, name="Project", category=ComponentCategory.PROJECT, weight=10, order=4
+        )
+        # CITCI policy: Examination's weight is fixed by the school — every
+        # other component is the instructor's to define for their own class.
+        self.examination = GradingComponent.objects.create(
+            template=self.template,
+            name="Examination",
+            category=ComponentCategory.EXAM,
+            weight=40,
+            is_locked=True,
+            order=5,
+        )
 
         self.scheme = ClassGradingScheme.get_or_create_default(self.class_offering)
         self.scheme_components = {sc.name: sc for sc in self.scheme.components.all()}
@@ -83,6 +110,35 @@ class GradingTestBase(TestCase):
             Score.objects.update_or_create(
                 roster_entry=roster_entry, item=item, defaults={"score": None if value is None else int(value)}
             )
+
+    def components_formset_payload(self, rows, extra_blanks=2):
+        """Build a valid "components-*" formset POST payload. `rows` is a
+        list of dicts: {"instance": SchemeComponent-or-None, "name":...,
+        "category":..., "weight":..., "delete": bool}. `instance=None` means
+        a brand-new row (no -id value) — matches how the "Add component"
+        button's cloned row posts."""
+        data = {
+            "components-TOTAL_FORMS": str(len(rows) + extra_blanks),
+            "components-INITIAL_FORMS": str(sum(1 for r in rows if r.get("instance"))),
+            "components-MIN_NUM_FORMS": "0",
+            "components-MAX_NUM_FORMS": "1000",
+        }
+        for i, row in enumerate(rows):
+            prefix = f"components-{i}"
+            instance = row.get("instance")
+            data[f"{prefix}-id"] = str(instance.pk) if instance else ""
+            data[f"{prefix}-name"] = row.get("name", instance.name if instance else "")
+            data[f"{prefix}-category"] = row.get("category", instance.category if instance else ComponentCategory.OTHER)
+            data[f"{prefix}-weight"] = str(row.get("weight", instance.weight if instance else ""))
+            if row.get("delete"):
+                data[f"{prefix}-DELETE"] = "on"
+        for i in range(len(rows), len(rows) + extra_blanks):
+            prefix = f"components-{i}"
+            data[f"{prefix}-id"] = ""
+            data[f"{prefix}-name"] = ""
+            data[f"{prefix}-category"] = ComponentCategory.OTHER
+            data[f"{prefix}-weight"] = ""
+        return data
 
 
 class DelaCruzFinalGradeTests(GradingTestBase):
@@ -477,3 +533,225 @@ class UnencodedComponentDisplayTests(GradingTestBase):
         quizzes = next(c for c in result.components if c.component.name == "Quizzes")
         self.assertFalse(attendance.running_included)
         self.assertTrue(quizzes.running_included)
+
+
+class LockedComponentProtectionTests(GradingTestBase):
+    """CITCI policy: Examination's weight is fixed by the school. An
+    instructor can't rename/recategorize/reweight or delete a locked
+    component in their own class, no matter what they POST."""
+
+    def _save_url(self):
+        return reverse("grading:class_components_save", args=[self.class_offering.pk])
+
+    def test_instructor_cannot_change_locked_component_fields(self):
+        examination = self.scheme_components["Examination"]
+        rows = [
+            {"instance": self.scheme_components["Attendance"]},
+            {"instance": self.scheme_components["Quizzes"]},
+            {"instance": self.scheme_components["Recitation"]},
+            {"instance": self.scheme_components["Project"]},
+            {"instance": examination, "name": "Finals", "category": ComponentCategory.OTHER, "weight": 50},
+        ]
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+
+        self.assertEqual(response.status_code, 200)  # re-rendered with a validation error, not saved
+        examination.refresh_from_db()
+        self.assertEqual(examination.name, "Examination")
+        self.assertEqual(examination.weight, 40)
+        self.assertEqual(examination.category, ComponentCategory.EXAM)
+
+    def test_instructor_cannot_delete_locked_component(self):
+        examination = self.scheme_components["Examination"]
+        rows = [
+            {"instance": self.scheme_components["Attendance"]},
+            {"instance": self.scheme_components["Quizzes"]},
+            {"instance": self.scheme_components["Recitation"]},
+            {"instance": self.scheme_components["Project"]},
+            {"instance": examination, "delete": True},
+        ]
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "set by the school")
+        self.assertTrue(self.scheme.components.filter(pk=examination.pk).exists())
+
+
+class ComponentWeightTotalTests(GradingTestBase):
+    def _save_url(self):
+        return reverse("grading:class_components_save", args=[self.class_offering.pk])
+
+    def _locked_plus_unlocked_rows(self, unlocked_weights):
+        rows = [{"instance": self.scheme_components["Examination"]}]
+        names = ["Attendance", "Quizzes", "Recitation", "Project"]
+        for name, weight in zip(names, unlocked_weights):
+            rows.append({"instance": self.scheme_components[name], "weight": weight})
+        return rows
+
+    def test_total_below_100_including_locked_is_rejected(self):
+        # 40 (locked) + 5+30+15+5 = 95, not 100.
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 5])
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+        self.assertContains(response, "must total 100%")
+
+    def test_total_exactly_100_including_locked_is_accepted(self):
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])  # 40 + 60 = 100
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Refresh"], "true")
+
+    def test_non_integer_weight_is_rejected(self):
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])
+        payload = self.components_formset_payload(rows)
+        payload["components-3-weight"] = "12.5"  # Project row
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), payload)
+        self.assertEqual(response.status_code, 200)  # redisplayed with a field error, not saved
+        self.scheme_components["Project"].refresh_from_db()
+        self.assertEqual(self.scheme_components["Project"].weight, 10)  # unchanged
+
+
+class TwoInstructorsDifferentComponentsTests(TestCase):
+    """Each instructor's class gets its own unlocked component mix —
+    customizing one class must never affect another, and both still
+    compute correctly against CITCI's component-grade/final-grade formula."""
+
+    def setUp(self):
+        self.academic_year = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.academic_year, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSIT", name="BS Information Technology")
+        self.section = Section.objects.create(program=self.program, academic_year=self.academic_year, year_level=1, name="A")
+
+        self.template = GradingTemplate.objects.create(name="CITCI Default", is_default=True)
+        GradingComponent.objects.create(template=self.template, name="Attendance", category=ComponentCategory.ATTENDANCE, weight=5, order=1)
+        GradingComponent.objects.create(template=self.template, name="Quizzes", category=ComponentCategory.QUIZ, weight=30, order=2)
+        GradingComponent.objects.create(template=self.template, name="Recitation", category=ComponentCategory.RECITATION, weight=15, order=3)
+        GradingComponent.objects.create(template=self.template, name="Project", category=ComponentCategory.PROJECT, weight=10, order=4)
+        GradingComponent.objects.create(template=self.template, name="Examination", category=ComponentCategory.EXAM, weight=40, is_locked=True, order=5)
+
+        self.instructor_a = make_user(User.Role.INSTRUCTOR, "profA")
+        self.instructor_b = make_user(User.Role.INSTRUCTOR, "profB")
+
+        subject_a = Subject.objects.create(code="IT101", title="Intro A", units=Decimal("3.0"), term=Term.FIRST)
+        subject_b = Subject.objects.create(code="IT102", title="Intro B", units=Decimal("3.0"), term=Term.FIRST)
+        self.class_a = ClassOffering.objects.create(subject=subject_a, semester=self.semester, instructor=self.instructor_a)
+        self.class_a.sections.set([self.section])
+        self.class_b = ClassOffering.objects.create(subject=subject_b, semester=self.semester, instructor=self.instructor_b)
+        self.class_b.sections.set([self.section])
+
+        self.scheme_a = ClassGradingScheme.get_or_create_default(self.class_a)
+        self.scheme_b = ClassGradingScheme.get_or_create_default(self.class_b)
+
+        student_a = make_user(User.Role.STUDENT, "studentA", id_number="2026-1001")
+        student_b = make_user(User.Role.STUDENT, "studentB", id_number="2026-1002")
+        self.roster_a = ClassRosterEntry.objects.create(student=student_a, class_offering=self.class_a)
+        self.roster_b = ClassRosterEntry.objects.create(student=student_b, class_offering=self.class_b)
+
+    def test_each_class_keeps_its_own_unlocked_components_and_computes_independently(self):
+        # Instructor A: keeps the default split.
+        exam_a = self.scheme_a.components.get(name="Examination")
+        attendance_a = self.scheme_a.components.get(name="Attendance")
+        item_exam_a = AssessmentItem.objects.create(
+            class_offering=self.class_a, component=exam_a, title="Final", max_score=100, term=AssessmentTerm.FINAL
+        )
+        item_att_a = AssessmentItem.objects.create(
+            class_offering=self.class_a, component=attendance_a, title="A1", max_score=10, term=AssessmentTerm.PRELIM
+        )
+        Score.objects.create(roster_entry=self.roster_a, item=item_exam_a, score=80)
+        Score.objects.create(roster_entry=self.roster_a, item=item_att_a, score=10)
+
+        # Instructor B: renames/reweights the unlocked components — merges
+        # Quizzes+Recitation into one "Formative Assessment" at 45%, drops
+        # Project's weight to 0 by removing it isn't allowed (min 1), so
+        # instead redistributes: Attendance 5, Formative 45, Project 10.
+        quizzes_b = self.scheme_b.components.get(name="Quizzes")
+        quizzes_b.name = "Formative Assessment"
+        quizzes_b.weight = 45
+        quizzes_b.save()
+        recitation_b = self.scheme_b.components.get(name="Recitation")
+        self.scheme_b.components.filter(pk=recitation_b.pk).delete()  # unscored, zero items -> deletable directly here
+        exam_b = self.scheme_b.components.get(name="Examination")
+        item_exam_b = AssessmentItem.objects.create(
+            class_offering=self.class_b, component=exam_b, title="Final", max_score=100, term=AssessmentTerm.FINAL
+        )
+        item_formative_b = AssessmentItem.objects.create(
+            class_offering=self.class_b, component=quizzes_b, title="F1", max_score=50, term=AssessmentTerm.PRELIM
+        )
+        Score.objects.create(roster_entry=self.roster_b, item=item_exam_b, score=90)
+        Score.objects.create(roster_entry=self.roster_b, item=item_formative_b, score=25)
+
+        result_a = compute_student(self.roster_a)
+        result_b = compute_student(self.roster_b)
+
+        # Class A: Examination grade = 5 - 4*(80/100) = 1.80; Attendance = 5 - 4*(10/10) = 1.00
+        exam_grade_a = next(c.final_grade for c in result_a.components if c.component.name == "Examination")
+        attendance_grade_a = next(c.final_grade for c in result_a.components if c.component.name == "Attendance")
+        self.assertEqual(exam_grade_a, Decimal("1.80"))
+        self.assertEqual(attendance_grade_a, Decimal("1.00"))
+
+        # Class B: Examination grade = 5 - 4*(90/100) = 1.40; Formative = 5 - 4*(25/50) = 3.00
+        exam_grade_b = next(c.final_grade for c in result_b.components if c.component.name == "Examination")
+        formative_grade_b = next(c.final_grade for c in result_b.components if c.component.name == "Formative Assessment")
+        self.assertEqual(exam_grade_b, Decimal("1.40"))
+        self.assertEqual(formative_grade_b, Decimal("3.00"))
+
+        # Weights stayed independent: class B's component names/weights never leaked into class A.
+        names_a = set(self.scheme_a.components.values_list("name", flat=True))
+        names_b = set(self.scheme_b.components.values_list("name", flat=True))
+        self.assertIn("Quizzes", names_a)
+        self.assertNotIn("Formative Assessment", names_a)
+        self.assertIn("Formative Assessment", names_b)
+        self.assertNotIn("Recitation", names_b)
+
+
+class WeightChangeRecomputeAndAuditTests(GradingTestBase):
+    def _save_url(self, class_offering=None):
+        return reverse("grading:class_components_save", args=[(class_offering or self.class_offering).pk])
+
+    def test_weight_change_recomputes_grades_and_writes_change_log(self):
+        item = self.make_items("Attendance", [10])[0]
+        self.set_scores(self.roster_entry, [item], [10])  # Attendance fully scored -> component grade 1.00
+
+        rows = [
+            {"instance": self.scheme_components["Attendance"], "weight": 20},  # 5 -> 20
+            {"instance": self.scheme_components["Quizzes"], "weight": 15},  # 30 -> 15
+            {"instance": self.scheme_components["Recitation"]},
+            {"instance": self.scheme_components["Project"]},
+            {"instance": self.scheme_components["Examination"]},
+        ]
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+        self.assertEqual(response.status_code, 204)
+
+        attendance = self.scheme_components["Attendance"]
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.weight, 20)
+
+        log = SchemeComponentChangeLog.objects.filter(
+            scheme=self.scheme, component_name="Attendance", action=SchemeComponentChangeLog.Action.EDITED
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.before["weight"], 5)
+        self.assertEqual(log.after["weight"], 20)
+        self.assertEqual(log.changed_by, self.instructor)
+
+        # Grades recompute live off the new weight — no caching to invalidate.
+        result = compute_student(self.roster_entry)
+        attendance_breakdown = next(c for c in result.components if c.component.name == "Attendance")
+        self.assertEqual(attendance_breakdown.component.weight, 20)
+
+    def test_another_instructor_gets_403(self):
+        other_instructor = make_user(User.Role.INSTRUCTOR, "other_prof")
+        rows = [
+            {"instance": self.scheme_components["Attendance"]},
+            {"instance": self.scheme_components["Quizzes"]},
+            {"instance": self.scheme_components["Recitation"]},
+            {"instance": self.scheme_components["Project"]},
+            {"instance": self.scheme_components["Examination"]},
+        ]
+        self.client.force_login(other_instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+        self.assertEqual(response.status_code, 403)

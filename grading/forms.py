@@ -3,8 +3,8 @@ from django.core.exceptions import ValidationError
 
 from core.forms import StyledModelForm
 
-from .models import AssessmentItem, GradingComponent, GradingTemplate
-from .services import validate_component_weights
+from .models import AssessmentItem, ClassGradingScheme, GradingComponent, GradingTemplate, SchemeComponent
+from .services import check_can_delete_scheme_component, ensure_locked_component_unchanged, validate_component_weights
 
 
 class GradingTemplateForm(StyledModelForm):
@@ -16,7 +16,7 @@ class GradingTemplateForm(StyledModelForm):
 class GradingComponentForm(StyledModelForm):
     class Meta:
         model = GradingComponent
-        fields = ["name", "weight", "order"]
+        fields = ["name", "category", "weight", "is_locked", "order"]
 
 
 class ComponentWeightCheckFormSet(forms.BaseInlineFormSet):
@@ -48,6 +48,83 @@ GradingComponentFormSet = forms.inlineformset_factory(
     form=GradingComponentForm,
     formset=ComponentWeightCheckFormSet,
     extra=1,
+    can_delete=True,
+)
+
+
+class SchemeComponentForm(StyledModelForm):
+    """One row of the instructor's "Grading Components" panel (class Setup
+    tab). A locked component's fields are rendered read-only/inert in the
+    UI (readonly text inputs, an inert select — see the widget attrs below)
+    — but, unlike Django's `disabled=True`, a readonly/inert field still
+    submits and gets validated normally, so a tampered POST (e.g. via dev
+    tools) is actually caught and rejected by clean() below with a clear
+    error, rather than silently ignored."""
+
+    weight = forms.IntegerField(min_value=1, max_value=100, label="Weight %", help_text="Whole numbers only.")
+
+    class Meta:
+        model = SchemeComponent
+        fields = ["name", "category", "weight"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.is_locked:
+            self.fields["name"].widget.attrs["readonly"] = "readonly"
+            self.fields["weight"].widget.attrs["readonly"] = "readonly"
+            # <select> has no native readonly, so category is instead made
+            # inert with CSS/JS; the server-side check below is what
+            # actually enforces it either way.
+            self.fields["category"].widget.attrs["class"] += " pointer-events-none"
+            self.fields["category"].widget.attrs["tabindex"] = "-1"
+            for field in self.fields.values():
+                field.widget.attrs.setdefault("class", "")
+                field.widget.attrs["class"] += " bg-gray-100 text-gray-500"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self.instance and self.instance.pk and self.instance.is_locked:
+            ensure_locked_component_unchanged(
+                self.instance, cleaned_data.get("name"), cleaned_data.get("category"), cleaned_data.get("weight")
+            )
+        return cleaned_data
+
+
+class _SchemeComponentBaseFormSet(forms.BaseInlineFormSet):
+    """The whole "Grading Components" panel is one form: add/edit/delete
+    rows together, validated — and saved — as a single atomic set, so the
+    100% total check (locked + unlocked) runs on the combination the
+    instructor actually intends, not on every individual row save."""
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        total_weight = 0
+        for form in self.forms:
+            if not form.cleaned_data or form.cleaned_data.get("DELETE"):
+                if form.cleaned_data.get("DELETE") and form.instance.pk:
+                    can_delete, reason = check_can_delete_scheme_component(form.instance)
+                    if not can_delete:
+                        form.add_error(None, reason)
+                continue
+            total_weight += form.cleaned_data.get("weight") or 0
+
+        if any(self.errors):
+            return
+
+        if total_weight != 100:
+            raise forms.ValidationError(f"Components must total 100% (currently {total_weight}%).")
+
+
+SchemeComponentFormSet = forms.inlineformset_factory(
+    ClassGradingScheme,
+    SchemeComponent,
+    form=SchemeComponentForm,
+    formset=_SchemeComponentBaseFormSet,
+    fk_name="scheme",
+    extra=2,
     can_delete=True,
 )
 

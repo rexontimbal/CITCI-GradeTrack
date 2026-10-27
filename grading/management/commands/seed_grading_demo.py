@@ -6,22 +6,23 @@ always produces the same numbers instead of drifting).
 """
 
 import random
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
 from academics.models import ClassOffering, ClassRosterEntry
-from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate
+from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, ComponentCategory, GradingComponent, GradingTemplate
 from grading.services import save_score
 
-# (component name, weight, [max scores for each item of that component])
-# — matches grading-system.xlsx row 10 (CITCI's real class record).
+# (component name, category, weight, is_locked, [max scores for each item])
+# — matches grading-system.xlsx row 10 (CITCI's real class record). Only
+# Examination's weight is fixed by the school; the other four are the
+# suggested starting point an instructor can freely rename/reweight.
 DEFAULT_TEMPLATE_COMPONENTS = [
-    ("Attendance", Decimal("5"), [10, 10, 10, 10, 10]),
-    ("Quizzes", Decimal("30"), [20, 20, 30, 20, 30, 40, 50]),
-    ("Recitation", Decimal("15"), [10, 10, 20, 30, 30, 30, 40]),
-    ("Project", Decimal("10"), [50, 70, 60, 80, 90]),
-    ("Examination", Decimal("40"), [80, 100, 80, 100]),
+    ("Attendance", ComponentCategory.ATTENDANCE, 5, False, [10, 10, 10, 10, 10]),
+    ("Quizzes", ComponentCategory.QUIZ, 30, False, [20, 20, 30, 20, 30, 40, 50]),
+    ("Recitation", ComponentCategory.RECITATION, 15, False, [10, 10, 20, 30, 30, 30, 40]),
+    ("Project", ComponentCategory.PROJECT, 10, False, [50, 70, 60, 80, 90]),
+    ("Examination", ComponentCategory.EXAM, 40, True, [80, 100, 80, 100]),
 ]
 
 TERM_CYCLE = [AssessmentTerm.PRELIM, AssessmentTerm.MIDTERM, AssessmentTerm.SEMIFINAL, AssessmentTerm.FINAL]
@@ -74,9 +75,11 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        for order, (name, weight, _maxes) in enumerate(DEFAULT_TEMPLATE_COMPONENTS, start=1):
+        for order, (name, category, weight, is_locked, _maxes) in enumerate(DEFAULT_TEMPLATE_COMPONENTS, start=1):
             GradingComponent.objects.update_or_create(
-                template=template, name=name, defaults={"weight": weight, "order": order}
+                template=template,
+                name=name,
+                defaults={"category": category, "weight": weight, "is_locked": is_locked, "order": order},
             )
         self.stdout.write(self.style.SUCCESS("Default grading template ready (CITCI Default)."))
         return template
@@ -85,7 +88,7 @@ class Command(BaseCommand):
         scheme_components = {sc.name: sc for sc in scheme.components.all()}
         items_by_component = {}
 
-        for name, _weight, maxes in DEFAULT_TEMPLATE_COMPONENTS:
+        for name, _category, _weight, _is_locked, maxes in DEFAULT_TEMPLATE_COMPONENTS:
             scheme_component = scheme_components[name]
             items = []
             for i, max_score in enumerate(maxes):

@@ -28,6 +28,7 @@ urlpatterns = [
     path("classes/<int:pk>/", views.class_grading, name="class_grading"),
     path("classes/<int:pk>/change-template/", views.class_change_template, name="class_change_template"),
     # Setup tab
+    path("classes/<int:pk>/components/save/", views.class_components_save, name="class_components_save"),
     path("classes/<int:class_pk>/items/create/", views.AssessmentItemFormView.as_view(), name="item_create"),
     path("items/<int:pk>/edit/", views.AssessmentItemFormView.as_view(), name="item_edit"),
     path("items/<int:pk>/delete/", views.item_delete, name="item_delete"),

@@ -142,7 +142,16 @@ see `grading/tests.py::DelaCruzFinalGradeTests` for the hand-checked example (ro
 Juan B. → final grade 1.7743118580765638..., displayed 1.77, PASSED).
 
 - **Components/weights** (seeded as the default `GradingTemplate`, "CITCI Default"): Attendance 5%,
-  Quizzes 30%, Recitation 15%, Project 10%, Examination 40%.
+  Quizzes 30%, Recitation 15%, Project 10%, Examination 40% — **confirmed CITCI practice:
+  Examination's weight is fixed by the school (`is_locked=True`); every other component, including
+  whether it exists at all, its name, and its weight, is each instructor's call for their own
+  class.** The Setup tab's "Grading Components" panel lets an instructor add/rename/reweight/delete
+  their own (unlocked) components (whole-number weights only); a locked one is shown read-only with
+  a lock icon. Locked + unlocked weights must total exactly 100% to save. Every add/edit/delete is
+  logged (`grading.SchemeComponentChangeLog`) and viewable in a "Change history" panel. A component
+  also carries a `category` (Attendance/Quiz/Recitation/Project/Exam/Other) independent of its
+  display name — forecasting (later phase) will key off category, not name, since instructors can
+  rename components however they like.
 - **Component grade** = 5 − 4 × (Σ scores ÷ Σ max scores) for that component's assessment items.
   1.00 is the best possible grade, 5.00 the worst.
 - **Final grade** = Σ (component grade × weight). **Passing** = final grade ≤ 3.00.
@@ -210,7 +219,13 @@ python manage.py test
   Up/Down/Left/Right/Enter navigation between cells is `static/js/grading-grid.js` (plain DOM focus
   moves between inputs via server-rendered `data-up`/`data-down`/`data-left`/`data-right` ids — no
   grid-position math in JS). Chart.js (vendored, `static/vendor/chartjs/`) draws the Summary tab's
-  grade-distribution bar chart.
+  grade-distribution bar chart. The Setup tab's "Grading Components" panel
+  (`templates/grading/_components_panel.html`, `static/js/grading-components.js`,
+  `grading:class_components_save`) is a single Django formset (`SchemeComponentFormSet`) submitted
+  atomically — add/rename/reweight/delete rows together, server-validated that locked + unlocked
+  weights total exactly 100%; `static/js/grading-components.js` only handles the live total bar and
+  cloning/removing rows client-side (same "clone the empty_form, bump TOTAL_FORMS" trick any Django
+  formset JS uses), never the actual validation.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js

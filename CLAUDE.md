@@ -120,6 +120,35 @@ one of these four; this is the checkpoint forecasting will key off later.
 - Project — 10%
 - Examination — 40% (its four items are literally named Prelim/Midterm/Semi-Final/Final Exam)
 
+**Instructor-defined components, school-locked Examination weight (confirmed CITCI practice,
+built):** Examination's weight is fixed by the school (`GradingComponent.is_locked` /
+`SchemeComponent.is_locked` — the "CITCI Default" template locks Examination at 40%); every other
+component — including whether it even exists, its name, its category, and its weight — is each
+instructor's call for their own class. The Setup tab's "Grading Components" panel lets an
+instructor add/rename/reweight/delete their own (unlocked) components; a locked component is
+read-only there (lock icon, "Set by the school" tooltip) and `grading/forms.py`'s
+`SchemeComponentForm.clean()` rejects any attempt to change one server-side regardless of what the
+UI allows, on top of `GradingTemplateForm`/`GradingComponentForm` on the admin side gaining the
+same `is_locked` toggle (so an admin, not an instructor, decides what's locked and at what weight;
+"Instructor-defined share" = 100 − the template's locked total). Saving the whole components panel
+is one atomic formset submission — add/rename/reweight/delete together — validated so **locked +
+unlocked weights must total exactly 100** before it's accepted; a component can't be deleted while
+any of its items has a score (move or delete those items first — `AssessmentItemForm`'s `component`
+field already lets an item be moved to a different component). Every add/edit/delete is logged to
+`grading.SchemeComponentChangeLog` (who, when, before → after JSON) and shown in a collapsible
+"Change history" panel. Editing is allowed until the class's grades are submitted — the Approvals
+phase (not built yet) will add that lock. Grades recompute live off whatever the current weights
+are (`compute_student`/`compute_class` read `SchemeComponent` fresh every call — nothing to
+invalidate).
+
+**Component categories (built):** every `GradingComponent`/`SchemeComponent` also carries a
+`category` — `ATTENDANCE` / `QUIZ` / `RECITATION` / `PROJECT` / `EXAM` / `OTHER`
+(`grading.ComponentCategory`) — independent of its free-text `name`, since instructors can rename a
+component however they like (e.g. "Participation" is still category `ATTENDANCE`). **Forecasting
+(Phase 6/7, not built yet) will key its features off `category`, never off component `name`** — the
+name is purely a display label an instructor controls; the category is what makes a renamed/
+instructor-invented component still meaningful to the ML feature pipeline.
+
 **Computation** (`grading/services.py` — pure functions, Decimal throughout, never float)
 1. Component grade = 5 − 4 × (Σ scores ÷ Σ max scores) for that component's assessment items.
    1.00 is the best possible grade, 5.00 the worst — **not** a 0–100% scale.
@@ -230,22 +259,33 @@ assumed a 2-period Midterm/Final design with a separate transmutation table; the
 record needed neither — see section 4):
 - `grading.GradingTemplate` — name (unique), description, is_default (only one at a time —
   `save()` unsets every other default in a transaction), is_active
-- `grading.GradingComponent` — template FK (CASCADE), name, weight (Decimal %), order; unique per
-  (template, name)
+- `grading.GradingComponent` — template FK (CASCADE), name, category (`ComponentCategory`:
+  ATTENDANCE/QUIZ/RECITATION/PROJECT/EXAM/OTHER), weight (whole-number percent — `PositiveIntegerField`,
+  not Decimal), is_locked (school-fixed — e.g. Examination 40% in "CITCI Default"), order; unique
+  per (template, name)
 - `grading.ClassGradingScheme` — class_offering OneToOne (CASCADE), source_template FK (PROTECT —
   blocks deleting a template still referenced by a class's snapshot). `apply_template()` copies the
-  template's current components onto fresh `SchemeComponent` rows (validates weights total 100%
-  first); `get_or_create_default()` lazily creates one using the default/first active template.
-- `grading.SchemeComponent` — scheme FK (CASCADE), name, weight, order — the frozen per-class copy
-  of a `GradingComponent`; `AssessmentItem` points here, never at `GradingComponent` directly.
+  template's current components (incl. category/is_locked) onto fresh `SchemeComponent` rows
+  (validates weights total 100% first); `get_or_create_default()` lazily creates one using the
+  default/first active template.
+- `grading.SchemeComponent` — scheme FK (CASCADE), name, category, weight (whole-number percent),
+  is_locked, order — the frozen per-class copy of a `GradingComponent`, **then independently
+  instructor-editable for the unlocked ones** (see section 4); `AssessmentItem` points here, never
+  at `GradingComponent` directly.
+- `grading.SchemeComponentChangeLog` — scheme FK (CASCADE), action (ADDED/EDITED/DELETED),
+  component_name (plain text snapshot, survives the component's own deletion), before/after
+  (JSONField — `{name, category, weight}` snapshots), changed_by FK User, changed_at — written by
+  `grading.views.class_components_save` for every row the instructor adds/edits/deletes; shown in
+  the Setup tab's "Change history" panel.
 - `grading.AssessmentItem` — class_offering FK (CASCADE) + component FK (PROTECT, blocks deleting a
-  component that has items), title, max_score (Decimal), term (`AssessmentTerm`: PRELIM/MIDTERM/
-  SEMIFINAL/FINAL), date (nullable), order
-- `grading.Score` — roster_entry FK (CASCADE) + item FK (CASCADE), score (Decimal, nullable = not
-  yet encoded), updated_by FK User; unique per (roster_entry, item)
-- `grading.ScoreChangeLog` — score FK (CASCADE), old_value, new_value, changed_by FK User,
-  changed_at — written by `grading.services.save_score()` on every value change (not on saves that
-  don't actually change the value)
+  component that has items), title, max_score (whole-number — `PositiveIntegerField`, matches
+  CITCI's class record), term (`AssessmentTerm`: PRELIM/MIDTERM/SEMIFINAL/FINAL, required — this is
+  what forecasting's mid-semester checkpoint will key off), date (nullable), order
+- `grading.Score` — roster_entry FK (CASCADE) + item FK (CASCADE), score (whole-number, nullable =
+  not yet encoded — `PositiveIntegerField`), updated_by FK User; unique per (roster_entry, item)
+- `grading.ScoreChangeLog` — score FK (CASCADE), old_value, new_value (whole-number), changed_by FK
+  User, changed_at — written by `grading.services.save_score()` on every value change (not on saves
+  that don't actually change the value)
 
 **Still to add:**
 - `grading.TermGrade` or equivalent (status enum draft/submitted/approved/released/locked,
@@ -271,12 +311,18 @@ intervene early.
 
 **Target label (y = 1):** final grade 5.00, INC, or DRP. Otherwise 0.
 
-**Features** (grade-based only, all available by midterm, all scaled 0–100):
+**Features** (grade-based only, all available by midterm, all scaled 0–100) — **keyed off
+`grading.ComponentCategory`, never off a component's free-text `name`**, since instructors rename
+and reweight their own (unlocked) components per class (section 4) — a feature-extraction query
+groups `SchemeComponent`/`Score` by `category` (e.g. sum every `QUIZ`-category component's
+earned/possible, regardless of what the instructor called it) so a renamed/instructor-invented
+component still feeds the right feature:
 1. `midterm_grade_pct`
-2. `quiz_avg_pct`
-3. `activity_avg_pct`
-4. `attendance_pct`
-5. `midterm_exam_pct`
+2. `quiz_avg_pct` (category=QUIZ)
+3. `activity_avg_pct` (category=PROJECT, and/or RECITATION/OTHER — finalize the category→feature
+   mapping when this phase starts)
+4. `attendance_pct` (category=ATTENDANCE)
+5. `midterm_exam_pct` (category=EXAM, term=MIDTERM)
 6. `missing_rate_pct` (% of assessments with no score so far)
 
 **Pipeline:** `StandardScaler` → `LogisticRegression(class_weight="balanced", max_iter=1000)`,
@@ -371,10 +417,12 @@ accounts' temporary passwords, generated in memory for that response only.
 **Admin — Grading Templates (built, Phase 3):** list/add/edit templates (`grading:templates`),
 live weight-total badge (green at 100%, amber otherwise — a template over/under 100% can't be
 applied to a class until fixed), "Classes Using It" count, set-default, deactivate. Each template's
-components get their own add/edit/delete sub-page (`grading:template_components`). Editing a
-template never touches a class's existing `ClassGradingScheme` snapshot. Admin can also view any
-class's grading page read-only and change its template via "Change Template" (blocked once the
-class has any score encoded).
+components get their own add/edit/delete sub-page (`grading:template_components`) — now also
+showing category, a lock toggle, school-locked weight total, and "Instructor-defined share" (100 −
+locked total); only admin can lock a component or set its fixed weight. Editing a template never
+touches a class's existing `ClassGradingScheme` snapshot. Admin can also view any class's grading
+page read-only and change its template via "Change Template" (blocked once the class has any score
+encoded).
 
 *(Transmutation scale doesn't apply here — see section 4. Historical data import, model training,
 and audit logs are still placeholder pages.)*
@@ -388,8 +436,14 @@ chart, pass/fail rates, at-risk counts), At-Risk Students, Grade Sheet Approvals
 button now live, built Phase 3 — links to the class grading page below) · Class Grading page
 (`grading:class_grading`, built Phase 3) with three tabs, all server-rendered together and switched
 client-side via Alpine `x-show` (no per-tab page load):
-  - **Setup** — read-only scheme (component/weight cards) + assessment-item CRUD (add/edit/delete,
-    delete blocked with a warning if the item already has scores, confirmable anyway)
+  - **Setup** — the "Grading Components" panel (`grading:class_components_save`): an editable
+    formset, one row per component — locked ones (e.g. Examination) read-only with a lock icon and
+    a "Set by the school" tooltip, unlocked ones freely rename/recategorize/reweight/delete
+    (`+ Add component` clones a blank row client-side), a live "Instructor share: X / Y%" progress
+    bar (green only at exactly the target), Save disabled until locked+unlocked totals exactly
+    100%, and a collapsible "Change history" panel off `SchemeComponentChangeLog`. Below that,
+    assessment-item CRUD (add/edit/delete, delete blocked with a warning if the item already has
+    scores, confirmable anyway; an item can be moved to a different component from its edit form)
   - **Class Record** — the spreadsheet-style encoding grid: sticky header + first three columns,
     gold scrollbar (`.gold-scroll`, same look as the sidebar's), inline cell autosave on blur
     (`hx-trigger="blur changed"`, re-renders just that row), keyboard Up/Down/Left/Right/Enter
@@ -472,7 +526,14 @@ until the previous one passes its tests.
   phase (see the task brief that drove it): grade-sheet submit/approval workflow, student-facing
   grade pages, Excel class-record import. Also fixed this phase: `seed_citci_academics` is now
   actually idempotent (`_seed_instructors` matches an existing instructor by `last_name` before
-  generating a new username), and `CLAUDE.md` moved into the repo it describes.
+  generating a new username), and `CLAUDE.md` moved into the repo it describes. Two follow-up
+  passes within this same phase: (1) whole-number scores/max-scores/weights, hiding not-yet-set-up
+  components from the Class Record grid, and the spreadsheet-visual rework (zebra rows, borderless
+  cells, sticky-header fix, row-actions menu); (2) **instructor-defined grading components with a
+  school-locked Examination weight** — component `category`, per-component `is_locked`, the Setup
+  tab's editable "Grading Components" panel (formset, live total bar, add/delete, change history),
+  and `grading.SchemeComponentChangeLog` — see section 4 for the confirmed CITCI policy and section
+  6 for the schema.
 - **Phase 4 — Workflow & reports (O2):** grade sheet status flow, approvals, release, lock, grade
   corrections, GWA computation service, PDF/Excel exports.
 - **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.

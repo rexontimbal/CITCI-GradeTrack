@@ -14,9 +14,34 @@ from accounts.utils import coming_soon
 from core.crud import EntityDeleteView, EntityFormView, EntityListView, ToggleActiveView, trigger_response
 from core.htmx import is_htmx
 
-from .forms import AssessmentItemForm, GradingComponentForm, GradingTemplateForm, MarkIncompleteForm
-from .models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate, Score
-from .services import PASSING_THRESHOLD, compute_class, compute_student, get_encoded_item_ids, get_scheme_components, save_score
+from .forms import (
+    AssessmentItemForm,
+    GradingComponentForm,
+    GradingTemplateForm,
+    MarkIncompleteForm,
+    SchemeComponentFormSet,
+)
+from .models import (
+    AssessmentItem,
+    AssessmentTerm,
+    ClassGradingScheme,
+    GradingComponent,
+    GradingTemplate,
+    Score,
+    SchemeComponent,
+    SchemeComponentChangeLog,
+)
+from .services import (
+    PASSING_THRESHOLD,
+    compute_class,
+    compute_student,
+    component_snapshot,
+    delete_scheme_component,
+    get_encoded_item_ids,
+    get_scheme_components,
+    log_component_change,
+    save_score,
+)
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
@@ -320,8 +345,68 @@ def class_grading(request, pk):
     if scheme:
         context["record"] = _build_class_record_context(class_offering, term_filter)
         context["summary"] = _build_summary_context(class_offering)
+        context["components"] = _build_components_panel_context(scheme, can_edit)
 
     return render(request, "grading/class_grading.html", context)
+
+
+def _build_components_panel_context(scheme, can_edit, formset=None):
+    if formset is None and can_edit:
+        formset = SchemeComponentFormSet(
+            instance=scheme, queryset=scheme.components.order_by("order", "id"), prefix="components"
+        )
+    locked_total = sum(c.weight for c in scheme.components.all() if c.is_locked)
+    return {
+        "scheme": scheme,
+        "formset": formset,
+        "can_edit": can_edit,
+        "locked_total": locked_total,
+        "instructor_share": 100 - locked_total,
+        "change_logs": scheme.component_change_logs.select_related("changed_by")[:50],
+    }
+
+
+@role_required(INSTRUCTOR)
+def class_components_save(request, pk):
+    class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not _can_edit(request.user, class_offering):
+        raise PermissionDenied
+    scheme = ClassGradingScheme.get_or_create_default(class_offering)
+
+    formset = SchemeComponentFormSet(
+        request.POST, instance=scheme, queryset=scheme.components.order_by("order", "id"), prefix="components"
+    )
+    if formset.is_valid():
+        for form in formset.forms:
+            if not form.cleaned_data:
+                continue
+            instance = form.instance
+            if form.cleaned_data.get("DELETE"):
+                if instance.pk:
+                    before = component_snapshot(instance)
+                    name = instance.name
+                    delete_scheme_component(instance)
+                    log_component_change(scheme, SchemeComponentChangeLog.Action.DELETED, name, request.user, before=before, after=None)
+                continue
+            if instance.pk:
+                before = component_snapshot(SchemeComponent.objects.get(pk=instance.pk))
+                saved = form.save()
+                after = component_snapshot(saved)
+                if before != after:
+                    log_component_change(scheme, SchemeComponentChangeLog.Action.EDITED, saved.name, request.user, before=before, after=after)
+            else:
+                saved = form.save(commit=False)
+                saved.scheme = scheme
+                saved.save()
+                log_component_change(scheme, SchemeComponentChangeLog.Action.ADDED, saved.name, request.user, before=None, after=component_snapshot(saved))
+
+        response = HttpResponse(status=204)
+        response["HX-Refresh"] = "true"
+        return response
+
+    context = _build_components_panel_context(scheme, True, formset=formset)
+    context["class_offering"] = class_offering
+    return render(request, "grading/_components_panel.html", context)
 
 
 @role_required(ADMIN)

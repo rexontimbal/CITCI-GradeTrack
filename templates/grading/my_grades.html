@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}My Grades{% endblock %}
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div>
+        <h2 class="text-xl font-bold text-gray-900">My Grades</h2>
+        <p class="mt-1 text-sm text-gray-500">{{ semester|default:"No semester on record yet." }}</p>
+    </div>
+    <div class="flex items-center gap-2">
+        {% if semesters %}
+        <form method="get" class="flex items-center gap-2 text-sm">
+            <select name="semester" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                {% for s in semesters %}
+                <option value="{{ s.pk }}" {% if semester and semester.pk == s.pk %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
+        {% if semester %}
+        <a href="{% url 'reports:student_grade_report_pdf' semester.pk %}" target="_blank"
+           class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Download Report of Grades (PDF)
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if not show_unofficial %}
+<div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+    Running (unofficial) scores aren't shown while a class is in progress — you'll see the final grade once it's released.
+</div>
+{% endif %}
+
+{% if rows %}
+<!-- Cards on mobile, table from sm: up -->
+<div class="grid grid-cols-1 gap-3 sm:hidden">
+    {% for row in rows %}
+    <a href="{% url 'grading:subject_detail' row.roster_entry.pk %}" class="block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div class="flex items-start justify-between gap-2">
+            <div>
+                <p class="font-semibold text-gray-900">{{ row.class_offering.subject.code }}</p>
+                <p class="text-sm text-gray-600">{{ row.class_offering.subject.title }}</p>
+            </div>
+            {% include "grading/_subject_status_chip.html" with status_label=row.status_label status_key=row.status_key %}
+        </div>
+        <p class="mt-1 text-xs text-gray-500">{{ row.class_offering.subject.units }} units · {{ row.class_offering.instructor.full_name|default:"Unassigned" }}</p>
+        <div class="mt-2">
+            {% if row.released_entry %}
+            <p class="font-bold text-gray-900">{{ row.released_entry.final_grade|grade_display }} <span class="text-xs font-normal text-gray-500">{{ row.released_entry.get_remarks_display }}</span></p>
+            {% elif row.unofficial_grade is not None %}
+            <p class="font-bold text-gray-900">{{ row.unofficial_grade|grade_display }} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Unofficial</span></p>
+            {% else %}
+            <p class="text-sm text-gray-500">In progress</p>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<div class="hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white sm:block">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Code</th>
+                <th class="px-4 py-3">Title</th>
+                <th class="px-4 py-3">Units</th>
+                <th class="px-4 py-3">Instructor</th>
+                <th class="px-4 py-3">Final Grade</th>
+                <th class="px-4 py-3">Remarks</th>
+                <th class="px-4 py-3">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">
+                    <a href="{% url 'grading:subject_detail' row.roster_entry.pk %}" class="hover:underline">{{ row.class_offering.subject.code }}</a>
+                </td>
+                <td class="px-4 py-3 text-gray-700">{{ row.class_offering.subject.title }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ row.class_offering.subject.units }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ row.class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                <td class="px-4 py-3 text-gray-700">
+                    {% if row.released_entry %}
+                    {{ row.released_entry.final_grade|grade_display }}
+                    {% elif row.unofficial_grade is not None %}
+                    {{ row.unofficial_grade|grade_display }} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Unofficial</span>
+                    {% else %}
+                    —
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-gray-700">{% if row.released_entry %}{{ row.released_entry.get_remarks_display }}{% else %}In progress{% endif %}</td>
+                <td class="px-4 py-3">{% include "grading/_subject_status_chip.html" with status_label=row.status_label status_key=row.status_key %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4 rounded-2xl border border-gray-200 bg-white p-4 text-sm">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-gray-600">Total units: <span class="font-semibold text-gray-900">{{ total_units }}</span></p>
+        <p class="text-gray-600">
+            {% if gwa.is_complete %}
+            Official GWA: <span class="font-semibold text-gray-900">{{ gwa.gwa|grade_display }}</span>
+            {% elif gwa.released_count %}
+            Partial GWA: <span class="font-semibold text-amber-700">{{ gwa.gwa|grade_display }}</span>
+            <span class="text-xs text-gray-500">({{ gwa.released_count }} of {{ gwa.total_count }} subjects released)</span>
+            {% else %}
+            Official GWA: <span class="font-semibold text-gray-900">—</span>
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="book" title="No subjects on record" description="You'll see your grades here once you're added to a class list." %}
+{% endif %}
+{% endblock %}

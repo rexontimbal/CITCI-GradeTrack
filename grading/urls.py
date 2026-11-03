@@ -36,7 +36,8 @@ urlpatterns = [
     path("cells/<int:roster_entry_pk>/<int:item_pk>/save/", views.save_cell, name="save_cell"),
     path("items/<int:pk>/fill-column/", views.fill_column, name="fill_column"),
     path("roster-entries/<int:pk>/mark-incomplete/", views.mark_incomplete, name="mark_incomplete"),
-    # Other roles (kept from the placeholder phase)
+    # Student portal (Phase 5)
     path("my-grades/", views.my_grades, name="my_grades"),
+    path("my-grades/<int:pk>/", views.subject_detail, name="subject_detail"),
     path("my-progress/", views.my_progress, name="my_progress"),
 ]

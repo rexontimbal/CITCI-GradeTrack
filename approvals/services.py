@@ -176,6 +176,16 @@ def release_grade_sheet(sheet, user):
         f"Grades for {sheet.class_offering} are now official.",
         link=f"/grading/classes/{sheet.class_offering_id}/",
     )
+
+    for entry in sheet.entries.select_related("roster_entry__student"):
+        if entry.remarks == GradeSheetEntry.Remarks.DROPPED:
+            continue
+        notify(
+            entry.roster_entry.student,
+            "Grade released",
+            f"Your final grade in {sheet.class_offering.subject.code} is now available.",
+            link=f"/grading/my-grades/{entry.roster_entry_id}/",
+        )
     return sheet
 
 
@@ -237,6 +247,12 @@ def correct_grade(entry, user, new_grade, new_remarks, reason):
         f"{entry.roster_entry.student.full_name}'s grade was corrected: {reason}",
         link=f"/grading/classes/{sheet.class_offering_id}/",
     )
+    notify(
+        entry.roster_entry.student,
+        "Grade corrected",
+        f"Your final grade in {sheet.class_offering.subject.code} was corrected.",
+        link=f"/grading/my-grades/{entry.roster_entry_id}/",
+    )
     return entry
 
 
@@ -269,12 +285,25 @@ def compute_gwa(student, semester):
     ).exclude(status=ClassRosterEntry.Status.DROPPED)
 
     is_complete = True
+    released_count = 0
+    total_count = 0
     for roster_entry in active_roster_entries:
+        total_count += 1
         released_entry = GradeSheetEntry.objects.filter(
             roster_entry=roster_entry, sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
         ).first()
+        if released_entry is not None:
+            released_count += 1
         if released_entry is None or released_entry.remarks == GradeSheetEntry.Remarks.INC:
             is_complete = False
-            break
 
-    return {"gwa": gwa, "total_units": total_units, "is_complete": is_complete}
+    return {
+        "gwa": gwa,
+        "total_units": total_units,
+        "is_complete": is_complete,
+        # For the "Partial GWA: x.xx (n of m subjects released)" note — a
+        # student's non-dropped class count and how many of those are
+        # already official, independent of whether every one is complete.
+        "released_count": released_count,
+        "total_count": total_count,
+    }

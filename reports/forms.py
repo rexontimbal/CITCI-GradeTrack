@@ -16,4 +16,7 @@ class InstitutionSettingsForm(StyledModelForm):
             "dean_title",
             "academic_head_name",
             "academic_head_title",
+            "registrar_name",
+            "registrar_title",
+            "show_unofficial_scores_to_students",
         ]

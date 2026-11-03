@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count
@@ -10,7 +11,6 @@ from academics.models import ClassOffering, ClassRosterEntry
 from accounts.decorators import role_required
 from accounts.mixins import RoleRequiredMixin
 from accounts.models import User
-from accounts.utils import coming_soon
 from core.crud import EntityDeleteView, EntityFormView, EntityListView, ToggleActiveView, trigger_response
 from core.htmx import is_htmx
 
@@ -623,15 +623,253 @@ def mark_incomplete(request, pk):
 
 
 # ---------------------------------------------------------------------------
-# Student-/placeholder pages kept from before this phase
+# Student portal (Phase 5) — a student only ever sees their OWN roster
+# entries; every lookup below filters by `student=request.user` (or goes
+# through a roster_entry already filtered that way), and a mismatched pk
+# 404s via get_object_or_404 rather than raising 403 — a student has no
+# business even learning that a given roster entry id exists.
 # ---------------------------------------------------------------------------
 
 
 @role_required(STUDENT)
 def my_grades(request):
-    return coming_soon(request, "My Grades")
+    from academics.models import Semester
+    from approvals.services import compute_gwa
+
+    from .services import released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+
+    student = request.user
+    show_unofficial = show_unofficial_scores_to_students()
+
+    semesters = (
+        Semester.objects.filter(class_offerings__roster_entries__student=student)
+        .distinct()
+        .order_by("-academic_year__start_year", "term")
+    )
+    semester_id = request.GET.get("semester")
+    semester = semesters.filter(pk=semester_id).first() if semester_id else None
+    if semester is None:
+        semester = semesters.filter(is_active=True).first() or semesters.first()
+
+    rows = []
+    gwa = None
+    total_units = Decimal("0")
+    if semester:
+        roster_entries = (
+            ClassRosterEntry.objects.filter(student=student, class_offering__semester=semester)
+            .select_related("class_offering__subject", "class_offering__instructor")
+            .order_by("class_offering__subject__code")
+        )
+        for entry in roster_entries:
+            released_entry = released_entry_for(entry)
+            status_label, status_key = subject_status_chip(entry, released_entry)
+            row = {
+                "roster_entry": entry,
+                "class_offering": entry.class_offering,
+                "released_entry": released_entry,
+                "status_label": status_label,
+                "status_key": status_key,
+                "unofficial_grade": None,
+            }
+            if released_entry is None and show_unofficial and entry.status == ClassRosterEntry.Status.ACTIVE:
+                row["unofficial_grade"] = compute_student(entry).running_grade
+            rows.append(row)
+            total_units += entry.class_offering.subject.units
+
+        gwa = compute_gwa(student, semester)
+
+    context = {
+        "page_title": "My Grades",
+        "semesters": semesters,
+        "semester": semester,
+        "rows": rows,
+        "gwa": gwa,
+        "total_units": total_units,
+        "show_unofficial": show_unofficial,
+    }
+    return render(request, "grading/my_grades.html", context)
+
+
+@role_required(STUDENT)
+def subject_detail(request, pk):
+    from .services import (
+        class_average_per_component,
+        released_entry_for,
+        running_grade_progression,
+        show_unofficial_scores_to_students,
+        subject_status_chip,
+    )
+
+    roster_entry = get_object_or_404(
+        ClassRosterEntry.objects.select_related(
+            "class_offering__subject", "class_offering__instructor", "class_offering__semester"
+        ),
+        pk=pk,
+        student=request.user,
+    )
+    class_offering = roster_entry.class_offering
+    released_entry = released_entry_for(roster_entry)
+    show_unofficial = show_unofficial_scores_to_students()
+    is_released = released_entry is not None
+    can_view_detail = is_released or show_unofficial
+
+    status_label, status_key = subject_status_chip(roster_entry, released_entry)
+
+    context = {
+        "page_title": f"{class_offering.subject.code} — My Grades",
+        "roster_entry": roster_entry,
+        "class_offering": class_offering,
+        "released_entry": released_entry,
+        "is_released": is_released,
+        "status_label": status_label,
+        "status_key": status_key,
+        "can_view_detail": can_view_detail,
+        "show_unofficial": show_unofficial,
+    }
+
+    if not can_view_detail:
+        return render(request, "grading/subject_detail.html", context)
+
+    if is_released:
+        components_display = [
+            {
+                "name": c["name"],
+                "weight": c["weight"],
+                "earned": Decimal(c["earned"]),
+                "possible": Decimal(c["possible"]),
+                "grade": Decimal(c["grade"]) if c["grade"] is not None else None,
+            }
+            for c in released_entry.components_json
+        ]
+        final_grade = released_entry.final_grade
+        remarks_display = released_entry.get_remarks_display()
+    else:
+        result = compute_student(roster_entry)
+        components_display = [
+            {
+                "name": b.component.name,
+                "weight": b.component.weight,
+                "earned": b.final_earned,
+                "possible": b.final_possible,
+                "grade": b.final_grade,
+            }
+            for b in result.components
+        ]
+        final_grade = result.running_grade
+        remarks_display = None
+
+    # Item list grouped by term — always the live AssessmentItem/Score data
+    # (informational only; for a released class these are frozen anyway
+    # since editing locks at submission, so it never drifts from what the
+    # official snapshot was taken from).
+    components = get_scheme_components(class_offering)
+    item_ids = [item.id for c in components for item in c.items.all()]
+    scores_by_item = {
+        s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
+    }
+    items_by_term = {term: [] for term, _ in AssessmentTerm.choices}
+    for component in components:
+        for item in component.items.all():
+            items_by_term[item.term].append(
+                {
+                    "component_name": component.name,
+                    "title": item.title,
+                    "date": item.date,
+                    "score": scores_by_item.get(item.id),
+                    "max_score": item.max_score,
+                }
+            )
+
+    class_average = class_average_per_component(class_offering)
+    component_averages = []
+    if class_average:
+        for component in components:
+            avg = class_average.get(component.id)
+            if avg is not None:
+                component_averages.append({"name": component.name, "average": avg})
+
+    progression = running_grade_progression(roster_entry)
+
+    context.update(
+        {
+            "components_display": components_display,
+            "final_grade": final_grade,
+            "remarks_display": remarks_display,
+            "items_by_term": [(term, label, items_by_term[term]) for term, label in AssessmentTerm.choices],
+            "component_averages": component_averages,
+            "chart_component_labels": [c["name"] for c in components_display],
+            "chart_component_percents": [
+                float(c["earned"] / c["possible"] * 100) if c["possible"] else 0 for c in components_display
+            ],
+            "chart_progression_labels": [label for _, label, _ in progression],
+            "chart_progression_values": [float(grade) if grade is not None else None for _, _, grade in progression],
+        }
+    )
+    return render(request, "grading/subject_detail.html", context)
 
 
 @role_required(STUDENT)
 def my_progress(request):
-    return coming_soon(request, "My Progress")
+    from academics.models import Semester
+    from approvals.models import GradeSheetEntry, GradeSheetStatus
+    from approvals.services import compute_gwa
+
+    from .services import released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+
+    student = request.user
+    show_unofficial = show_unofficial_scores_to_students()
+
+    semesters = (
+        Semester.objects.filter(class_offerings__roster_entries__student=student)
+        .distinct()
+        .order_by("academic_year__start_year", "term")
+    )
+
+    history = []
+    for semester in semesters:
+        result = compute_gwa(student, semester)
+        counts = {"PASSED": 0, "FAILED": 0, "INC": 0}
+        entries = GradeSheetEntry.objects.filter(
+            roster_entry__student=student,
+            roster_entry__class_offering__semester=semester,
+            sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED],
+        )
+        for entry in entries:
+            if entry.remarks in counts:
+                counts[entry.remarks] += 1
+        history.append({"semester": semester, "gwa": result, "counts": counts})
+
+    active_semester = semesters.filter(is_active=True).first()
+    current_subjects = []
+    if active_semester:
+        roster_entries = ClassRosterEntry.objects.filter(
+            student=student, class_offering__semester=active_semester
+        ).select_related("class_offering__subject")
+        for entry in roster_entries:
+            released_entry = released_entry_for(entry)
+            status_label, status_key = subject_status_chip(entry, released_entry)
+            if released_entry is not None:
+                grade = released_entry.final_grade
+            elif show_unofficial and entry.status == ClassRosterEntry.Status.ACTIVE:
+                grade = compute_student(entry).running_grade
+            else:
+                grade = None
+            current_subjects.append(
+                {
+                    "code": entry.class_offering.subject.code,
+                    "grade": grade,
+                    "status_key": status_key,
+                    "status_label": status_label,
+                }
+            )
+
+    context = {
+        "page_title": "My Progress",
+        "history": history,
+        "current_subjects": current_subjects,
+        "gwa_chart_labels": [str(h["semester"]) for h in history if h["gwa"]["gwa"] is not None],
+        "gwa_chart_values": [float(h["gwa"]["gwa"]) for h in history if h["gwa"]["gwa"] is not None],
+        "subject_chart_labels": [s["code"] for s in current_subjects if s["grade"] is not None],
+        "subject_chart_values": [float(s["grade"]) for s in current_subjects if s["grade"] is not None],
+    }
+    return render(request, "grading/my_progress.html", context)

@@ -22,6 +22,16 @@
 > bullet under "Build Phases". **Phase 4 part 2 (Reports & exports) is also done** — Institution
 > Settings, the Grade Sheet PDF, the formula-driven Class Record Excel export/import, and the
 > role-aware Reports page; see sections 4/6/8 and the Phase 4 part 2 bullet under "Build Phases".
+> A same-day follow-up pass fixed a provisional-remarks bug in grade sheet snapshots, made PDF
+> images resolve offline (`reports/pdf.py:link_callback`), and added "create as new item" to the
+> Excel import — see the "Phase 4 part 2 fixes" bullet under "Build Phases".
+>
+> **2026-11-03 (later the same day):** **Phase 5 (Student portal) is also done** — student
+> dashboard, My Grades, Subject detail, My Progress, and a Report of Grades PDF, all scoped to
+> `request.user`'s own data and clearly distinguishing OFFICIAL (released snapshot) from UNOFFICIAL
+> (live running grade); see section 8's "Student" entry and the Phase 5 bullet under "Build Phases".
+> Forecasting (O4) is still not built — the dashboard's "Academic Forecast" card is a clearly-marked
+> placeholder.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -368,12 +378,14 @@ record needed neither — see section 4):
   `get_solo()` is the only way callers should fetch it), school_name/sub_line/address/department,
   logo (ImageField, falls back to `static/img/citci-seal-256.png` when blank), dean_name/
   dean_title/academic_head_name/academic_head_title — every PDF/Excel report header and signature
-  block reads from this instead of hardcoding institution info in a template.
+  block reads from this instead of hardcoding institution info in a template. **Added Phase 5:**
+  registrar_name/registrar_title (signs a student's own Report of Grades PDF — the one report the
+  Dean doesn't sign) and show_unofficial_scores_to_students (BooleanField, default True — the
+  student portal's OFFICIAL-vs-UNOFFICIAL toggle, see section 8).
 
 **Still to add:**
-- `grading.GwaRecord` or similar, if the student portal phase (O3) needs a *persisted* GWA instead
-  of calling `approvals.services.compute_gwa()` on every page load — not needed yet, the function is
-  cheap enough at this data scale.
+- `grading.GwaRecord` or similar — not needed yet, `approvals.services.compute_gwa()` is cheap
+  enough at this data scale and now powers every student-facing GWA display (Phase 5).
 - `forecasting.MlModelVersion` (version, trained_at, training_source enum synthetic/historical, n_samples, threshold, accuracy, precision, recall, f1, ci_json, confusion_matrix_json, coefficients_json, is_active)
 - `forecasting.Prediction` (roster_entry, ml_model_version, probability, risk_label enum needs_attention/on_track, features_json, contributions_json, created_at)
 - `forecasting.Intervention` (roster_entry, instructor, note, created_at)
@@ -559,13 +571,45 @@ read-only once submitted, and the Program Head's return remarks shown prominentl
   and "Import from Excel" (preview → confirm, DRAFT/RETURNED only) next to the missing-score
   banner. Forecast is still a placeholder (O4 phase).
 
-**Student:** Dashboard (built, Phase 2 — real class-list subject count and subject list for the
-active semester; term/cumulative GWA still placeholder — `approvals.services.compute_gwa()` exists
-but has no student-facing display yet) · Notifications (built, Phase 4 part 1 — shares
-`dashboard.views.notifications`/`dashboard:notifications` with every other role, just the only one
-with a sidebar menu entry today) · Subject detail (component breakdown, assessment scores, period
-grades, progress chart, forecast card) · Grade history per term (GWA trend chart) · Downloadable
-grade report PDF *(still placeholders — student portal is O3, not this phase)*
+**Student (built, Phase 5):** a student only ever sees their OWN roster entries — every lookup
+filters by `student=request.user` (or a roster_entry already scoped that way), and a mismatched pk
+404s rather than 403s, so a student can't even learn another roster entry id exists. Two kinds of
+grades, never mixed up: **OFFICIAL** (`approvals.GradeSheetEntry` snapshots of RELEASED/LOCKED
+sheets — `grading.services.released_entry_for`) and **UNOFFICIAL** (live `compute_student()` running
+scores while a class is still in progress, always labeled "Unofficial — running grade, may still
+change" with an amber chip) — gated by the admin "Show running (unofficial) scores to students"
+toggle (`InstitutionSettings.show_unofficial_scores_to_students`, default on; off shows only
+"Grades not yet released" for anything not yet released). **Dashboard** (`dashboard:home`) — greeting
++ program/major/year/section, stat cards (Enrolled Subjects, Official/Partial GWA with a tooltip and
+an "n of m subjects released" note, Subjects Released n/m, Warnings = count of in-progress subjects
+with a running grade > 3.00), mobile-first subject cards (status chip, official grade+remarks or
+unofficial running grade, a progress bar for items encoded so far), an "Academic Forecast — Coming
+soon" placeholder card, and the latest 5 notifications. **My Grades** (`grading:my_grades`) —
+semester selector (every semester the student has class-list entries in), cards on mobile / a table
+from `sm:` up, a footer with total units and Official/Partial GWA
+(`approvals.services.compute_gwa`, now also returning `released_count`/`total_count` for the partial
+note), and "Download Report of Grades (PDF)". **Subject detail**
+(`grading:subject_detail`, pk = roster entry id) — component breakdown (official snapshot if
+released, else live), an item list grouped by term (always live `AssessmentItem`/`Score` data —
+informational only, and frozen in practice once a class is submitted since editing locks), a
+≥5-active-students-only class average per component (`grading.services.class_average_per_component`
+— aggregate only, never another student's own data), and two Chart.js charts (component % bar;
+running-grade-progression line via `grading.services.running_grade_progression`, which windows the
+running-grade calculation to items at or before each term). **My Progress**
+(`grading:my_progress`) — a GWA-history line chart (inverted y-axis, 1.00 best) + table (semester,
+units, GWA, passed/failed/INC) across every semester the student has records in, and a current-
+semester horizontal bar chart of each subject's grade colored by status with a dashed 3.00 passing
+line (a small inline Chart.js plugin — `afterDraw` — not an external annotation plugin). **Report of
+Grades PDF** (`reports:student_grade_report_pdf`, reuses `reports/pdf.py`): RELEASED/LOCKED entries
+only for the chosen semester, with a "Partial — n of m subjects released" note when incomplete;
+signed by Registrar (new `InstitutionSettings.registrar_name/title` — the student's own report is
+the one PDF the Dean doesn't sign) and Dean. Ownership is structural, not a checked parameter — the
+view never takes a student id, only a semester id, so it can only ever render `request.user`'s own
+data. **Notifications** (`dashboard:notifications`, shared with every role) gained a "Mark all as
+read" button (`dashboard:notifications_mark_all_read` — a plain POST+redirect, distinct from the
+topbar bell's own HTMX `mark_all_read`, which must keep returning the bell fragment). Release and
+grade-correction now also notify every affected student
+(`approvals.services.release_grade_sheet`/`correct_grade`), not just the instructor.
 
 **PDF grade sheet layout (built, Phase 4 part 2 — see `templates/reports/pdf/grade_sheet.html`):**
 institution header (from `InstitutionSettings`), "REPORT OF GRADES" title, subject code/title +
@@ -713,7 +757,28 @@ until the previous one passes its tests.
      ≥ 1) blocks the entire confirm, never a partial commit — and `commit_import` creates the
      `AssessmentItem` plus every valid per-student score for it inside one `transaction.atomic()`
      alongside the already-matched writes.
-- **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.
+- **Phase 5 — Student portal (O3, done):** student dashboard (stat cards, mobile-first subject
+  cards, latest notifications, an "Academic Forecast — Coming soon" placeholder), My Grades
+  (semester selector, cards/table, total units + Official/Partial GWA, Report of Grades PDF), Subject
+  detail (component breakdown, item list by term, ≥5-student class average, component-% bar +
+  running-grade-progression line charts), My Progress (GWA history line chart + table, current-
+  semester bar chart with a 3.00 passing line). OFFICIAL (released snapshot) vs UNOFFICIAL (live
+  running grade, amber "Unofficial" chip) are never mixed up, gated by a new admin toggle
+  (`InstitutionSettings.show_unofficial_scores_to_students`); every lookup is scoped to
+  `request.user` so a mismatched id 404s rather than 403s. Added
+  `grading.services.running_grade_progression`/`class_average_per_component`/`released_entry_for`/
+  `subject_status_chip`/`show_unofficial_scores_to_students` (shared by the student views and the
+  dashboard); `approvals.services.compute_gwa` now also returns `released_count`/`total_count` for
+  the "Partial GWA: x.xx (n of m)" note; `release_grade_sheet`/`correct_grade` now notify affected
+  students, not just the instructor. `reports.InstitutionSettings` gained `registrar_name`/
+  `registrar_title` (signs the student's own Report of Grades PDF; the Dean doesn't) alongside the
+  unofficial-scores toggle. Forecasting is still a placeholder card — Phase 6/7, not this phase.
+  Demo data: `grading.management.commands.seed_student_portal_demo` (auto-run at the end of
+  `seed_citci_academics`) guarantees the demo `student` account shows every state — a SUBMITTED
+  subject (shown as "in progress"), a subject with a running grade > 3.00 (the Warnings stat), and a
+  past semester (A.Y. 2025–2026, 2nd Sem) with released+locked grades so GWA history has 2+ points —
+  on top of whatever `seed_grading_demo` already produced (RELEASED, in-progress-with-partial-
+  scores, no-scores-yet all come free from its existing classes).
 - **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
   predict endpoint with contributions, pytest.
 - **Phase 7 — Integration (O3, O4):** Django ↔ ML client, queued/scheduled predictions, forecast

@@ -15,4 +15,5 @@ urlpatterns = [
     path("classes/<int:pk>/class-record.xlsx", views.class_record_excel, name="class_record_excel"),
     path("classes/<int:pk>/import/", views.class_record_import, name="class_record_import"),
     path("classes/<int:pk>/import/confirm/", views.class_record_import_confirm, name="class_record_import_confirm"),
+    path("my-grades/semesters/<int:pk>/report.pdf", views.student_grade_report_pdf, name="student_grade_report_pdf"),
 ]

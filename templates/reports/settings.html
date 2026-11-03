@@ -63,7 +63,29 @@
                     {{ form.academic_head_title }}
                     {% for error in form.academic_head_title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
                 </div>
+                <div>
+                    <label for="{{ form.registrar_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.registrar_name.label }}</label>
+                    {{ form.registrar_name }}
+                    {% for error in form.registrar_name.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.registrar_title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.registrar_title.label }}</label>
+                    {{ form.registrar_title }}
+                    {% for error in form.registrar_title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
             </div>
+            <p class="mt-2 text-xs text-gray-500">The Dean signs the Grade Sheet/Program reports; the Registrar signs a student's own Report of Grades.</p>
+        </div>
+
+        <div>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Student portal</h3>
+            <label class="flex items-start gap-2 text-sm text-gray-700">
+                {{ form.show_unofficial_scores_to_students }}
+                <span>
+                    {{ form.show_unofficial_scores_to_students.label }}
+                    <br><span class="text-xs text-gray-500">When off, a student's in-progress subjects show only "Grades not yet released" — no running score.</span>
+                </span>
+            </label>
         </div>
 
         <div class="flex justify-end">

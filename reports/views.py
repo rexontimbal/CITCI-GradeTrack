@@ -20,6 +20,7 @@ from .services import class_performance_rows, failing_inc_rows, submission_statu
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
 INSTRUCTOR = User.Role.INSTRUCTOR
+STUDENT = User.Role.STUDENT
 
 
 # ---------------------------------------------------------------------------
@@ -348,3 +349,51 @@ def program_grade_report_pdf(request, pk):
     }
     filename = f"ProgramGradeReport_{program.code}.pdf"
     return render_pdf("reports/pdf/program_grade_report.html", context, filename)
+
+
+# ---------------------------------------------------------------------------
+# Student — Report of Grades PDF (own data only; the view never takes a
+# student id, so there's no object-level check to get wrong — it's always
+# request.user's own roster entries for the chosen semester)
+# ---------------------------------------------------------------------------
+
+
+@role_required(STUDENT)
+def student_grade_report_pdf(request, pk):
+    from approvals.models import GradeSheetEntry, GradeSheetStatus as _Status
+    from approvals.services import compute_gwa
+
+    semester = get_object_or_404(Semester, pk=pk)
+    student = request.user
+
+    entries = (
+        GradeSheetEntry.objects.filter(
+            roster_entry__student=student,
+            roster_entry__class_offering__semester=semester,
+            sheet__status__in=[_Status.RELEASED, _Status.LOCKED],
+        )
+        .select_related("roster_entry__class_offering__subject", "roster_entry__class_offering__instructor")
+        .order_by("roster_entry__class_offering__subject__code")
+    )
+
+    total_subjects = ClassOffering.objects.filter(
+        roster_entries__student=student, semester=semester
+    ).exclude(roster_entries__status="DROPPED").distinct().count()
+    gwa = compute_gwa(student, semester)
+
+    inst, logo_url = _logo_context()
+    context = {
+        "settings": inst,
+        "logo_url": logo_url,
+        "generated_at": timezone.now(),
+        "watermark_text": None,
+        "student": student,
+        "semester": semester,
+        "entries": entries,
+        "gwa": gwa,
+        "is_partial": entries.count() < total_subjects,
+        "released_count": entries.count(),
+        "total_subjects": total_subjects,
+    }
+    filename = f"ReportOfGrades_{student.id_number or student.username}_{semester.pk}.pdf"
+    return render_pdf("reports/pdf/student_report.html", context, filename)

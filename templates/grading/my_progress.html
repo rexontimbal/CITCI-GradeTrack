@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}My Progress{% endblock %}
+{% block content %}
+<h2 class="mb-1 text-xl font-bold text-gray-900">My Progress</h2>
+<p class="mb-5 text-sm text-gray-500">GWA history and your current semester at a glance.</p>
+
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+        <p class="mb-1 text-sm font-semibold text-gray-700">GWA History</p>
+        <p class="mb-3 text-xs text-gray-400">Lower is better — 1.00 is the best possible grade.</p>
+        {% if gwa_chart_labels %}
+        <canvas id="gwa-chart" height="180"></canvas>
+        {{ gwa_chart_labels|json_script:"gwa-labels" }}
+        {{ gwa_chart_values|json_script:"gwa-values" }}
+        {% else %}
+        <p class="text-sm text-gray-500">No released semesters yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+        <p class="mb-1 text-sm font-semibold text-gray-700">Current Semester — Subjects</p>
+        <p class="mb-3 text-xs text-gray-400">Dashed line marks the 3.00 passing threshold.</p>
+        {% if subject_chart_labels %}
+        <canvas id="subjects-chart" height="220"></canvas>
+        {{ subject_chart_labels|json_script:"subjects-labels" }}
+        {{ subject_chart_values|json_script:"subjects-values" }}
+        {% else %}
+        <p class="text-sm text-gray-500">No grades to show yet this semester.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="mt-4 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Semester</th>
+                <th class="px-4 py-3">Units</th>
+                <th class="px-4 py-3">GWA</th>
+                <th class="px-4 py-3">Passed</th>
+                <th class="px-4 py-3">Failed</th>
+                <th class="px-4 py-3">INC</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for h in history %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ h.semester }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ h.gwa.total_units }}</td>
+                <td class="px-4 py-3 text-gray-700">
+                    {% if h.gwa.is_complete %}{{ h.gwa.gwa|grade_display }}
+                    {% elif h.gwa.gwa %}{{ h.gwa.gwa|grade_display }} <span class="text-xs text-amber-600">(partial)</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-green-700">{{ h.counts.PASSED }}</td>
+                <td class="px-4 py-3 text-red-700">{{ h.counts.FAILED }}</td>
+                <td class="px-4 py-3 text-amber-700">{{ h.counts.INC }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No semesters on record yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        if (typeof Chart === "undefined") return;
+
+        var gwaCanvas = document.getElementById("gwa-chart");
+        var gwaLabelsEl = document.getElementById("gwa-labels");
+        if (gwaCanvas && gwaLabelsEl) {
+            new Chart(gwaCanvas, {
+                type: "line",
+                data: {
+                    labels: JSON.parse(gwaLabelsEl.textContent),
+                    datasets: [{ label: "GWA", data: JSON.parse(document.getElementById("gwa-values").textContent), borderColor: "#283082", backgroundColor: "#283082" }],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { reverse: true, min: 1, max: 5, title: { display: true, text: "GWA (1.00 best)" } } },
+                },
+            });
+        }
+
+        var subjCanvas = document.getElementById("subjects-chart");
+        var subjLabelsEl = document.getElementById("subjects-labels");
+        if (subjCanvas && subjLabelsEl) {
+            var passingLine = {
+                id: "passingLine",
+                afterDraw: function (chart) {
+                    var xScale = chart.scales.x;
+                    var yScale = chart.scales.y;
+                    var x = xScale.getPixelForValue(3.0);
+                    var ctx = chart.ctx;
+                    ctx.save();
+                    ctx.strokeStyle = "#b91c1c";
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(x, yScale.top);
+                    ctx.lineTo(x, yScale.bottom);
+                    ctx.stroke();
+                    ctx.restore();
+                },
+            };
+            var values = JSON.parse(document.getElementById("subjects-values").textContent);
+            new Chart(subjCanvas, {
+                type: "bar",
+                data: {
+                    labels: JSON.parse(subjLabelsEl.textContent),
+                    datasets: [{
+                        label: "Grade",
+                        data: values,
+                        backgroundColor: values.map(function (v) { return v <= 3.0 ? "#16a34a" : "#dc2626"; }),
+                    }],
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { reverse: true, min: 1, max: 5, title: { display: true, text: "Grade (1.00 best)" } } },
+                },
+                plugins: [passingLine],
+            });
+        }
+    });
+</script>
+{% endblock %}

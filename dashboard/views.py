@@ -50,15 +50,65 @@ def _instructor_dashboard(request):
 
 
 def _student_dashboard(request):
+    from approvals.services import compute_gwa
+    from grading.models import AssessmentItem, Score
+    from grading.services import compute_student, released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+
+    student = request.user
     active = _active_semester()
+    show_unofficial = show_unofficial_scores_to_students()
+
     roster_entries = (
-        ClassRosterEntry.objects.filter(
-            student=request.user, status=ClassRosterEntry.Status.ACTIVE, class_offering__semester=active
-        ).select_related("class_offering__subject", "class_offering__instructor")
+        ClassRosterEntry.objects.filter(student=student, class_offering__semester=active)
+        .exclude(status=ClassRosterEntry.Status.DROPPED)
+        .select_related("class_offering__subject", "class_offering__instructor")
+        .order_by("class_offering__subject__code")
         if active
         else ClassRosterEntry.objects.none()
     )
-    context = {"roster_entries": roster_entries, "subjects_count": roster_entries.count()}
+
+    cards = []
+    warnings_count = 0 if show_unofficial else None
+    for entry in roster_entries:
+        released_entry = released_entry_for(entry)
+        status_label, status_key = subject_status_chip(entry, released_entry)
+
+        total_items = AssessmentItem.objects.filter(class_offering=entry.class_offering).count()
+        encoded_items = Score.objects.filter(roster_entry=entry, score__isnull=False).count()
+        progress_pct = int(encoded_items / total_items * 100) if total_items else 0
+
+        card = {
+            "entry": entry,
+            "status_label": status_label,
+            "status_key": status_key,
+            "progress_pct": progress_pct,
+            "is_released": released_entry is not None,
+            "final_grade": None,
+            "remarks": None,
+            "unofficial_grade": None,
+        }
+        if released_entry is not None:
+            card["final_grade"] = released_entry.final_grade
+            card["remarks"] = released_entry.get_remarks_display()
+        elif show_unofficial:
+            running_grade = compute_student(entry).running_grade
+            card["unofficial_grade"] = running_grade
+            if running_grade is not None and running_grade > 3:
+                warnings_count += 1
+        cards.append(card)
+
+    gwa = compute_gwa(student, active) if active else None
+    released_display = f"{gwa['released_count']}/{gwa['total_count']}" if gwa else "0/0"
+    notifications = request.user.notifications.all()[:5]
+
+    context = {
+        "cards": cards,
+        "subjects_count": roster_entries.count(),
+        "gwa": gwa,
+        "released_display": released_display,
+        "warnings_count": warnings_count,
+        "notifications": notifications,
+    }
     return render(request, "dashboard/student_dashboard.html", context)
 
 
@@ -96,3 +146,12 @@ def notifications(request):
     notification_list = Notification.objects.filter(recipient=request.user)
     context = {"page_title": "Notifications", "notifications": notification_list}
     return render(request, "dashboard/notifications.html", context)
+
+
+@login_required
+def notifications_mark_all_read(request):
+    """Same effect as mark_all_read, but for the full Notifications page —
+    a plain POST + redirect back to the list, not an HTMX bell-fragment
+    swap (what mark_all_read is for)."""
+    Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+    return redirect(reverse("dashboard:notifications"))

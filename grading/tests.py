@@ -782,3 +782,132 @@ class WeightChangeRecomputeAndAuditTests(GradingTestBase):
         self.client.force_login(other_instructor)
         response = self.client.post(self._save_url(), self.components_formset_payload(rows))
         self.assertEqual(response.status_code, 403)
+
+
+class StudentPortalTestBase(GradingTestBase):
+    """GradingTestBase's class/roster/scheme fixture, fully scored (Dela
+    Cruz-style complete data), plus a second student on a second class so
+    cross-student access can be tested."""
+
+    def setUp(self):
+        super().setUp()
+        self.attendance_items = self.make_items("Attendance", [10, 10])
+        self.quiz_items = self.make_items("Quizzes", [20])
+        self.recitation_items = self.make_items("Recitation", [10])
+        self.project_items = self.make_items("Project", [50])
+        self.exam_items = self.make_items("Examination", [100])
+        self.set_scores(self.roster_entry, self.attendance_items, [10, 10])
+        self.set_scores(self.roster_entry, self.quiz_items, [18])
+        self.set_scores(self.roster_entry, self.recitation_items, [9])
+        self.set_scores(self.roster_entry, self.project_items, [45])
+        self.set_scores(self.roster_entry, self.exam_items, [80])
+
+        self.program_head = make_user(User.Role.PROGRAM_HEAD, "ph_student_portal")
+        self.program.program_head = self.program_head
+        self.program.save()
+
+        self.other_student = make_user(User.Role.STUDENT, "other_student", id_number="2026-9001")
+
+    def release(self):
+        from approvals.services import approve_grade_sheet, release_grade_sheet, submit_grade_sheet
+
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        approve_grade_sheet(sheet, self.program_head)
+        return release_grade_sheet(sheet, self.program_head)
+
+
+class StudentAccessControlTests(StudentPortalTestBase):
+    def test_student_cannot_view_another_students_subject_detail(self):
+        self.client.force_login(self.other_student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_student_cannot_open_the_instructor_class_grading_page(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_can_view_own_subject_detail(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 200)
+
+
+class OfficialVsUnofficialSourcingTests(StudentPortalTestBase):
+    def test_released_subject_uses_frozen_snapshot_even_if_live_scores_change_later(self):
+        sheet = self.release()
+        entry = sheet.entries.get(roster_entry=self.roster_entry)
+        original_final_grade = entry.final_grade
+
+        # Mutate the underlying score directly (bypassing the edit lock, as
+        # a correction-free simulation of "what if live data drifted") —
+        # the snapshot must not budge.
+        exam_score = Score.objects.get(roster_entry=self.roster_entry, item=self.exam_items[0])
+        exam_score.score = 0
+        exam_score.save()
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertEqual(response.context["final_grade"], original_final_grade)
+        self.assertNotEqual(compute_student(self.roster_entry).final_grade, original_final_grade)
+
+    def test_unreleased_subject_uses_live_running_grade(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        expected = compute_student(self.roster_entry).running_grade
+        self.assertEqual(response.context["final_grade"], expected)
+        self.assertFalse(response.context["is_released"])
+
+
+class UnofficialScoresSettingTests(StudentPortalTestBase):
+    def _set_show_unofficial(self, value):
+        from reports.models import InstitutionSettings
+
+        inst = InstitutionSettings.get_solo()
+        inst.show_unofficial_scores_to_students = value
+        inst.save()
+
+    def test_setting_off_hides_running_scores_on_subject_detail(self):
+        self._set_show_unofficial(False)
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertFalse(response.context["can_view_detail"])
+        self.assertContains(response, "Grades not yet released")
+        self.assertNotIn("final_grade", response.context)
+
+    def test_setting_off_hides_running_grade_on_my_grades(self):
+        self._set_show_unofficial(False)
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:my_grades"))
+        row = response.context["rows"][0]
+        self.assertIsNone(row["unofficial_grade"])
+
+    def test_setting_on_shows_running_scores(self):
+        self._set_show_unofficial(True)
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertTrue(response.context["can_view_detail"])
+
+
+class GwaDisplayTests(StudentPortalTestBase):
+    def test_my_grades_shows_partial_gwa_note_when_not_all_released(self):
+        self.release()
+
+        # A second, still-unreleased class for the same student/semester —
+        # otherwise releasing the one-and-only class makes the GWA complete,
+        # not partial.
+        second_subject = Subject.objects.create(code="EXTRA1", title="Extra Subject", units=Decimal("3.0"), term=Term.FIRST)
+        second_class = ClassOffering.objects.create(subject=second_subject, semester=self.semester, instructor=self.instructor)
+        second_class.sections.set([self.section])
+        ClassRosterEntry.objects.create(student=self.student, class_offering=second_class)
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:my_grades"))
+        self.assertContains(response, "Partial GWA")
+
+    def test_dashboard_shows_official_gwa_once_complete(self):
+        self.release()
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertTrue(response.context["gwa"]["is_complete"])
+        self.assertContains(response, response.context["gwa"]["gwa"].__str__())

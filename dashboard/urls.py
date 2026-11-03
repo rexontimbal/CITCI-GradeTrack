@@ -10,4 +10,5 @@ urlpatterns = [
     path("notifications/bell/", views.bell, name="bell"),
     path("notifications/<int:pk>/mark-read/", views.mark_read, name="mark_read"),
     path("notifications/mark-all-read/", views.mark_all_read, name="mark_all_read"),
+    path("notifications/mark-all-read/page/", views.notifications_mark_all_read, name="notifications_mark_all_read"),
 ]

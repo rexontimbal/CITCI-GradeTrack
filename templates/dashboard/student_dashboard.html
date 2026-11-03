@@ -1,41 +1,120 @@
 {% extends "base.html" %}
-{% block page_title %}Student Dashboard{% endblock %}
+{% load grading_extras sidebar_icons %}
+{% block page_title %}Dashboard{% endblock %}
 {% block content %}
-    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Your academic overview for the current semester." %}
+{% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle=active_semester|default:"No active semester set." %}
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {% include "partials/_stat_card.html" with icon="book" label="Enrolled Subjects" value=subjects_count %}
-        {% include "partials/_stat_card.html" with icon="chart" label="Current GWA" value="—" %}
-        {% include "partials/_stat_card.html" with icon="alert" label="Warnings" value="—" %}
-    </div>
+<p class="mb-4 -mt-2 text-sm text-gray-500">
+    {{ user.student_profile.program.code|default:"—" }}
+    {% if user.student_profile.major %}· {{ user.student_profile.major.code }}{% endif %}
+    {% if user.student_profile.year_level %}· {{ user.student_profile.get_year_level_display }}{% endif %}
+    {% if user.student_profile.section %}· {{ user.student_profile.section }}{% endif %}
+</p>
 
-    <div class="mt-6">
-        {% if roster_entries %}
-        <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">My Subjects</h3>
-        <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    <tr>
-                        <th class="px-4 py-3">Code</th>
-                        <th class="px-4 py-3">Title</th>
-                        <th class="px-4 py-3">Units</th>
-                        <th class="px-4 py-3">Instructor</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    {% for entry in roster_entries %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-3 font-medium text-gray-900">{{ entry.class_offering.subject.code }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.subject.title }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.subject.units }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ entry.class_offering.instructor.full_name|default:"Unassigned" }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    {% include "partials/_stat_card.html" with icon="book" label="Enrolled Subjects" value=subjects_count %}
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-accent-100 text-brand-accent-900">
+                {% sidebar_icon "chart" "w-5 h-5" %}
+            </div>
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-500" title="Shows '—' until every subject this semester is released.">Official GWA</p>
+                <p class="text-xl font-bold text-gray-900">{% if gwa.is_complete %}{{ gwa.gwa|grade_display }}{% else %}—{% endif %}</p>
+            </div>
         </div>
-        {% else %}
-        {% include "partials/_empty_state.html" with icon="book" title="Your subjects will appear here" description="Running grades, progress charts, and your personalized forecast will show up once you're added to a class list and grades are encoded." %}
+        {% if gwa and not gwa.is_complete and gwa.released_count > 0 %}
+        <p class="mt-2 text-xs text-amber-700">Partial GWA: {{ gwa.gwa|grade_display }} ({{ gwa.released_count }} of {{ gwa.total_count }} subjects released)</p>
         {% endif %}
     </div>
+
+    {% include "partials/_stat_card.html" with icon="check-circle" label="Subjects Released" value=released_display %}
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                {% sidebar_icon "alert" "w-5 h-5" %}
+            </div>
+            <div>
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Warnings</p>
+                <p class="text-xl font-bold text-gray-900">{% if warnings_count is not None %}{{ warnings_count }}{% else %}—{% endif %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-6">
+    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">My Subjects</h3>
+    {% if cards %}
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {% for card in cards %}
+        <a href="{% url 'grading:subject_detail' card.entry.pk %}" class="block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm hover:border-brand-primary-300 hover:shadow-md">
+            <div class="flex items-start justify-between gap-2">
+                <div>
+                    <p class="font-semibold text-gray-900">{{ card.entry.class_offering.subject.code }}</p>
+                    <p class="text-sm text-gray-600">{{ card.entry.class_offering.subject.title }}</p>
+                </div>
+                {% include "grading/_subject_status_chip.html" with status_label=card.status_label status_key=card.status_key %}
+            </div>
+            <p class="mt-2 text-xs text-gray-500">
+                {{ card.entry.class_offering.subject.units }} unit{{ card.entry.class_offering.subject.units|floatformat:0|pluralize }}
+                · {{ card.entry.class_offering.instructor.full_name|default:"Unassigned" }}
+            </p>
+
+            <div class="mt-3">
+                {% if card.is_released %}
+                <p class="text-lg font-bold text-gray-900">{{ card.final_grade|grade_display }} <span class="text-xs font-normal text-gray-500">{{ card.remarks }}</span></p>
+                {% elif card.unofficial_grade is not None %}
+                <p class="text-lg font-bold text-gray-900">
+                    {{ card.unofficial_grade|grade_display }}
+                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">Unofficial</span>
+                </p>
+                <p class="text-[11px] text-amber-700">Unofficial — running grade, may still change</p>
+                {% else %}
+                <p class="text-sm text-gray-500">Grades not yet released</p>
+                {% endif %}
+            </div>
+
+            <div class="mt-3">
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div class="h-1.5 rounded-full bg-brand-accent-500" style="width: {{ card.progress_pct }}%"></div>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ card.progress_pct }}% of items encoded so far</p>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="book" title="Your subjects will appear here" description="Running grades, progress charts, and your personalized forecast will show up once you're added to a class list and grades are encoded." %}
+    {% endif %}
+</div>
+
+<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5">
+        <p class="text-sm font-semibold text-gray-700">Academic Forecast</p>
+        <p class="mt-1 text-sm text-gray-500">Coming soon — early warning based on your grades.</p>
+    </div>
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+        <div class="mb-2 flex items-center justify-between">
+            <p class="text-sm font-semibold text-gray-700">Recent Notifications</p>
+            <a href="{% url 'dashboard:notifications' %}" class="text-xs font-medium text-brand-primary-700 hover:underline">View all</a>
+        </div>
+        {% if notifications %}
+        <ul class="divide-y divide-gray-100">
+            {% for n in notifications %}
+            <li>
+                <a href="{% url 'dashboard:mark_read' n.pk %}" class="block py-2 {% if not n.is_read %}font-medium text-gray-900{% else %}text-gray-500{% endif %}">
+                    <p class="text-sm">{{ n.title }}</p>
+                    <p class="text-xs text-gray-400">{{ n.created_at|date:"M d, Y H:i" }}</p>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-500">No notifications yet.</p>
+        {% endif %}
+    </div>
+</div>
 {% endblock %}

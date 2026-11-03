@@ -23,6 +23,14 @@ class InstitutionSettings(TimeStampedModel):
     dean_title = models.CharField(max_length=100, blank=True, default="Dean")
     academic_head_name = models.CharField(max_length=150, blank=True, default="MARIA LAVELLA J. TORREGOSA, MAEM")
     academic_head_title = models.CharField(max_length=100, blank=True, default="Academic Head")
+    registrar_name = models.CharField(max_length=150, blank=True, help_text="Signatory on a student's own Report of Grades PDF.")
+    registrar_title = models.CharField(max_length=100, blank=True, default="Registrar")
+
+    show_unofficial_scores_to_students = models.BooleanField(
+        default=True,
+        help_text="When off, a student's in-progress (not yet released) subjects show only "
+        '"Grades not yet released" — no running score/grade at all.',
+    )
 
     class Meta:
         verbose_name = "Institution Settings"

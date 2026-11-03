@@ -331,6 +331,116 @@ def compute_class(class_offering) -> list:
     return results
 
 
+def show_unofficial_scores_to_students():
+    """The admin "Show running (unofficial) scores to students" toggle
+    (Institution Settings) — local import since `reports` loads after
+    `grading` in INSTALLED_APPS; fine at call time, not at module load."""
+    from reports.models import InstitutionSettings
+
+    return InstitutionSettings.get_solo().show_unofficial_scores_to_students
+
+
+def released_entry_for(roster_entry):
+    """The frozen RELEASED/LOCKED GradeSheetEntry for this roster entry, if
+    any — the one and only source for a student's OFFICIAL grade. None
+    means the class hasn't been released yet (show UNOFFICIAL data, or
+    nothing, depending on show_unofficial_scores_to_students())."""
+    from approvals.models import GradeSheetEntry, GradeSheetStatus
+
+    return (
+        GradeSheetEntry.objects.filter(
+            roster_entry=roster_entry, sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
+        )
+        .select_related("sheet")
+        .first()
+    )
+
+
+def subject_status_chip(roster_entry, released_entry):
+    """(label, css-class-key) — the small status chip shown on the student
+    dashboard's subject cards and the My Grades table."""
+    if roster_entry.status == ClassRosterEntry.Status.DROPPED:
+        return "Dropped", "dropped"
+    if released_entry is not None:
+        if released_entry.remarks == "INC":
+            return "INC", "inc"
+        return "Released", "released"
+    if roster_entry.is_incomplete:
+        return "INC", "inc"
+    return "In progress", "in_progress"
+
+
+def running_grade_progression(roster_entry):
+    """The running grade "as of" each grading period (Prelim → Final) —
+    same semantics as StudentGradeResult.running_grade (only components
+    with at least one scored item count, re-normalized), but windowed to
+    items whose term is at or before the cutoff. Used by the student
+    portal's subject-detail progression chart. Returns a list of
+    (term_value, term_label, grade-or-None) in Prelim..Final order."""
+    from .models import AssessmentTerm, ASSESSMENT_TERM_ORDER
+
+    components = _get_scheme_components(roster_entry.class_offering)
+    item_ids = [item.id for c in components for item in c.items.all()]
+    scores_by_item = {
+        s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
+    }
+
+    progression = []
+    for term, label in AssessmentTerm.choices:
+        cutoff = ASSESSMENT_TERM_ORDER[term]
+        component_grades = []
+        for component in components:
+            earned = Decimal("0")
+            possible = Decimal("0")
+            any_scored = False
+            for item in component.items.all():
+                if ASSESSMENT_TERM_ORDER[item.term] > cutoff:
+                    continue
+                score = scores_by_item.get(item.id)
+                if score is None:
+                    continue
+                any_scored = True
+                earned += score
+                possible += item.max_score
+            if any_scored:
+                grade = _component_grade(earned, possible)
+                if grade is not None:
+                    component_grades.append((component, grade))
+
+        if not component_grades:
+            progression.append((term, label, None))
+            continue
+        weight_sum = sum((c.weight for c, _ in component_grades), Decimal("0"))
+        if weight_sum == 0:
+            progression.append((term, label, None))
+            continue
+        total = sum(grade * (c.weight / weight_sum) for c, grade in component_grades)
+        progression.append((term, label, total))
+
+    return progression
+
+
+def class_average_per_component(class_offering, minimum_active_students=5):
+    """Aggregate-only per-component average grade across ACTIVE students —
+    returns None if fewer than `minimum_active_students` are active, so a
+    small class never exposes something close to an individual student's
+    own data. Keyed by SchemeComponent id."""
+    results = [r for r in compute_class(class_offering) if r.roster_entry.status == ClassRosterEntry.Status.ACTIVE]
+    if len(results) < minimum_active_students:
+        return None
+
+    totals = {}
+    for result in results:
+        for breakdown in result.components:
+            grade = breakdown.final_grade
+            if grade is None:
+                continue
+            bucket = totals.setdefault(breakdown.component.id, [])
+            bucket.append(grade)
+
+    return {component_id: (sum(grades) / len(grades)) for component_id, grades in totals.items() if grades}
+
+
 def per_term_breakdown(roster_entry):
     """Scores grouped by grading period (Prelim/Midterm/Semi-final/Final),
     across all components — for later forecasting checkpoints, not used by

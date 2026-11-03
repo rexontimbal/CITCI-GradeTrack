@@ -395,3 +395,61 @@ class ReportsPagesAccessTests(ReportsTestBase):
         self.client.force_login(self.instructor)
         response = self.client.get(reverse("reports:submission_status"))
         self.assertEqual(response.status_code, 403)
+
+
+class StudentReportPdfTests(ReportsTestBase):
+    def _second_class_for_student(self, student, scored=False, released=False):
+        from academics.models import ClassOffering, ClassRosterEntry, Subject, Term
+
+        subject = Subject.objects.create(code=f"EXTRA-{student.pk}", title="Extra Subject", units=Decimal("3.0"), term=Term.FIRST)
+        class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
+        class_offering.sections.set([self.section])
+        roster_entry = ClassRosterEntry.objects.create(student=student, class_offering=class_offering)
+        if scored:
+            from grading.models import ClassGradingScheme
+            from grading.services import save_score
+
+            scheme = ClassGradingScheme.get_or_create_default(class_offering)
+            for component in scheme.components.all():
+                item = component.items.create(class_offering=class_offering, title=f"{component.name} 1", max_score=10, term="FINAL")
+                save_score(roster_entry, item, 8, self.instructor)
+            if released:
+                sheet = submit_grade_sheet(class_offering, self.instructor)
+                approve_grade_sheet(sheet, self.program_head)
+                release_grade_sheet(sheet, self.program_head)
+        return class_offering, roster_entry
+
+    def test_pdf_includes_only_released_entries(self):
+        self.submit_and_release()  # self.roster_entry's class
+        self._second_class_for_student(self.student, scored=False)  # second class, never released
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("reports:student_grade_report_pdf", args=[self.semester.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["entries"].count(), 1)
+        self.assertTrue(response.context["is_partial"])
+
+    def test_pdf_never_includes_another_students_grades(self):
+        self.submit_and_release()
+        other_student = make_user(User.Role.STUDENT, "other_report_student", id_number="2026-9500")
+        self._second_class_for_student(other_student, scored=True, released=True)
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("reports:student_grade_report_pdf", args=[self.semester.pk]))
+        for entry in response.context["entries"]:
+            self.assertEqual(entry.roster_entry.student, self.student)
+
+    def test_other_role_cannot_access_student_report(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("reports:student_grade_report_pdf", args=[self.semester.pk]))
+        self.assertEqual(response.status_code, 403)
+
+
+class StudentNotificationTests(ReportsTestBase):
+    def test_release_notifies_every_student_on_the_roster(self):
+        from dashboard.models import Notification
+
+        self.submit_and_release()
+        self.assertTrue(
+            Notification.objects.filter(recipient=self.student, title="Grade released").exists()
+        )

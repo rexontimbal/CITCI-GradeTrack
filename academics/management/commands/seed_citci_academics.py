@@ -79,6 +79,7 @@ class Command(BaseCommand):
         students = self._seed_students(bsed, tcp, eng_major, ss_major, sections)
         self._seed_rosters(students, sections, classes)
         call_command("seed_grading_demo")
+        call_command("seed_student_portal_demo")
 
         self.stdout.write(self.style.SUCCESS("\nCITCI academic data ready."))
 

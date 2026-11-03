@@ -16,10 +16,14 @@ snapshot, assessment items, the spreadsheet-style score-encoding grid (Setup / C
 Summary tabs), and the CITCI-verified grade computation service. **Phase 4 part 1** (this state of
 the repo) adds the grade-sheet workflow: submit → approve/return → release → lock, frozen-at-
 submission grade snapshots, in-app notifications, and a GWA service — see "Grade sheet workflow"
-below. **Phase 4 part 2** (this state of the repo) adds reports & exports: admin-editable
-Institution Settings, the Grade Sheet PDF, the formula-driven Class Record Excel export/import, and
-the role-aware Reports page (Grade Submission Status, Class Performance Summary, Students with
-Failing/INC Grades, Program Grade Report PDF) — see "Reports & exports" below. Forecasting is still
+below. **Phase 4 part 2** adds reports & exports: admin-editable Institution Settings, the Grade
+Sheet PDF, the formula-driven Class Record Excel export/import, and the role-aware Reports page
+(Grade Submission Status, Class Performance Summary, Students with Failing/INC Grades, Program
+Grade Report PDF) — see "Reports & exports" below (a same-day follow-up pass fixed a provisional-
+remarks bug in grade sheet snapshots, made PDF images resolve without a network round trip, and let
+the Excel import create a new assessment item for an unmatched column instead of only reporting
+it). **Phase 5** (this state of the repo) adds the student portal: dashboard, My Grades, Subject
+detail, My Progress, and a Report of Grades PDF — see "Student portal" below. Forecasting is still
 a role-gated "Coming soon" placeholder.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
@@ -267,6 +271,50 @@ view) and is logged to `approvals.GradeSheetTransition`.
   semester-scoped Grade Submission Status, Class Performance Summary, and Students with
   Failing/INC Grades (Excel-exportable), plus a per-program Program Grade Report PDF.
 
+## Student portal
+
+A student only ever sees their own data — every view filters by `student=request.user` (or a
+roster entry already scoped that way), and a mismatched id 404s rather than 403s.
+
+- **OFFICIAL vs UNOFFICIAL, never mixed up.** OFFICIAL = an `approvals.GradeSheetEntry` snapshot
+  from a RELEASED/LOCKED sheet (`grading.services.released_entry_for`); UNOFFICIAL = the live
+  running grade (`grading.services.compute_student(...).running_grade`) while a class is still in
+  progress, always shown with an amber "Unofficial — running grade, may still change" chip. An
+  admin-only toggle (System → Settings → "Show running (unofficial) scores to students", default
+  on) can turn UNOFFICIAL display off entirely — anything not yet released then shows only "Grades
+  not yet released".
+- **Dashboard** (`dashboard:home`): greeting + program/major/year/section, stat cards (Enrolled
+  Subjects; Official GWA, with a "Partial GWA: x.xx (n of m subjects released)" note when not
+  everything's released yet; Subjects Released n/m; Warnings = in-progress subjects with a running
+  grade > 3.00), mobile-first subject cards with a status chip and an items-encoded progress bar, an
+  "Academic Forecast — Coming soon" placeholder card, and the latest 5 notifications.
+- **My Grades** (`grading:my_grades`): a semester selector (every semester with class-list entries),
+  cards on mobile / a table from `sm:` up, a footer with total units and Official/Partial GWA, and
+  "Download Report of Grades (PDF)".
+- **Subject detail** (`grading:subject_detail`, one page per roster entry): component breakdown
+  (the official snapshot once released, otherwise live), an item list grouped by grading period
+  (always the live `AssessmentItem`/`Score` data — informational, and in practice frozen once a
+  class is submitted since editing locks then), a ≥5-active-students-only class average per
+  component (aggregate only — never another student's own data), and two Chart.js charts: component
+  score % (bar) and running-grade progression by term (line, `grading.services.running_grade_progression`).
+- **My Progress** (`grading:my_progress`): a GWA-history line chart (inverted y-axis — 1.00 is
+  best, labeled) + table (semester/units/GWA/passed/failed/INC), and a current-semester horizontal
+  bar chart of every subject's grade colored by status with a dashed 3.00 passing line (a small
+  inline Chart.js plugin, not an external annotation library).
+- **Report of Grades PDF** (`reports:student_grade_report_pdf`, reuses `reports/pdf.py`):
+  RELEASED/LOCKED entries only for the chosen semester, a "Partial — n of m subjects released" note
+  when incomplete, and signed by the Registrar (new `InstitutionSettings.registrar_name/
+  registrar_title`) and Dean. The view takes only a semester id — never a student id — so there is
+  no ownership check to get wrong; it can only ever render the logged-in student's own data.
+- **Notifications** gained a "Mark all as read" button on the full list page
+  (`dashboard:notifications_mark_all_read`); releasing a grade sheet or correcting a grade now also
+  notifies every affected student, not just the instructor.
+- **Demo data:** `python manage.py seed_student_portal_demo` (auto-run at the end of
+  `seed_citci_academics`) makes the demo `student` account show every state — released, "submitted"
+  (shown as in progress), in-progress-with-partial-scores, no-scores-yet, and a running grade > 3.00
+  — plus a past semester (A.Y. 2025–2026, 2nd Sem, released + locked) so GWA history has 2+ points.
+  Idempotent; safe to re-run.
+
 ## Running tests
 
 ```powershell
@@ -345,6 +393,17 @@ python manage.py test
   `reports/services.py` (pure report-query functions, role-scoped `programs` queryset passed in by
   the caller), `reports/views.py` + `reports/urls.py`. PDF/Excel print templates live under
   `templates/reports/pdf/` and `templates/reports/`.
+- **Student portal** (dashboard, My Grades, Subject detail, My Progress, Report of Grades PDF):
+  `grading/services.py` (`released_entry_for`, `subject_status_chip`,
+  `show_unofficial_scores_to_students`, `running_grade_progression`, `class_average_per_component` —
+  shared by both the student views and `dashboard._student_dashboard`), `grading/views.py`
+  (`my_grades`, `subject_detail`, `my_progress`), `dashboard/views.py` (`_student_dashboard`),
+  `reports/views.py` (`student_grade_report_pdf`). Templates: `templates/dashboard/
+  student_dashboard.html`, `templates/grading/my_grades.html`/`subject_detail.html`/
+  `my_progress.html`, `templates/reports/pdf/student_report.html`.
+  `grading/management/commands/seed_student_portal_demo.py` fills in the demo states
+  `seed_grading_demo` doesn't reliably cover (SUBMITTED, a running-grade warning, a released+locked
+  past semester) — auto-run at the end of `seed_citci_academics`.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js

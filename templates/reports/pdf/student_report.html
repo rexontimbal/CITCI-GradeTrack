@@ -1,0 +1,68 @@
+{% extends "reports/pdf/_pdf_base.html" %}
+{% block content %}
+<div class="report-title">REPORT OF GRADES</div>
+
+<table class="meta-table">
+    <tr>
+        <td class="meta-label">Student</td><td>{{ student.full_name }}</td>
+        <td class="meta-label">ID Number</td><td>{{ student.id_number|default:"—" }}</td>
+    </tr>
+    <tr>
+        <td class="meta-label">Program</td><td>{{ student.student_profile.program.code|default:"—" }}{% if student.student_profile.major %} — {{ student.student_profile.major.code }}{% endif %}</td>
+        <td class="meta-label">Semester</td><td>{{ semester }}</td>
+    </tr>
+</table>
+
+{% if is_partial %}
+<p style="margin-top:6px; font-size:8.5pt; color:#b45309;">Partial — {{ released_count }} of {{ total_subjects }} subjects released.</p>
+{% endif %}
+
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width:8%;">No.</th>
+            <th>Subject</th>
+            <th style="width:10%;">Units</th>
+            <th>Instructor</th>
+            <th style="width:14%;">Final Grade</th>
+            <th style="width:16%;">Remarks</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td class="text-center">{{ forloop.counter }}</td>
+            <td>{{ entry.roster_entry.class_offering.subject.code }} — {{ entry.roster_entry.class_offering.subject.title }}</td>
+            <td class="text-center">{{ entry.roster_entry.class_offering.subject.units }}</td>
+            <td>{{ entry.roster_entry.class_offering.instructor.full_name|default:"—" }}</td>
+            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="text-center">{{ entry.get_remarks_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center">No released grades yet for this semester.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<table class="summary-table">
+    <tr><td><strong>Total Units (released)</strong></td><td>{{ gwa.total_units }}</td></tr>
+    <tr>
+        <td><strong>{% if gwa.is_complete %}GWA{% else %}Partial GWA{% endif %}</strong></td>
+        <td>{% if gwa.gwa is not None %}{{ gwa.gwa|floatformat:2 }}{% else %}—{% endif %}</td>
+    </tr>
+</table>
+
+<table class="signature-table">
+    <tr>
+        <td style="width:50%;">
+            <div class="sig-line">&nbsp;</div>
+            <div class="sig-role">{{ settings.registrar_name|default:"_______________________" }}</div>
+            <div class="sig-role">{{ settings.registrar_title|default:"Registrar" }}</div>
+        </td>
+        <td style="width:50%;">
+            <div class="sig-line">{{ settings.dean_name }}</div>
+            <div class="sig-role">{{ settings.dean_title }}</div>
+        </td>
+    </tr>
+</table>
+{% endblock %}

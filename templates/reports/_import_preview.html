@@ -9,17 +9,76 @@
 <form hx-post="{% url 'reports:class_record_import_confirm' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
     {% csrf_token %}
 
+    {% if errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <ul class="list-inside list-disc">
+            {% for col, message in errors %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         <div class="rounded-lg bg-green-50 px-3 py-2 text-green-800"><strong>{{ preview.new_scores|length }}</strong> new</div>
         <div class="rounded-lg bg-blue-50 px-3 py-2 text-blue-800"><strong>{{ preview.changed_scores|length }}</strong> changed</div>
-        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-600"><strong>{{ preview.unmatched_students|length|add:preview.unmatched_items|length }}</strong> unmatched</div>
+        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-600">
+            {% with student_count=preview.unmatched_students|length item_count=preview.unmatched_items|length %}
+            <strong>{{ student_count|add:item_count }}</strong> unmatched
+            {% endwith %}
+        </div>
         <div class="rounded-lg bg-red-50 px-3 py-2 text-red-700"><strong>{{ preview.invalid_cells|length }}</strong> invalid</div>
     </div>
 
-    {% if preview.unmatched_students or preview.unmatched_items %}
+    {% if preview.unmatched_students %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-        {% if preview.unmatched_students %}<p><strong>Unmatched students</strong> (not imported): {{ preview.unmatched_students|join:", " }}</p>{% endif %}
-        {% if preview.unmatched_items %}<p class="mt-1"><strong>Unmatched items</strong> (no matching assessment item, not created): {{ preview.unmatched_items|join:", " }}</p>{% endif %}
+        <strong>Unmatched students</strong> (not imported): {{ preview.unmatched_students|join:", " }}
+    </div>
+    {% endif %}
+
+    {% if preview.unmatched_items %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p class="mb-2 font-semibold">Unmatched item columns — create as new items?</p>
+        <div class="space-y-2">
+            {% for item in preview.unmatched_items %}
+            <div class="rounded-lg border border-amber-300 bg-white p-2">
+                <label class="flex items-center gap-2 font-medium text-gray-800">
+                    <input type="checkbox" name="newitem-{{ item.col }}-create" checked>
+                    {{ item.component_name }} — {{ item.item_title }}
+                    <span class="text-xs text-gray-500">({{ item.raw_scores|length }} score{{ item.raw_scores|length|pluralize }} in this column)</span>
+                </label>
+                <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div>
+                        <label class="block text-xs text-gray-500">Component</label>
+                        <select name="newitem-{{ item.col }}-component" class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                            <option value="">— select —</option>
+                            {% for sc in scheme_components %}
+                            <option value="{{ sc.pk }}" {% if sc.pk == item.suggested_component_id %}selected{% endif %}>
+                                {{ sc.name }}{% if sc.is_locked %} (locked){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500">Term</label>
+                        <select name="newitem-{{ item.col }}-term" class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                            <option value="">— select —</option>
+                            {% for value, label in assessment_terms %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500">Max score</label>
+                        <input type="number" min="1" step="1" name="newitem-{{ item.col }}-max_score"
+                               value="{{ item.suggested_max|default:'' }}"
+                               class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="mt-2 text-xs text-amber-700">
+            Locked components (e.g. Examination) can still receive new items — only a new <em>component</em> can't be created here.
+        </p>
     </div>
     {% endif %}
 

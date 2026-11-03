@@ -340,6 +340,95 @@ class GwaTests(TestCase):
         self.assertFalse(result["is_complete"])
         self.assertIsNone(result["gwa"])
 
+
+class FinalRemarksSnapshotTests(ApprovalsTestBase):
+    """Regression tests for the bug where a submitted/released
+    GradeSheetEntry could be frozen with a provisional ON_TRACK/AT_RISK
+    label (grading.services.StudentGradeResult.remarks, meant for mid-term
+    display only) instead of a FINAL PASSED/FAILED one. Root cause: a
+    sparse gradebook (some component with zero items — "not yet set up")
+    doesn't block submit (missing_score_students only checks existing,
+    unencoded items), but made is_grade_complete False, which routed
+    submit_grade_sheet through the provisional label. Fixed by always
+    snapshotting `result.final_remarks` (never `result.remarks`)."""
+
+    def test_submit_with_a_not_yet_set_up_component_stores_passed_or_failed_only(self):
+        # Only Quizzes gets items — Attendance/Recitation/Project/Examination
+        # are left at zero items ("not yet set up"), same shape as the real
+        # bug report. Nothing here is "missing" from missing_score_students'
+        # point of view, so submit succeeds.
+        quiz_items = self.make_items("Quizzes", [20])
+        self.set_scores(self.roster_entry, quiz_items, [19])  # would show "ON_TRACK" pre-fix
+
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        entry = sheet.entries.get(roster_entry=self.roster_entry)
+        self.assertIn(entry.remarks, ("PASSED", "FAILED"))
+        self.assertNotIn(entry.remarks, ("ON_TRACK", "AT_RISK"))
+
+    def test_submit_boundary_grade_of_exactly_3_00_is_passed(self):
+        items_by_component = {
+            name: self.make_items(name, [10]) for name in ("Attendance", "Quizzes", "Recitation", "Project", "Examination")
+        }
+        for items in items_by_component.values():
+            self.set_scores(self.roster_entry, items, [5])  # every component grade == 3.00 exactly
+
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        entry = sheet.entries.get(roster_entry=self.roster_entry)
+        self.assertEqual(entry.final_grade, Decimal("3.00"))
+        self.assertEqual(entry.remarks, "PASSED")
+
+    def test_invalid_remarks_rejected_at_the_database_level(self):
+        """Model-level guard: even a direct .create() bypassing full_clean()
+        can't write a provisional label into the frozen snapshot."""
+        from django.db import IntegrityError, transaction
+
+        self.fully_score_class()
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        entry = sheet.entries.first()
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                GradeSheetEntry.objects.create(
+                    sheet=sheet, roster_entry=entry.roster_entry, final_grade=Decimal("4.80"), remarks="ON_TRACK"
+                )
+
+    def test_reports_and_pdf_never_show_provisional_labels(self):
+        """End-to-end: the Reports page's class-performance counts and the
+        Grade Sheet PDF both read straight off the snapshot — if the
+        snapshot is fixed, neither can surface a provisional label."""
+        quiz_items = self.make_items("Quizzes", [20])
+        self.set_scores(self.roster_entry, quiz_items, [19])
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        approve_grade_sheet(sheet, self.program_head)
+        release_grade_sheet(sheet, self.program_head)
+
+        from reports.services import class_performance_rows
+
+        rows = class_performance_rows(self.semester, Program.objects.filter(pk=self.program.pk))
+        self.assertEqual(rows[0]["counts"]["PASSED"] + rows[0]["counts"]["FAILED"], 1)
+        self.assertNotIn("ON_TRACK", rows[0]["counts"])
+        self.assertNotIn("AT_RISK", rows[0]["counts"])
+
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("reports:grade_sheet_pdf", args=[sheet.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"ON_TRACK", response.content)
+        self.assertNotIn(b"AT_RISK", response.content)
+
+    def test_gwa_unaffected_by_the_remarks_fix(self):
+        """GWA has always summed final_grade directly and only excludes
+        DROPPED/INC remarks — it never keyed off PASSED vs FAILED, so this
+        is a non-regression check, not a behavior change."""
+        self.fully_score_class()
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        approve_grade_sheet(sheet, self.program_head)
+        release_grade_sheet(sheet, self.program_head)
+
+        result = compute_gwa(self.roster_entry.student, self.semester)
+        entry = sheet.entries.get(roster_entry=self.roster_entry)
+        # Single subject -> GWA is just that subject's own final grade.
+        self.assertEqual(result["gwa"], entry.final_grade.quantize(Decimal("0.01")))
+        self.assertTrue(result["is_complete"])
+
     def test_gwa_none_when_no_released_entries(self):
         result = compute_gwa(self.student, self.semester)
         self.assertIsNone(result["gwa"])

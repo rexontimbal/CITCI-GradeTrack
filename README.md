@@ -237,7 +237,10 @@ view) and is logged to `approvals.GradeSheetTransition`.
   name, pass/fail/INC/dropped counts, and a signature block (Submitted by/Checked by/Noted by) with
   each step's date pulled from the `GradeSheet` timeline. Always renders from the
   `approvals.GradeSheetEntry` snapshot, never live computation; shows the watermark above whenever
-  the sheet isn't Released/Locked yet.
+  the sheet isn't Released/Locked yet. Images (the logo) never depend on a network round trip —
+  `reports/pdf.py:link_callback` resolves a `STATIC_URL`/`MEDIA_URL` `<img>` src straight to a
+  filesystem path (rejecting anything outside those roots), so a PDF renders correctly from
+  `manage.py shell` or a test with no server running, not just from a live request.
 - **Class Record Excel export** (`reports:class_record_excel`, `reports/excel.py`): mirrors
   `grading-system.xlsx`'s layout (institution header rows, per-component item/TOTAL/GRADE/WEIGHTED
   columns, FINAL GRADE, REMARKS) but with one deliberate addition — an **ID Number column** (the
@@ -252,10 +255,13 @@ view) and is logged to `approvals.GradeSheetTransition`.
   upload either the system's own export or CITCI's template shape — both are recognized by scanning
   for the merged "ID Number"/"Name of Students" header row, two rows above the max-score row.
   Students match by ID Number first, then by normalized "Last, First M." name; items match by
-  (component name, item title). Preview shows new/changed scores (old → new), unmatched
-  students/items, and invalid values (non-numeric, non-whole-number, or over max) — nothing is
-  guessed. **Known limitation:** an unmatched item column is reported, never auto-created on
-  confirm — create the assessment item first (Setup tab), then re-import.
+  (component name, item title). Preview shows new/changed scores (old → new), unmatched students,
+  and invalid values (non-numeric, non-whole-number, or over max) — nothing is guessed. An
+  unmatched item column is offered as a "create as new item" row instead (checkbox, a component
+  dropdown pre-selected by name match — locked components like Examination included, since only a
+  new *component* needs school sign-off, not a new item on an existing one — a required term
+  dropdown, and a max score pre-filled from the sheet's max-score row); an invalid max score blocks
+  the whole confirm, never a partial commit.
 - **Reports page** (`reports:index`, role-aware): instructors see links to their own classes' Grade
   Sheet PDF / Class Record Excel; Program Heads (their programs only) and Admin (all programs) get
   semester-scoped Grade Submission Status, Class Performance Summary, and Students with

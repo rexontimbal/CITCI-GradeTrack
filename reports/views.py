@@ -11,7 +11,7 @@ from accounts.models import User
 from approvals.models import GradeSheet, GradeSheetStatus
 
 from . import excel
-from .excel_import import build_import_preview, commit_import
+from .excel_import import build_import_preview, commit_import, validate_new_item_decisions
 from .forms import InstitutionSettingsForm
 from .models import InstitutionSettings
 from .pdf import render_pdf, watermark_data_uri
@@ -51,12 +51,14 @@ def _get_class_offering_for_reports(request, pk):
     return class_offering
 
 
-def _logo_context(request):
+def _logo_context():
+    """Returns (settings, logo_url) with logo_url as a STATIC_URL/MEDIA_URL-
+    relative path (e.g. "/media/institution/logo.png") rather than an
+    absolute http(s) URL — PDFs resolve it via reports.pdf.link_callback
+    straight off disk, so rendering never depends on a network round trip
+    or a server actually running (needed from the shell/tests too)."""
     inst = InstitutionSettings.get_solo()
-    if inst.logo:
-        logo_url = request.build_absolute_uri(inst.logo.url)
-    else:
-        logo_url = request.build_absolute_uri(static("img/citci-seal-256.png"))
+    logo_url = inst.logo.url if inst.logo else static("img/citci-seal-256.png")
     return inst, logo_url
 
 
@@ -94,7 +96,7 @@ def grade_sheet_pdf(request, pk):
     if not _can_view_class_reports(request.user, class_offering):
         raise PermissionDenied("You don't have access to this class's grade sheet.")
 
-    inst, logo_url = _logo_context(request)
+    inst, logo_url = _logo_context()
     entries = sheet.entries.select_related("roster_entry__student").order_by(
         "roster_entry__student__last_name", "roster_entry__student__first_name"
     )
@@ -162,7 +164,23 @@ def class_record_import(request, pk):
 
     request.session["class_record_import_preview"] = preview.to_session()
     request.session["class_record_import_class_id"] = class_offering.pk
-    return render(request, "reports/_import_preview.html", {"class_offering": class_offering, "preview": preview})
+    return render(
+        request,
+        "reports/_import_preview.html",
+        _import_preview_context(class_offering, preview.to_session()),
+    )
+
+
+def _import_preview_context(class_offering, stashed, errors=None):
+    from grading.models import AssessmentTerm
+
+    return {
+        "class_offering": class_offering,
+        "preview": stashed,
+        "scheme_components": class_offering.grading_scheme.components.all(),
+        "assessment_terms": AssessmentTerm.choices,
+        "errors": errors or [],
+    }
 
 
 @role_required(INSTRUCTOR)
@@ -181,7 +199,14 @@ def class_record_import_confirm(request, pk):
         response["HX-Reswap"] = "innerHTML"
         return response
 
-    commit_import(class_offering, stashed, request.user)
+    decisions, errors = validate_new_item_decisions(class_offering, stashed, request.POST)
+    if errors:
+        response = render(request, "reports/_import_preview.html", _import_preview_context(class_offering, stashed, errors))
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    commit_import(class_offering, stashed, request.user, new_item_decisions=decisions)
     del request.session["class_record_import_preview"]
     del request.session["class_record_import_class_id"]
 
@@ -311,7 +336,7 @@ def program_grade_report_pdf(request, pk):
     semester = _get_report_semester(request)
     rows = class_performance_rows(semester, Program.objects.filter(pk=program.pk)) if semester else []
 
-    inst, logo_url = _logo_context(request)
+    inst, logo_url = _logo_context()
     context = {
         "settings": inst,
         "logo_url": logo_url,

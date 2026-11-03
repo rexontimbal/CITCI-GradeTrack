@@ -12,8 +12,10 @@ from approvals.services import approve_grade_sheet, release_grade_sheet, submit_
 from grading.services import compute_student
 from grading.tests import GradingTestBase, make_user
 
+from grading.models import AssessmentItem, AssessmentTerm
+
 from .excel import build_class_record_workbook
-from .excel_import import build_import_preview
+from .excel_import import build_import_preview, validate_new_item_decisions
 from .services import class_performance_rows, failing_inc_rows, submission_status_rows
 
 
@@ -92,6 +94,19 @@ class GradeSheetPdfTests(ReportsTestBase):
         release_grade_sheet(sheet, self.program_head)
         official_response = self.client.get(reverse("reports:grade_sheet_pdf", args=[sheet.pk]))
         self.assertGreater(len(response.content), len(official_response.content))
+
+    def test_logo_image_is_embedded_without_any_network_access(self):
+        """reports.pdf.link_callback must resolve the logo straight off
+        disk — this test asserts the PDF actually contains an embedded
+        /Image XObject, not just that rendering didn't crash. Run from the
+        Django test client (no live server), matching the "from the shell
+        with no server running" scenario the fix targets."""
+        sheet = self.submit_and_release()
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("reports:grade_sheet_pdf", args=[sheet.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"/Image", response.content)
+        self.assertIn(b"/Subtype /Image", response.content)
 
 
 class ClassRecordExcelTests(ReportsTestBase):
@@ -212,6 +227,122 @@ class ClassRecordImportTests(ReportsTestBase):
         self.client.force_login(self.instructor)
         response = self.client.get(reverse("reports:class_record_import", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
+
+
+class ClassRecordImportCreateItemTests(ReportsTestBase):
+    """validate_new_item_decisions/commit_import's "create as new item"
+    path — exercised directly against hand-built preview/POST data rather
+    than a crafted worksheet, since the interesting logic (validation,
+    locked-component handling, score application) lives there, not in the
+    column-scanning already covered by ClassRecordImportTests."""
+
+    def _stashed(self, **item_overrides):
+        quizzes = self.scheme_components["Quizzes"]
+        item = {
+            "col": 99,
+            "component_name": "Quizzes",
+            "item_title": "Quiz 3",
+            "suggested_max": 20,
+            "suggested_component_id": quizzes.pk,
+            "raw_scores": [[self.roster_entry.pk, "18"]],
+        }
+        item.update(item_overrides)
+        return {
+            "new_scores": [],
+            "changed_scores": [],
+            "unmatched_students": [],
+            "invalid_cells": [],
+            "unmatched_items": [item],
+            "has_writes": True,
+        }
+
+    def test_unmatched_item_created_on_confirm_with_correct_component_term_max(self):
+        quizzes = self.scheme_components["Quizzes"]
+        stashed = self._stashed()
+        post_data = {
+            "newitem-99-create": "on",
+            "newitem-99-component": str(quizzes.pk),
+            "newitem-99-term": AssessmentTerm.PRELIM,
+            "newitem-99-max_score": "20",
+        }
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, post_data)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(decisions), 1)
+
+        from .excel_import import commit_import
+
+        commit_import(self.class_offering, stashed, self.instructor, new_item_decisions=decisions)
+
+        item = AssessmentItem.objects.get(class_offering=self.class_offering, component=quizzes, title="Quiz 3")
+        self.assertEqual(item.max_score, 20)
+        self.assertEqual(item.term, AssessmentTerm.PRELIM)
+        score = item.scores.get(roster_entry=self.roster_entry)
+        self.assertEqual(score.score, 18)
+
+    def test_unchecked_item_is_ignored(self):
+        quizzes = self.scheme_components["Quizzes"]
+        stashed = self._stashed()
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, {})
+        self.assertEqual(decisions, [])
+        self.assertEqual(errors, [])
+
+        from .excel_import import commit_import
+
+        commit_import(self.class_offering, stashed, self.instructor, new_item_decisions=decisions)
+        self.assertFalse(AssessmentItem.objects.filter(class_offering=self.class_offering, title="Quiz 3").exists())
+
+    def test_invalid_max_blocks_confirm(self):
+        quizzes = self.scheme_components["Quizzes"]
+        stashed = self._stashed()
+        post_data = {
+            "newitem-99-create": "on",
+            "newitem-99-component": str(quizzes.pk),
+            "newitem-99-term": AssessmentTerm.PRELIM,
+            "newitem-99-max_score": "not-a-number",
+        }
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, post_data)
+        self.assertEqual(decisions, [])
+        self.assertEqual(len(errors), 1)
+        self.assertFalse(AssessmentItem.objects.filter(class_offering=self.class_offering, title="Quiz 3").exists())
+
+    def test_zero_or_negative_max_also_blocks_confirm(self):
+        quizzes = self.scheme_components["Quizzes"]
+        stashed = self._stashed()
+        post_data = {
+            "newitem-99-create": "on",
+            "newitem-99-component": str(quizzes.pk),
+            "newitem-99-term": AssessmentTerm.PRELIM,
+            "newitem-99-max_score": "0",
+        }
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, post_data)
+        self.assertEqual(decisions, [])
+        self.assertEqual(len(errors), 1)
+
+    def test_locked_component_can_receive_a_new_item(self):
+        examination = self.scheme_components["Examination"]
+        self.assertTrue(examination.is_locked)
+        stashed = self._stashed(component_name="Examination", suggested_component_id=examination.pk)
+        post_data = {
+            "newitem-99-create": "on",
+            "newitem-99-component": str(examination.pk),
+            "newitem-99-term": AssessmentTerm.FINAL,
+            "newitem-99-max_score": "100",
+        }
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, post_data)
+        self.assertEqual(errors, [])
+        self.assertEqual(decisions[0]["component_id"], examination.pk)
+
+    def test_missing_term_blocks_confirm(self):
+        quizzes = self.scheme_components["Quizzes"]
+        stashed = self._stashed()
+        post_data = {
+            "newitem-99-create": "on",
+            "newitem-99-component": str(quizzes.pk),
+            "newitem-99-max_score": "20",
+        }
+        decisions, errors = validate_new_item_decisions(self.class_offering, stashed, post_data)
+        self.assertEqual(decisions, [])
+        self.assertEqual(len(errors), 1)
 
 
 class ReportScopingTests(ReportsTestBase):

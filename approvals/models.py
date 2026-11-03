@@ -96,7 +96,17 @@ class GradeSheetEntry(TimeStampedModel):
 
     class Meta:
         ordering = ["roster_entry__student__last_name", "roster_entry__student__first_name"]
-        constraints = [models.UniqueConstraint(fields=["sheet", "roster_entry"], name="unique_entry_per_sheet")]
+        constraints = [
+            models.UniqueConstraint(fields=["sheet", "roster_entry"], name="unique_entry_per_sheet"),
+            # Belt-and-suspenders against grading.services' provisional
+            # ON_TRACK/AT_RISK labels ever landing in a frozen snapshot —
+            # choices= alone doesn't stop a bare .create()/.save() that
+            # skips full_clean(), which is exactly how this bug happened.
+            models.CheckConstraint(
+                check=models.Q(remarks__in=["PASSED", "FAILED", "INC", "DROPPED"]),
+                name="valid_grade_sheet_entry_remarks",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.roster_entry.student} — {self.final_grade} ({self.remarks})"

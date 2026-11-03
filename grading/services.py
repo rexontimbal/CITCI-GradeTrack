@@ -204,6 +204,22 @@ class StudentGradeResult:
             return None
         return "ON_TRACK" if running <= PASSING_THRESHOLD else "AT_RISK"
 
+    @property
+    def final_remarks(self) -> str:
+        """PASSED/FAILED/INC/DROPPED only — the FINAL remark a grade sheet
+        snapshot may ever store. Always derived from the FINAL grade (every
+        component, every item, blanks count as 0), never the provisional
+        ON_TRACK/AT_RISK labels `remarks` shows mid-term — submission must
+        never freeze a provisional label into the official record."""
+        if self.roster_entry.status == ClassRosterEntry.Status.DROPPED:
+            return "DROPPED"
+        if self.roster_entry.is_incomplete:
+            return "INC"
+        final = self.final_grade
+        if final is None:
+            return "FAILED"
+        return "PASSED" if final <= PASSING_THRESHOLD else "FAILED"
+
 
 def _encoded_item_ids(item_ids):
     """Items with at least one non-null score anywhere in the class — the

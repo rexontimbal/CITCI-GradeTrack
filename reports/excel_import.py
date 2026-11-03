@@ -6,18 +6,19 @@ same header-scanning logic and works as long as it keeps "ID Number" /
 "Name of Students" header cells and one max-score row below the item
 titles — a materially different layout needs parser changes.
 
-Known limitation (disclosed, not silently handled): an item column that
-doesn't match any existing AssessmentItem by (component, title) is
-reported as unmatched and never auto-created — matching the instruction
-to never guess.
+An item column that doesn't match any existing AssessmentItem by
+(component, title) is offered on the preview as a "create as new item"
+row (component/term/max score, pre-filled where guessable) — nothing is
+ever silently guessed into existence; the instructor confirms it.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
+from django.db import transaction
 from openpyxl import load_workbook
 
-from grading.models import AssessmentItem, Score
+from grading.models import AssessmentItem, AssessmentTerm, Score
 from grading.services import save_score
 
 _WEIGHT_SUFFIX = re.compile(r"\s*\(\d+%\)\s*$")
@@ -42,23 +43,50 @@ class ScoreChange:
 
 
 @dataclass
+class UnmatchedItemColumn:
+    """An item column with no matching AssessmentItem — offered on the
+    preview as an optional "create as new item" row. `raw_scores` is
+    captured during the same parse pass so a score write for each student
+    can be queued once the item actually exists (at confirm time)."""
+
+    col: int
+    component_name: str
+    item_title: str
+    suggested_max: object  # int or None
+    suggested_component_id: object  # int or None
+    raw_scores: list = field(default_factory=list)  # [(roster_entry_id, raw_value), ...]
+
+    def to_session(self):
+        return {
+            "col": self.col,
+            "component_name": self.component_name,
+            "item_title": self.item_title,
+            "suggested_max": self.suggested_max,
+            "suggested_component_id": self.suggested_component_id,
+            "raw_scores": [[rid, None if raw is None else str(raw)] for rid, raw in self.raw_scores],
+        }
+
+
+@dataclass
 class ImportPreview:
     new_scores: list = field(default_factory=list)  # list[ScoreChange]
     changed_scores: list = field(default_factory=list)  # list[ScoreChange]
     unmatched_students: list = field(default_factory=list)  # list[str]
-    unmatched_items: list = field(default_factory=list)  # list[str]
+    unmatched_items: list = field(default_factory=list)  # list[UnmatchedItemColumn]
     invalid_cells: list = field(default_factory=list)  # list[InvalidCell]
 
     @property
     def has_writes(self):
-        return bool(self.new_scores or self.changed_scores)
+        return bool(self.new_scores or self.changed_scores or self.unmatched_items)
 
     def to_session(self):
         return {
-            "writes": [
-                {"roster_entry_id": c.roster_entry_id, "item_id": c.item_id, "new_value": c.new_value}
-                for c in (self.new_scores + self.changed_scores)
-            ]
+            "new_scores": [asdict(c) for c in self.new_scores],
+            "changed_scores": [asdict(c) for c in self.changed_scores],
+            "unmatched_students": list(self.unmatched_students),
+            "invalid_cells": [asdict(c) for c in self.invalid_cells],
+            "unmatched_items": [c.to_session() for c in self.unmatched_items],
+            "has_writes": self.has_writes,
         }
 
 
@@ -83,6 +111,16 @@ def _find_header_row(ws):
             name_col = next(c for k, c in values.items() if k and "NAME" in str(k))
             return row[0].row, id_col, name_col
     raise ValueError('Could not find the "ID Number" / "Name of Students" header row in this file.')
+
+
+def _parse_int(value):
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric != int(numeric):
+        return None
+    return int(numeric)
 
 
 def build_import_preview(class_offering, uploaded_file):
@@ -119,6 +157,7 @@ def build_import_preview(class_offering, uploaded_file):
     existing_items = list(
         AssessmentItem.objects.filter(class_offering=class_offering).select_related("component")
     )
+    scheme_components = list(class_offering.grading_scheme.components.all())
 
     def _lookup_item(component_name, title):
         for item in existing_items:
@@ -126,12 +165,26 @@ def build_import_preview(class_offering, uploaded_file):
                 return item
         return None
 
+    def _suggest_component_id(component_name):
+        for sc in scheme_components:
+            if sc.name.strip().upper() == component_name.strip().upper():
+                return sc.id
+        return None
+
     preview = ImportPreview()
-    resolved_cols = []
+    resolved_cols = []  # [(col, item)]
+    unmatched_cols = {}  # col -> UnmatchedItemColumn
     for col, component_name, title in item_cols:
         item = _lookup_item(component_name, title)
         if item is None:
-            preview.unmatched_items.append(f"{component_name} — {title}")
+            suggested_max = _parse_int(ws.cell(max_row, col).value)
+            unmatched_cols[col] = UnmatchedItemColumn(
+                col=col,
+                component_name=component_name,
+                item_title=title,
+                suggested_max=suggested_max,
+                suggested_component_id=_suggest_component_id(component_name),
+            )
         else:
             resolved_cols.append((col, item))
 
@@ -165,11 +218,12 @@ def build_import_preview(class_offering, uploaded_file):
             row += 1
             continue
 
+        row_label = _student_label(entry.student)
+
         for col, item in resolved_cols:
             raw = ws.cell(row, col).value
             if raw is None or raw == "":
                 continue
-            row_label = _student_label(entry.student)
             try:
                 numeric = float(raw)
             except (TypeError, ValueError):
@@ -192,17 +246,93 @@ def build_import_preview(class_offering, uploaded_file):
             else:
                 preview.changed_scores.append(change)
 
+        for col, unmatched in unmatched_cols.items():
+            raw = ws.cell(row, col).value
+            if raw is None or raw == "":
+                continue
+            unmatched.raw_scores.append((entry.id, raw))
+
         row += 1
 
+    preview.unmatched_items = list(unmatched_cols.values())
     return preview
 
 
-def commit_import(class_offering, stashed, user):
-    items_by_id = {item.id: item for item in AssessmentItem.objects.filter(class_offering=class_offering)}
-    entries_by_id = {e.id: e for e in class_offering.roster_entries.all()}
-    for write in stashed.get("writes", []):
-        entry = entries_by_id.get(write["roster_entry_id"])
-        item = items_by_id.get(write["item_id"])
-        if entry is None or item is None:
+def validate_new_item_decisions(class_offering, stashed, post_data):
+    """Reads the instructor's choices for each unmatched item column
+    (checkbox/component/term/max score) out of the confirm POST and
+    validates them. Returns (decisions, errors) — `decisions` is a list of
+    dicts ready for `commit_import` (only for checked, valid rows);
+    `errors` is a list of (col, message) for anything that failed, which
+    must block the whole confirm (never a partial commit)."""
+    scheme_component_ids = {sc.id for sc in class_offering.grading_scheme.components.all()}
+    term_values = {choice for choice, _ in AssessmentTerm.choices}
+
+    decisions = []
+    errors = []
+    for unmatched in stashed.get("unmatched_items", []):
+        col = unmatched["col"]
+        if not post_data.get(f"newitem-{col}-create"):
+            continue  # unchecked — ignored, per spec
+
+        component_raw = post_data.get(f"newitem-{col}-component")
+        term_raw = post_data.get(f"newitem-{col}-term")
+        max_raw = post_data.get(f"newitem-{col}-max_score")
+
+        try:
+            component_id = int(component_raw)
+        except (TypeError, ValueError):
+            component_id = None
+        if component_id not in scheme_component_ids:
+            errors.append((col, f'"{unmatched["item_title"]}": choose a component.'))
             continue
-        save_score(entry, item, write["new_value"], user)
+
+        if term_raw not in term_values:
+            errors.append((col, f'"{unmatched["item_title"]}": choose a term.'))
+            continue
+
+        max_score = _parse_int(max_raw)
+        if max_score is None or max_score < 1:
+            errors.append((col, f'"{unmatched["item_title"]}": max score must be a whole number of at least 1.'))
+            continue
+
+        decisions.append(
+            {
+                "component_id": component_id,
+                "term": term_raw,
+                "max_score": max_score,
+                "item_title": unmatched["item_title"],
+                "raw_scores": unmatched["raw_scores"],
+            }
+        )
+    return decisions, errors
+
+
+def commit_import(class_offering, stashed, user, new_item_decisions=None):
+    with transaction.atomic():
+        for decision in new_item_decisions or []:
+            item = AssessmentItem.objects.create(
+                class_offering=class_offering,
+                component_id=decision["component_id"],
+                title=decision["item_title"],
+                max_score=decision["max_score"],
+                term=decision["term"],
+            )
+            entries_by_id = {e.id: e for e in class_offering.roster_entries.all()}
+            for roster_entry_id, raw in decision["raw_scores"]:
+                entry = entries_by_id.get(roster_entry_id)
+                if entry is None or raw is None:
+                    continue
+                value = _parse_int(raw)
+                if value is None or value < 0 or value > item.max_score:
+                    continue  # invalid individual score — skipped, same as any other invalid cell
+                save_score(entry, item, value, user)
+
+        items_by_id = {item.id: item for item in AssessmentItem.objects.filter(class_offering=class_offering)}
+        entries_by_id = {e.id: e for e in class_offering.roster_entries.all()}
+        for write in stashed.get("new_scores", []) + stashed.get("changed_scores", []):
+            entry = entries_by_id.get(write["roster_entry_id"])
+            item = items_by_id.get(write["item_id"])
+            if entry is None or item is None:
+                continue
+            save_score(entry, item, write["new_value"], user)

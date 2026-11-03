@@ -8,11 +8,50 @@ cost of weaker CSS support — fine for the fairly simple print layouts here.
 
 import base64
 import io
+import os
 
+from django.conf import settings
+from django.contrib.staticfiles import finders
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from PIL import Image, ImageDraw, ImageFont
 from xhtml2pdf import pisa
+
+
+def link_callback(uri, rel):
+    """Resolve an <img> src used in a PDF template to an absolute filesystem
+    path, so rendering never depends on an HTTP round trip (previously
+    `request.build_absolute_uri(...)` + a real fetch — breaks with no
+    server running, e.g. from the shell or in tests). Static files are
+    found via django.contrib.staticfiles.finders (works in DEBUG without a
+    collectstatic run); anything else is resolved against STATIC_ROOT/
+    MEDIA_ROOT. Resolving outside those roots is rejected — this is the
+    only thing standing between a crafted uri and arbitrary file access."""
+    if uri.startswith("data:"):
+        return uri  # already-embedded image (e.g. the watermark) — no file lookup needed
+
+    if uri.startswith(settings.STATIC_URL):
+        relative_path = uri[len(settings.STATIC_URL):]
+        found = finders.find(relative_path)
+        path = found if found and not isinstance(found, (list, tuple)) else (found[0] if found else None)
+        if path is None:
+            path = os.path.join(settings.STATIC_ROOT, relative_path)
+        # finders.find() may resolve into any of STATICFILES_DIRS (dev) or
+        # STATIC_ROOT (post-collectstatic) — both are legitimate roots.
+        allowed_roots = [os.path.abspath(d) for d in settings.STATICFILES_DIRS] + [os.path.abspath(settings.STATIC_ROOT)]
+    elif uri.startswith(settings.MEDIA_URL):
+        relative_path = uri[len(settings.MEDIA_URL):]
+        path = os.path.join(settings.MEDIA_ROOT, relative_path)
+        allowed_roots = [os.path.abspath(settings.MEDIA_ROOT)]
+    else:
+        raise ValueError(f"PDF image uri must be under {settings.STATIC_URL} or {settings.MEDIA_URL}: {uri!r}")
+
+    path = os.path.abspath(path)
+    if not any(os.path.commonpath([path, root]) == root for root in allowed_roots):
+        raise ValueError(f"PDF image uri resolved outside its allowed root: {uri!r}")
+    if not os.path.isfile(path):
+        raise ValueError(f"PDF image file not found: {uri!r} -> {path}")
+    return path
 
 
 def watermark_data_uri(text):
@@ -45,7 +84,7 @@ def render_pdf(template_name, context, filename, inline=True):
     print stylesheet (A4 portrait, header/footer frames)."""
     html = render_to_string(template_name, context)
     buffer = io.BytesIO()
-    result = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    result = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8", link_callback=link_callback)
     if result.err:
         raise ValueError(f"Failed to render PDF ({template_name}): {result.err} error(s)")
 

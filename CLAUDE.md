@@ -671,13 +671,48 @@ until the previous one passes its tests.
   every total/grade/weighted/final cell a **real Excel formula** (not a pre-computed value) so
   faculty can recompute by hand; `?blank=1` doubles as the import template. Class Record Excel
   import (`reports/excel_import.py`) previews new/changed scores, unmatched students/items, and
-  invalid values before a separate confirm step — DRAFT/RETURNED only; an unmatched item column is
-  reported, never auto-created (disclosed limitation, not silently handled). Reports page
+  invalid values before a separate confirm step — DRAFT/RETURNED only. Reports page
   (`reports:index`) is now role-aware: instructors get per-class PDF/Excel links; Program Head
   (own programs)/Admin (all) get semester-scoped Grade Submission Status, Class Performance
   Summary, and Students with Failing/INC Grades (table + Excel export each), plus a per-program
   Program Grade Report PDF. All report queries take a pre-scoped `programs` queryset
   (`reports.views._scope_programs`) so role scoping happens once, at the call site.
+- **Phase 4 part 2 fixes (done):** three issues found after the pass above shipped.
+  1. **Provisional remarks bug** — `approvals.services.submit_grade_sheet` was snapshotting
+     `StudentGradeResult.remarks` (grading/services.py), which deliberately shows a provisional
+     `ON_TRACK`/`AT_RISK` label off the *running* grade whenever a class has a not-yet-set-up
+     component (zero items) — harmless for mid-term display, but wrong once frozen into an official
+     `GradeSheetEntry` snapshot, where only `PASSED`/`FAILED`/`INC`/`DROPPED` may ever appear. Fixed
+     with a new `StudentGradeResult.final_remarks` property (always reads the FINAL grade, never the
+     running one) that `submit_grade_sheet` now uses instead. `approvals.GradeSheetEntry` also
+     gained a `CheckConstraint` (`valid_grade_sheet_entry_remarks`) restricting `remarks` to those
+     four values at the DB level — `choices=` alone doesn't stop a bare `.create()`/`.save()` that
+     skips `full_clean()`, which is exactly how the bug got in. A data migration
+     (`approvals.0002_fix_provisional_final_remarks`, ahead of the constraint migration so existing
+     bad rows get fixed before the constraint would reject them) recomputed every affected row's
+     `remarks` from its already-stored `final_grade`, deliberately without writing a
+     `GradeSheetTransition`/`GradeCorrection` — a system data fix, not a human grade correction.
+  2. **PDF images depended on the network** — `reports/views.py`'s `_logo_context` used to call
+     `request.build_absolute_uri(...)` and have xhtml2pdf fetch that URL over HTTP, which fails with
+     no server running (e.g. from `manage.py shell`, or in tests, where it silently dropped the
+     image and warned `Blocked by the resource policy`). Fixed with `reports/pdf.py:link_callback`,
+     an xhtml2pdf `link_callback` that resolves a `STATIC_URL`/`MEDIA_URL`-prefixed `<img>` src
+     straight to a filesystem path (via `django.contrib.staticfiles.finders` in DEBUG, else
+     `STATIC_ROOT`/`MEDIA_ROOT`) and rejects anything that resolves outside those roots (or
+     `STATICFILES_DIRS`, which `finders.find()` can also return) — path-traversal guard, not just a
+     convenience. `_logo_context` now returns a plain `/static/...`/`/media/...` path instead of an
+     absolute URL; `render_pdf` passes `link_callback` on every `pisa.CreatePDF()` call.
+  3. **Excel import couldn't create new items** — originally a disclosed limitation ("an unmatched
+     item column is reported, never auto-created"). `reports/excel_import.py` now offers each
+     unmatched item column on the preview as an optional "create as new item" row — a checkbox
+     (default on), a component dropdown (pre-selected by case-insensitive name match against the
+     class's scheme, locked components included — only a new *component* can't be created here,
+     per CITCI's school-locked-Examination-weight policy, section 4), a required term dropdown, and
+     a max-score field pre-filled from the sheet's own max-score row. `validate_new_item_decisions`
+     validates all checked rows before anything commits — an invalid max score (not a whole number
+     ≥ 1) blocks the entire confirm, never a partial commit — and `commit_import` creates the
+     `AssessmentItem` plus every valid per-student score for it inside one `transaction.atomic()`
+     alongside the already-matched writes.
 - **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.
 - **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
   predict endpoint with contributions, pytest.

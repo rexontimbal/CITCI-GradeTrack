@@ -390,6 +390,33 @@ class RemarksCompletionTests(GradingTestBase):
         self.assertTrue(result.is_grade_complete)
         self.assertEqual(result.final_grade, Decimal("3.00"))
         self.assertEqual(result.remarks, "PASSED")
+        self.assertEqual(result.final_remarks, "PASSED")
+
+    def test_final_remarks_is_never_provisional_even_when_incomplete(self):
+        """`final_remarks` — what a grade sheet snapshot may store — must
+        always read PASSED/FAILED off the FINAL grade, even for the exact
+        incomplete gradebook that makes `remarks` show ON_TRACK/AT_RISK."""
+        self.make_items("Attendance", [10, 10])
+        quiz_items = self.make_items("Quizzes", [20])
+        self.set_scores(self.roster_entry, quiz_items, [1])  # same AT_RISK scenario as above
+
+        result = compute_student(self.roster_entry)
+        self.assertFalse(result.is_grade_complete)
+        self.assertEqual(result.remarks, "AT_RISK")
+        self.assertIn(result.final_remarks, ("PASSED", "FAILED"))
+        self.assertNotIn(result.final_remarks, ("ON_TRACK", "AT_RISK", None))
+
+    def test_final_remarks_respects_inc_and_dropped(self):
+        self.roster_entry.is_incomplete = True
+        self.roster_entry.save()
+        result = compute_student(self.roster_entry)
+        self.assertEqual(result.final_remarks, "INC")
+
+        self.roster_entry.is_incomplete = False
+        self.roster_entry.status = ClassRosterEntry.Status.DROPPED
+        self.roster_entry.save()
+        result = compute_student(self.roster_entry)
+        self.assertEqual(result.final_remarks, "DROPPED")
 
 
 class TermFilterDoesNotAffectTotalsTests(GradingTestBase):

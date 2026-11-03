@@ -100,7 +100,7 @@ def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
                 sheet=sheet,
                 roster_entry=roster_entry,
                 final_grade=result.final_grade,
-                remarks=result.remarks or GradeSheetEntry.Remarks.FAILED,
+                remarks=result.final_remarks,
                 inc_reason=roster_entry.incomplete_reason if roster_entry.is_incomplete else "",
                 components_json=components_json,
             )

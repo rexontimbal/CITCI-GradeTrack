@@ -4,6 +4,18 @@
 {% block content %}
 {% include "partials/_page_header.html" with title="Grade Approvals" subtitle="Grade sheets submitted for classes under your program(s)." %}
 
+{% if counts.APPROVED %}
+<div class="mb-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-900">
+    <span>{{ counts.APPROVED }} grade sheet{{ counts.APPROVED|pluralize }} approved and ready to release.</span>
+    <form method="post" action="{% url 'approvals:release_all' %}" onsubmit="return confirm('Release all {{ counts.APPROVED }} approved grade sheet(s) for your program(s)?');">
+        {% csrf_token %}
+        <button type="submit" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
+            Release All Approved
+        </button>
+    </form>
+</div>
+{% endif %}
+
 <div class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
     {% for status, label in statuses %}
     <a href="?status={{ status }}"

@@ -1,0 +1,53 @@
+{% extends "reports/pdf/_pdf_base.html" %}
+{% block content %}
+<div class="report-title">PROGRAM GRADE REPORT</div>
+
+<table class="meta-table">
+    <tr>
+        <td class="meta-label">Program</td><td>{{ program.code }} — {{ program.name }}</td>
+        <td class="meta-label">Semester</td><td>{{ semester|default:"—" }}</td>
+    </tr>
+</table>
+
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Class</th>
+            <th style="width:10%;">Students</th>
+            <th style="width:10%;">Passed</th>
+            <th style="width:10%;">Failed</th>
+            <th style="width:8%;">INC</th>
+            <th style="width:10%;">Dropped</th>
+            <th style="width:12%;">Average</th>
+            <th style="width:12%;">Pass Rate</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row.class_offering.subject.code }} — {{ row.class_offering.subject.title }}</td>
+            <td class="text-center">{{ row.total_students }}</td>
+            <td class="text-center">{{ row.counts.PASSED }}</td>
+            <td class="text-center">{{ row.counts.FAILED }}</td>
+            <td class="text-center">{{ row.counts.INC }}</td>
+            <td class="text-center">{{ row.counts.DROPPED }}</td>
+            <td class="text-center">{% if row.average is not None %}{{ row.average|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="text-center">{% if row.pass_rate is not None %}{{ row.pass_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<table class="signature-table">
+    <tr>
+        <td style="width:50%;">
+            <div class="sig-line">{{ settings.academic_head_name }}</div>
+            <div class="sig-role">{{ settings.academic_head_title }}</div>
+        </td>
+        <td style="width:50%;">
+            <div class="sig-line">{{ settings.dean_name }}</div>
+            <div class="sig-role">{{ settings.dean_title }}</div>
+        </td>
+    </tr>
+</table>
+{% endblock %}

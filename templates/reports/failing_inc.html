@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}Failing/INC Grades{% endblock %}
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div>
+        <a href="{% url 'reports:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Reports</a>
+        <h2 class="mt-1 text-xl font-bold text-gray-900">Students with Failing/INC Grades</h2>
+        <p class="mt-1 text-sm text-gray-500">{{ semester|default:"No semester selected" }} · Released/Locked sheets only</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <form method="get" class="flex items-center gap-2 text-sm">
+            <select name="semester" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                {% for s in semesters %}
+                <option value="{{ s.pk }}" {% if semester and semester.pk == s.pk %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <a href="?semester={{ semester.pk }}&export=excel" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Export Excel
+        </a>
+    </div>
+</div>
+
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Student</th>
+                <th class="px-4 py-3">Program / Major / Year</th>
+                <th class="px-4 py-3">Subject</th>
+                <th class="px-4 py-3 text-center">Grade</th>
+                <th class="px-4 py-3">Remarks</th>
+                <th class="px-4 py-3">Instructor</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for entry in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ entry.roster_entry.student.full_name }}</td>
+                <td class="px-4 py-3 text-gray-600">
+                    {{ entry.roster_entry.student.student_profile.program.code|default:"—" }}
+                    / {{ entry.roster_entry.student.student_profile.major.code|default:"—" }}
+                    / {{ entry.roster_entry.student.student_profile.get_year_level_display|default:"—" }}
+                </td>
+                <td class="px-4 py-3 text-gray-700">{{ entry.sheet.class_offering.subject.code }}</td>
+                <td class="px-4 py-3 text-center text-gray-700">{{ entry.final_grade|grade_display }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ entry.get_remarks_display }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ entry.sheet.class_offering.instructor.full_name|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No failing/INC grades found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

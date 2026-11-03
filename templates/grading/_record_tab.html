@@ -11,11 +11,24 @@
             {% endfor %}
         </select>
     </form>
-    {% if record.missing_count %}
-    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
-        {{ record.missing_count }} missing score{{ record.missing_count|pluralize }} among active students.
+    <div class="flex items-center gap-2">
+        {% if record.missing_count %}
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+            {{ record.missing_count }} missing score{{ record.missing_count|pluralize }} among active students.
+        </div>
+        {% endif %}
+        {% if can_edit %}
+        <a href="{% url 'reports:class_record_excel' class_offering.pk %}?blank=1"
+           class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Download blank class record
+        </a>
+        <button type="button" hx-get="{% url 'reports:class_record_import' class_offering.pk %}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Import from Excel
+        </button>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
 {% if record.not_yet_set_up %}

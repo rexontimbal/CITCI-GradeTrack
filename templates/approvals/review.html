@@ -17,6 +17,10 @@
         </p>
     </div>
     <div class="flex gap-2">
+        <a href="{% url 'reports:grade_sheet_pdf' sheet.pk %}" target="_blank"
+           class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Grade Sheet PDF
+        </a>
         {% if can_approve_return %}
         <button hx-get="{% url 'approvals:return_sheet' sheet.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                 class="rounded-lg border border-amber-300 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50">

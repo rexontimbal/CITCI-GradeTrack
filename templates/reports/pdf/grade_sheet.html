@@ -1,0 +1,71 @@
+{% extends "reports/pdf/_pdf_base.html" %}
+{% block content %}
+<div class="report-title">REPORT OF GRADES</div>
+
+<table class="meta-table">
+    <tr>
+        <td class="meta-label">Subject</td><td>{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</td>
+        <td class="meta-label">Semester</td><td>{{ class_offering.semester }}</td>
+    </tr>
+    <tr>
+        <td class="meta-label">Section(s)</td>
+        <td>{% for s in class_offering.sections.all %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+        <td class="meta-label">Schedule / Room</td><td>{{ class_offering.schedule|default:"—" }} / {{ class_offering.room|default:"—" }}</td>
+    </tr>
+    <tr>
+        <td class="meta-label">Instructor</td><td>{{ class_offering.instructor.full_name|default:"—" }}</td>
+        <td class="meta-label">Units</td><td>{{ class_offering.subject.units }}</td>
+    </tr>
+</table>
+
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width:5%;">No.</th>
+            <th style="width:16%;">ID Number</th>
+            <th>Name (Last, First M.)</th>
+            <th style="width:14%;">Final Grade</th>
+            <th style="width:16%;">Remarks</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td class="text-center">{{ forloop.counter }}</td>
+            <td class="text-center">{{ entry.roster_entry.student.id_number|default:"—" }}</td>
+            <td>{{ entry.roster_entry.student.last_name }}, {{ entry.roster_entry.student.first_name }}{% if entry.roster_entry.student.middle_name %} {{ entry.roster_entry.student.middle_name|first }}.{% endif %}</td>
+            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="text-center">{{ entry.get_remarks_display }}{% if entry.remarks == "INC" and entry.inc_reason %} ({{ entry.inc_reason }}){% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<table class="summary-table">
+    <tr><td><strong>Total Students</strong></td><td>{{ total_students }}</td></tr>
+    <tr><td><strong>Passed</strong></td><td>{{ counts.PASSED }}</td></tr>
+    <tr><td><strong>Failed</strong></td><td>{{ counts.FAILED }}</td></tr>
+    <tr><td><strong>INC</strong></td><td>{{ counts.INC }}</td></tr>
+    <tr><td><strong>Dropped</strong></td><td>{{ counts.DROPPED }}</td></tr>
+</table>
+
+<table class="signature-table">
+    <tr>
+        <td style="width:33%;">
+            <div class="sig-line">{{ class_offering.instructor.full_name|default:"—" }}</div>
+            <div class="sig-role">Submitted by (Instructor)</div>
+            {% if sheet.submitted_at %}<div class="sig-date">{{ sheet.submitted_at|date:"M d, Y" }}</div>{% endif %}
+        </td>
+        <td style="width:33%;">
+            <div class="sig-line">&nbsp;</div>
+            <div class="sig-role">Checked by (Program Head)</div>
+            {% if sheet.approved_at %}<div class="sig-date">{{ sheet.approved_at|date:"M d, Y" }}</div>{% endif %}
+        </td>
+        <td style="width:33%;">
+            <div class="sig-line">{{ settings.dean_name }}</div>
+            <div class="sig-role">Noted by ({{ settings.dean_title }})</div>
+            {% if sheet.released_at %}<div class="sig-date">{{ sheet.released_at|date:"M d, Y" }}</div>{% endif %}
+        </td>
+    </tr>
+</table>
+{% endblock %}

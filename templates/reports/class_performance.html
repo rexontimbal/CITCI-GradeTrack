@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}Class Performance Summary{% endblock %}
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div>
+        <a href="{% url 'reports:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Reports</a>
+        <h2 class="mt-1 text-xl font-bold text-gray-900">Class Performance Summary</h2>
+        <p class="mt-1 text-sm text-gray-500">{{ semester|default:"No semester selected" }}</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <form method="get" class="flex items-center gap-2 text-sm">
+            <select name="semester" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                {% for s in semesters %}
+                <option value="{{ s.pk }}" {% if semester and semester.pk == s.pk %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <a href="?semester={{ semester.pk }}&export=excel" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Export Excel
+        </a>
+    </div>
+</div>
+
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3 text-center">Students</th>
+                <th class="px-4 py-3 text-center">Passed</th>
+                <th class="px-4 py-3 text-center">Failed</th>
+                <th class="px-4 py-3 text-center">INC</th>
+                <th class="px-4 py-3 text-center">Dropped</th>
+                <th class="px-4 py-3 text-center">Average</th>
+                <th class="px-4 py-3 text-center">Pass Rate</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ row.class_offering }}</td>
+                <td class="px-4 py-3 text-center text-gray-600">{{ row.total_students }}</td>
+                <td class="px-4 py-3 text-center text-green-700">{{ row.counts.PASSED }}</td>
+                <td class="px-4 py-3 text-center text-red-700">{{ row.counts.FAILED }}</td>
+                <td class="px-4 py-3 text-center text-amber-700">{{ row.counts.INC }}</td>
+                <td class="px-4 py-3 text-center text-gray-500">{{ row.counts.DROPPED }}</td>
+                <td class="px-4 py-3 text-center text-gray-700">{{ row.average|grade_display }}</td>
+                <td class="px-4 py-3 text-center text-gray-700">{% if row.pass_rate is not None %}{{ row.pass_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">No classes found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

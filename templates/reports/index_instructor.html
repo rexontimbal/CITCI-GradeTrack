@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block page_title %}Reports{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Reports" subtitle="Grade sheet PDFs and class record exports for your classes." %}
+
+{% if not active_semester_set %}
+{% include "partials/_empty_state.html" with icon="document" title="No active semester" description="An admin hasn't set an active semester yet." %}
+{% elif not classes %}
+{% include "partials/_empty_state.html" with icon="document" title="No classes this semester" description="You have no classes assigned in the active semester." %}
+{% else %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3">Section(s)</th>
+                <th class="px-4 py-3 text-right">Reports</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for class_offering in classes %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</td>
+                <td class="px-4 py-3 text-gray-600">{% for s in class_offering.sections.all %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                <td class="px-4 py-3 text-right">
+                    <a href="{% url 'grading:class_grading' class_offering.pk %}" class="mr-3 text-xs font-medium text-brand-primary-700 underline hover:no-underline">Open class</a>
+                    <a href="{% url 'reports:class_record_excel' class_offering.pk %}" class="mr-3 text-xs font-medium text-brand-primary-700 underline hover:no-underline">Class Record Excel</a>
+                    {% with sheet=class_offering.grade_sheets.first %}
+                    {% if sheet %}
+                    <a href="{% url 'reports:grade_sheet_pdf' sheet.pk %}" target="_blank" class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">Grade Sheet PDF</a>
+                    {% endif %}
+                    {% endwith %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

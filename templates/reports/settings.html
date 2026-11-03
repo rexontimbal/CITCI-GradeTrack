@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block page_title %}Institution Settings{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-2xl">
+    {% include "partials/_page_header.html" with title="Institution Settings" subtitle="Header and signatory info used on every PDF and Excel report. Nothing here is hardcoded in templates." %}
+
+    <form method="post" enctype="multipart/form-data" class="space-y-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        {% csrf_token %}
+
+        <div>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">School header</h3>
+            <div class="space-y-3">
+                <div>
+                    <label for="{{ form.school_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.school_name.label }}</label>
+                    {{ form.school_name }}
+                    {% for error in form.school_name.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.sub_line.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.sub_line.label }}</label>
+                    {{ form.sub_line }}
+                    {% for error in form.sub_line.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.address.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.address.label }}</label>
+                    {{ form.address }}
+                    {% for error in form.address.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.department.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.department.label }}</label>
+                    {{ form.department }}
+                    {% for error in form.department.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.logo.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.logo.label }}</label>
+                    {{ form.logo }}
+                    {% if instance.logo %}<p class="mt-1 text-xs text-gray-500">Current: {{ instance.logo.name }}</p>
+                    {% else %}<p class="mt-1 text-xs text-gray-500">Using the default CITCI seal.</p>{% endif %}
+                    {% for error in form.logo.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Report signatories</h3>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                    <label for="{{ form.dean_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.dean_name.label }}</label>
+                    {{ form.dean_name }}
+                    {% for error in form.dean_name.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.dean_title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.dean_title.label }}</label>
+                    {{ form.dean_title }}
+                    {% for error in form.dean_title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.academic_head_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.academic_head_name.label }}</label>
+                    {{ form.academic_head_name }}
+                    {% for error in form.academic_head_name.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                    <label for="{{ form.academic_head_title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.academic_head_title.label }}</label>
+                    {{ form.academic_head_title }}
+                    {% for error in form.academic_head_title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-5 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Save Settings
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

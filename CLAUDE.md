@@ -19,7 +19,9 @@
 > **2026-11-03:** Phase 4 part 1 (Grade Sheet Workflow) is done — the submit → approve/return →
 > release → lock state machine, frozen-at-submission grade snapshots, in-app notifications, and the
 > GWA service; see section 5 (superseding its old "not yet built" framing) and the Phase 4 part 1
-> bullet under "Build Phases". Part 2 (PDF/Excel exports) is still the plan, not yet implemented.
+> bullet under "Build Phases". **Phase 4 part 2 (Reports & exports) is also done** — Institution
+> Settings, the Grade Sheet PDF, the formula-driven Class Record Excel export/import, and the
+> role-aware Reports page; see sections 4/6/8 and the Phase 4 part 2 bullet under "Build Phases".
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -361,6 +363,13 @@ record needed neither — see section 4):
 - `dashboard.Notification` — recipient FK User (CASCADE), title, message, link, is_read,
   created_at. Created via `dashboard.services.notify()`/`notify_many()`, never directly.
 
+**Built (`reports`, Phase 4 part 2):**
+- `reports.InstitutionSettings` — singleton (`save()` forces `pk=1`, `delete()` is a no-op,
+  `get_solo()` is the only way callers should fetch it), school_name/sub_line/address/department,
+  logo (ImageField, falls back to `static/img/citci-seal-256.png` when blank), dean_name/
+  dean_title/academic_head_name/academic_head_title — every PDF/Excel report header and signature
+  block reads from this instead of hardcoding institution info in a template.
+
 **Still to add:**
 - `grading.GwaRecord` or similar, if the student portal phase (O3) needs a *persisted* GWA instead
   of calling `approvals.services.compute_gwa()` on every page load — not needed yet, the function is
@@ -514,8 +523,11 @@ each with a live count, a sidebar badge showing the SUBMITTED count · **Review 
 class summary + Chart.js distribution, the transition timeline, and Approve / Return (remarks
 required, modal) / Release buttons gated by the sheet's current status · "Release all approved"
 releases every APPROVED sheet across the Program Head's program(s) in the active semester in one
-action. *(Dashboard grade-distribution chart, At-Risk Students, Reports export are still
-placeholders — those are O4/forecasting and reporting phases.)*
+action. **Reports page** (built, Phase 4 part 2 — `reports:index`) adds, for a chosen semester:
+Grade Submission Status, Class Performance Summary, Students with Failing/INC Grades (table +
+Excel export each), and a per-program Program Grade Report PDF — all scoped to the Program Head's
+own program(s) at the query level (`reports.views._scope_programs`). *(Dashboard grade-distribution
+chart and At-Risk Students are still placeholders — those are the forecasting phase.)*
 
 **Instructor (built, Phase 4 part 1):** My Classes (built, Phase 2 — card layout, active-semester
 classes; "Encode Grades" button links to the class grading page below) · Class Grading page
@@ -542,8 +554,10 @@ read-only once submitted, and the Program Head's return remarks shown prominentl
   All three tabs become read-only (server-enforced, not just hidden buttons — see section 5) once
   the grade sheet leaves DRAFT/RETURNED. **Submitted Grades** (`approvals:submitted`, replaces the
   old placeholder) — the instructor's own grade sheets in the active semester, status-filterable.
-  Excel template import/export for score encoding and PDF/Excel grade-sheet export are **not built
-  yet** (export is explicitly Phase 4 part 2) · Forecast is still a placeholder (O4 phase).
+  **Built, Phase 4 part 2:** "Export Excel" (Class Record, formula-driven) and "Grade Sheet PDF"
+  buttons on the class grading page header; on the Class Record tab, "Download blank class record"
+  and "Import from Excel" (preview → confirm, DRAFT/RETURNED only) next to the missing-score
+  banner. Forecast is still a placeholder (O4 phase).
 
 **Student:** Dashboard (built, Phase 2 — real class-list subject count and subject list for the
 active semester; term/cumulative GWA still placeholder — `approvals.services.compute_gwa()` exists
@@ -553,9 +567,14 @@ with a sidebar menu entry today) · Subject detail (component breakdown, assessm
 grades, progress chart, forecast card) · Grade history per term (GWA trend chart) · Downloadable
 grade report PDF *(still placeholders — student portal is O3, not this phase)*
 
-**PDF grade sheet layout (future):** institution name, college department, subject code/title,
-section, term, instructor, table of students (student no., name, midterm, final term, final grade,
-remarks), signature lines for Instructor and Program Head. Excel export uses the same columns.
+**PDF grade sheet layout (built, Phase 4 part 2 — see `templates/reports/pdf/grade_sheet.html`):**
+institution header (from `InstitutionSettings`), "REPORT OF GRADES" title, subject code/title +
+section(s) + schedule/room + instructor meta, a No./ID Number/Name/Final Grade/Remarks table sorted
+by last name, pass/fail/INC/dropped counts, and a signature block (Submitted by: instructor,
+Checked by: Program Head, Noted by: Dean) with each step's date from the sheet's timeline. Not
+released yet → a diagonal "UNOFFICIAL — status" watermark. The Class Record Excel export
+(`reports/excel.py`) mirrors `grading-system.xlsx`'s columns but adds an ID Number column (the real
+sheet has none) for reliable re-import matching.
 
 ---
 
@@ -638,7 +657,27 @@ until the previous one passes its tests.
   (`dashboard.Notification`, HTMX-polled bell) on every transition; `approvals.services.compute_gwa`
   (Decimal, excludes DROPPED/INC, `is_complete` flag) with no UI yet beyond what review pages show.
   Deliberately **not** built this pass (Phase 4 part 2): PDF/Excel grade-sheet exports.
-- **Phase 4 part 2 — Reports (O2):** PDF/Excel grade-sheet exports.
+- **Phase 4 part 2 — Reports & exports (O2, done):** `reports.InstitutionSettings` singleton
+  (school header + Dean/Academic Head signatories, admin-editable, System → Settings) feeding every
+  report — nothing hardcoded in a template. PDF engine: **xhtml2pdf, not WeasyPrint** — WeasyPrint
+  needs GTK3/Pango/Cairo native libraries not available on the Windows dev machine without a manual
+  system install (`import weasyprint` raised `OSError: cannot load library 'libgobject-2.0-0'`);
+  xhtml2pdf is pure-Python over reportlab and needs nothing extra on Windows or Ubuntu, at the cost
+  of no CSS `transform`/`rotate` support (the "UNOFFICIAL — status" watermark on a not-yet-released
+  Grade Sheet PDF is a Pillow-rotated PNG embedded as a base64 `data:` URI instead,
+  `reports/pdf.py:watermark_data_uri`). Grade Sheet PDF (`reports:grade_sheet_pdf`) renders the
+  `GradeSheetEntry` snapshot, never live computation. Class Record Excel export
+  (`reports/excel.py`) mirrors `grading-system.xlsx`'s layout plus an added ID Number column, with
+  every total/grade/weighted/final cell a **real Excel formula** (not a pre-computed value) so
+  faculty can recompute by hand; `?blank=1` doubles as the import template. Class Record Excel
+  import (`reports/excel_import.py`) previews new/changed scores, unmatched students/items, and
+  invalid values before a separate confirm step — DRAFT/RETURNED only; an unmatched item column is
+  reported, never auto-created (disclosed limitation, not silently handled). Reports page
+  (`reports:index`) is now role-aware: instructors get per-class PDF/Excel links; Program Head
+  (own programs)/Admin (all) get semester-scoped Grade Submission Status, Class Performance
+  Summary, and Students with Failing/INC Grades (table + Excel export each), plus a per-program
+  Program Grade Report PDF. All report queries take a pre-scoped `programs` queryset
+  (`reports.views._scope_programs`) so role scoping happens once, at the call site.
 - **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.
 - **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
   predict endpoint with contributions, pytest.

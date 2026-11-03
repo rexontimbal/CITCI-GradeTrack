@@ -16,8 +16,11 @@ snapshot, assessment items, the spreadsheet-style score-encoding grid (Setup / C
 Summary tabs), and the CITCI-verified grade computation service. **Phase 4 part 1** (this state of
 the repo) adds the grade-sheet workflow: submit → approve/return → release → lock, frozen-at-
 submission grade snapshots, in-app notifications, and a GWA service — see "Grade sheet workflow"
-below. PDF/Excel exports (Phase 4 part 2) and forecasting are still role-gated "Coming soon"
-placeholders.
+below. **Phase 4 part 2** (this state of the repo) adds reports & exports: admin-editable
+Institution Settings, the Grade Sheet PDF, the formula-driven Class Record Excel export/import, and
+the role-aware Reports page (Grade Submission Status, Class Performance Summary, Students with
+Failing/INC Grades, Program Grade Report PDF) — see "Reports & exports" below. Forecasting is still
+a role-gated "Coming soon" placeholder.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -209,6 +212,55 @@ view) and is logged to `approvals.GradeSheetTransition`.
   non-dropped class in that semester isn't released yet or carries an INC. No UI yet beyond what the
   Program Head/Admin review pages show — full display is the student portal phase.
 
+## Reports & exports
+
+- **Institution Settings** (admin → System → Settings, `reports.InstitutionSettings`, a singleton
+  always at `pk=1`): school name/sub-line/address/department, logo (falls back to
+  `static/img/citci-seal-256.png`), and the Dean/Academic Head names+titles shown on every PDF's
+  signature block — nothing report-related is hardcoded in a template.
+- **PDF engine: xhtml2pdf, not WeasyPrint.** WeasyPrint needs the GTK3/Pango/Cairo native
+  libraries, which aren't `pip install`-able and weren't present on the Windows dev machine
+  (`import weasyprint` raised `OSError: cannot load library 'libgobject-2.0-0'`); xhtml2pdf is
+  pure-Python (over reportlab) and needs no system packages on Windows **or** Ubuntu, at the cost
+  of weaker CSS support (no `transform`/`rotate` — see the watermark note below). If a future
+  deployment target has GTK3 available and wants WeasyPrint's better CSS support instead, that's a
+  separate decision — don't swap engines without re-checking this tradeoff.
+  - **Windows:** `pip install xhtml2pdf` — no extra system packages.
+  - **Ubuntu:** `pip install xhtml2pdf` — no extra system packages either. (If you ever do switch
+    to WeasyPrint, Ubuntu needs `sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf2.0-0`
+    first — Windows has no equivalent one-liner, which is the whole reason xhtml2pdf was chosen.)
+  - The diagonal "UNOFFICIAL — status" watermark on a not-yet-released Grade Sheet PDF is a
+    Pillow-rendered rotated PNG embedded as a base64 `data:` URI (`reports/pdf.py:watermark_data_uri`)
+    rather than CSS, because xhtml2pdf silently drops `transform`/`rotate` properties.
+- **Grade Sheet PDF** (`reports:grade_sheet_pdf`): institution header, "REPORT OF GRADES" title,
+  subject/section/schedule/instructor meta, a No./ID/Name/Final Grade/Remarks table sorted by last
+  name, pass/fail/INC/dropped counts, and a signature block (Submitted by/Checked by/Noted by) with
+  each step's date pulled from the `GradeSheet` timeline. Always renders from the
+  `approvals.GradeSheetEntry` snapshot, never live computation; shows the watermark above whenever
+  the sheet isn't Released/Locked yet.
+- **Class Record Excel export** (`reports:class_record_excel`, `reports/excel.py`): mirrors
+  `grading-system.xlsx`'s layout (institution header rows, per-component item/TOTAL/GRADE/WEIGHTED
+  columns, FINAL GRADE, REMARKS) but with one deliberate addition — an **ID Number column** (the
+  real CITCI sheet has none) so a re-imported export matches students reliably instead of by name
+  alone. Every total/grade/weighted/final cell is a **real Excel formula** (`=SUM(...)`,
+  `=IF($col$10=0,5,5-4*(total/max))`, `=grade*weight`, `=SUM(weighted...)`) — not a pre-computed
+  value — so Excel recalculates them live if a faculty member edits a cell by hand. Freeze panes
+  sit at the first score column/first data row; print setup is landscape, fit-to-width.
+  `?blank=1` exports the same layout with no scores filled in — the "download blank class record"
+  import template.
+- **Class Record Excel import** (`reports/excel_import.py`, Class Record tab, DRAFT/RETURNED only):
+  upload either the system's own export or CITCI's template shape — both are recognized by scanning
+  for the merged "ID Number"/"Name of Students" header row, two rows above the max-score row.
+  Students match by ID Number first, then by normalized "Last, First M." name; items match by
+  (component name, item title). Preview shows new/changed scores (old → new), unmatched
+  students/items, and invalid values (non-numeric, non-whole-number, or over max) — nothing is
+  guessed. **Known limitation:** an unmatched item column is reported, never auto-created on
+  confirm — create the assessment item first (Setup tab), then re-import.
+- **Reports page** (`reports:index`, role-aware): instructors see links to their own classes' Grade
+  Sheet PDF / Class Record Excel; Program Heads (their programs only) and Admin (all programs) get
+  semester-scoped Grade Submission Status, Class Performance Summary, and Students with
+  Failing/INC Grades (Excel-exportable), plus a per-program Program Grade Report PDF.
+
 ## Running tests
 
 ```powershell
@@ -280,6 +332,13 @@ python manage.py test
   `accounts.context_processors.sidebar` (for the Grade Approvals sidebar badge) both import
   `approvals` lazily (function-local) to avoid a module-load-time import cycle — see CLAUDE.md
   section 11 for why.
+- **Reports & exports** (Institution Settings, Grade Sheet PDF, Class Record Excel export/import,
+  the role-aware Reports page): `reports/models.py` (`InstitutionSettings` singleton), `reports/pdf.py`
+  (xhtml2pdf rendering + the Pillow watermark), `reports/excel.py` (openpyxl, formula-driven),
+  `reports/excel_import.py` (preview/commit, mirrors `academics/roster_import.py`'s pattern),
+  `reports/services.py` (pure report-query functions, role-scoped `programs` queryset passed in by
+  the caller), `reports/views.py` + `reports/urls.py`. PDF/Excel print templates live under
+  `templates/reports/pdf/` and `templates/reports/`.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js
@@ -291,8 +350,9 @@ python manage.py test
 
 Django 5.2, PostgreSQL (via psycopg 3), Django Templates + HTMX + Alpine.js, Tailwind CSS via the
 standalone CLI (`django-tailwind-cli`, no Node.js required), Chart.js (vendored, grade-distribution
-chart only), Pillow, openpyxl (class list / bulk-import templates and exports), django-axes (login
-lockout). `requirements-dev.txt` adds
+chart only), Pillow, openpyxl (class list / bulk-import templates, class record exports/imports,
+report exports), xhtml2pdf (Grade Sheet / Program Grade Report PDFs — see "Reports & exports"
+above for why xhtml2pdf over WeasyPrint), django-axes (login lockout). `requirements-dev.txt` adds
 python-docx, needed only to regenerate the seed data JSON from a Registrar .docx. See `CLAUDE.md`
 for the full rationale and later-phase plans (grading engine, ML forecasting service, etc.).
 

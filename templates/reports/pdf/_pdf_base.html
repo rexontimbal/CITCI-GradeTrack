@@ -1,0 +1,67 @@
+<html>
+<head>
+<style>
+    @page {
+        size: A4 portrait;
+        margin: 2.2cm 1.5cm 2cm 1.5cm;
+        @frame footer_frame {
+            -pdf-frame-content: footer_content;
+            bottom: 0.8cm;
+            margin-left: 1.5cm;
+            margin-right: 1.5cm;
+            height: 1cm;
+        }
+    }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a1a1a; }
+    .header-table { width: 100%; margin-bottom: 8px; }
+    .header-table td { vertical-align: middle; }
+    .logo-cell { width: 65px; }
+    .logo-cell img { width: 55px; height: 55px; }
+    .school-name { font-size: 12pt; font-weight: bold; text-align: center; }
+    .school-subline, .school-address { font-size: 7.5pt; text-align: center; color: #333; }
+    .report-title { font-size: 13pt; font-weight: bold; text-align: center; margin-top: 8px; text-decoration: underline; }
+    .meta-table { width: 100%; margin-top: 10px; font-size: 8.5pt; }
+    .meta-table td { padding: 1.5px 4px; }
+    .meta-label { font-weight: bold; width: 110px; }
+    table.data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    table.data-table th, table.data-table td { border: 0.75px solid #444; padding: 3px 5px; font-size: 8pt; }
+    table.data-table th { background-color: #e8e8e8; font-weight: bold; }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .summary-table { width: 60%; margin-top: 14px; border-collapse: collapse; }
+    .summary-table td { border: 0.75px solid #444; padding: 3px 6px; font-size: 8.5pt; }
+    .signature-table { width: 100%; margin-top: 36px; border-collapse: collapse; }
+    .signature-table td { text-align: center; padding-top: 28px; font-size: 8.5pt; vertical-align: bottom; }
+    .sig-line { border-top: 0.75px solid #333; padding-top: 3px; }
+    .sig-role { color: #555; font-size: 7.5pt; }
+    .sig-date { color: #777; font-size: 7pt; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+{% if watermark_text %}
+<div style="position:absolute; top:260px; left:30px; z-index:-1;">
+    <img src="{{ watermark_data_uri }}">
+</div>
+{% endif %}
+
+<table class="header-table">
+    <tr>
+        <td class="logo-cell">{% if logo_url %}<img src="{{ logo_url }}">{% endif %}</td>
+        <td>
+            <div class="school-name">{{ settings.school_name }}</div>
+            {% if settings.sub_line %}<div class="school-subline">{{ settings.sub_line }}</div>{% endif %}
+            {% if settings.address %}<div class="school-address">{{ settings.address }}</div>{% endif %}
+            {% if settings.department %}<div class="school-address">{{ settings.department }}</div>{% endif %}
+        </td>
+        <td class="logo-cell"></td>
+    </tr>
+</table>
+
+{% block content %}{% endblock %}
+
+<div id="footer_content" style="text-align:center; font-size:7.5pt; color:#555;">
+    Generated {{ generated_at|date:"M d, Y H:i" }} — Page <pdf:pagenumber /> of <pdf:pagecount />
+</div>
+</body>
+</html>

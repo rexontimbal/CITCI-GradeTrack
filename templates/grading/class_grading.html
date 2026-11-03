@@ -23,6 +23,18 @@
             </p>
         </div>
         <div class="flex gap-2">
+            {% if scheme %}
+            <a href="{% url 'reports:class_record_excel' class_offering.pk %}"
+               class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Export Excel
+            </a>
+            {% endif %}
+            {% if grade_sheet %}
+            <a href="{% url 'reports:grade_sheet_pdf' grade_sheet.pk %}" target="_blank"
+               class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Grade Sheet PDF
+            </a>
+            {% endif %}
             {% if is_admin and scheme %}
             <button hx-get="{% url 'grading:class_change_template' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                     class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">

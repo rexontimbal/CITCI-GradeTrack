@@ -45,6 +45,7 @@ MENUS = {
         {
             "label": "System",
             "items": [
+                ("reports:settings", "Settings", "settings"),
                 ("admin:index", "Django Admin", "settings"),
             ],
         },

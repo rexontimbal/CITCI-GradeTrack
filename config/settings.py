@@ -170,12 +170,14 @@ TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
 
 
 # django-axes — lock an account out for 15 minutes after 5 failed logins (RA 10173
-# login-security requirement). Locks by username, not IP, so a shared campus IP
-# can't lock other students out. Admin can clear a lockout from the user's row
-# ("Unlock" action — see accounts.views.unlock_user).
+# login-security requirement). Locks by the (username, ip_address) combination, not
+# username alone — a shared campus/lab IP can't lock out every student on it, but an
+# attacker also can't dodge the limit by rotating IPs against one username. Admin can
+# clear a lockout from the user's row ("Unlock" action — see accounts.views.user_unlock,
+# which resets by username and so clears it across every IP that user tried from).
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = 0.25  # hours = 15 minutes
-AXES_LOCKOUT_PARAMETERS = ["username"]
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
 AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
 AXES_LOCKOUT_TEMPLATE = "accounts/locked_out.html"
 

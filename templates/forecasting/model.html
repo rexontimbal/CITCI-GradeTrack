@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}Forecast Model{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Forecast Model" subtitle="One model per checkpoint — Prelim and Midterm. Train, review, then Activate." %}
+
+<div class="mb-6 rounded-2xl border border-gray-200 bg-white p-4">
+    <p class="mb-3 text-sm font-semibold text-gray-700">Train a new model</p>
+    <form method="post" class="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+        {% csrf_token %}
+        <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500">Checkpoint</label>
+            <select name="checkpoint" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                {% for value, label in checkpoints %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500">Source</label>
+            <select name="source" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                {% for value, label in sources %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500">Threshold</label>
+            <input type="number" name="threshold" value="0.50" min="0.05" max="0.95" step="0.05"
+                   class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        </div>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Train
+        </button>
+    </form>
+    <p class="mt-2 text-xs text-gray-500">
+        HISTORICAL needs at least 200 rows and 30 positives for that checkpoint, or training is refused.
+        A new model is always inactive until you Activate it below.
+    </p>
+</div>
+
+{% for checkpoint, label in checkpoints %}
+<div class="mb-8">
+    <h3 class="mb-3 text-base font-bold text-gray-900">{{ label }} checkpoint</h3>
+
+    {% with active=active_by_checkpoint|dict_get:checkpoint %}
+    {% if active %}
+        {% if active.training_source != "HISTORICAL" %}
+        <div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+            ⚠ Trained on {{ active.get_training_source_display|upper }} data — for demonstration only. The Chapter 4 /
+            final-defense model must be trained on real, masked CITCI historical data.
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 lg:col-span-2">
+                <div class="mb-3 flex items-center justify-between">
+                    <p class="text-sm font-semibold text-gray-700">Active model — v{{ active.pk }}</p>
+                    <a href="{% url 'forecasting:model_report_pdf' active.pk %}" target="_blank" class="text-xs font-medium text-brand-primary-700 hover:underline">
+                        Export evaluation report (PDF)
+                    </a>
+                </div>
+                <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                    <div><dt class="text-xs text-gray-500">Source</dt><dd class="font-semibold text-gray-900">{{ active.get_training_source_display }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">N samples</dt><dd class="font-semibold text-gray-900">{{ active.n_samples }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">Positive rate</dt><dd class="font-semibold text-gray-900">{{ active.positive_rate }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">Threshold</dt><dd class="font-semibold text-gray-900">{{ active.threshold }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">Accuracy</dt><dd class="font-semibold text-gray-900">{{ active.metrics_json.accuracy|floatformat:3 }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">ROC-AUC</dt><dd class="font-semibold text-gray-900">{{ active.metrics_json.roc_auc|floatformat:3 }}</dd></div>
+                    <div><dt class="text-xs text-gray-500">Precision</dt><dd class="font-semibold text-gray-900">{{ active.metrics_json.precision|floatformat:3 }} <span class="text-xs text-gray-400">[{{ active.metrics_json.ci_95.precision.0|floatformat:3 }}, {{ active.metrics_json.ci_95.precision.1|floatformat:3 }}]</span></dd></div>
+                    <div><dt class="text-xs text-gray-500">Recall</dt><dd class="font-semibold text-gray-900">{{ active.metrics_json.recall|floatformat:3 }} <span class="text-xs text-gray-400">[{{ active.metrics_json.ci_95.recall.0|floatformat:3 }}, {{ active.metrics_json.ci_95.recall.1|floatformat:3 }}]</span></dd></div>
+                    <div><dt class="text-xs text-gray-500">F1</dt><dd class="font-semibold text-gray-900">{{ active.metrics_json.f1|floatformat:3 }} <span class="text-xs text-gray-400">[{{ active.metrics_json.ci_95.f1.0|floatformat:3 }}, {{ active.metrics_json.ci_95.f1.1|floatformat:3 }}]</span></dd></div>
+                </dl>
+
+                <p class="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">5-fold CV (mean ± SD)</p>
+                <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
+                    {% for key, value in active.cv_json.items %}
+                    <div class="rounded-lg bg-gray-50 px-2 py-1.5">
+                        <p class="text-gray-500">{{ key }}</p>
+                        <p class="font-semibold text-gray-800">{{ value.mean|floatformat:3 }} ± {{ value.sd|floatformat:3 }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <p class="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">Threshold trade-off (recall is the priority)</p>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs">
+                        <thead class="text-left text-gray-500"><tr><th class="py-1 pr-3">Threshold</th><th class="py-1 pr-3">Accuracy</th><th class="py-1 pr-3">Precision</th><th class="py-1 pr-3">Recall</th><th class="py-1">F1</th></tr></thead>
+                        <tbody>
+                            {% for row in active.metrics_json.threshold_table %}
+                            <tr class="{% if row.threshold|stringformat:'.2f' == active.threshold|stringformat:'.2f' %}bg-brand-accent-50 font-semibold{% endif %}">
+                                <td class="py-1 pr-3">{{ row.threshold }}</td>
+                                <td class="py-1 pr-3">{{ row.accuracy|floatformat:3 }}</td>
+                                <td class="py-1 pr-3">{{ row.precision|floatformat:3 }}</td>
+                                <td class="py-1 pr-3">{{ row.recall|floatformat:3 }}</td>
+                                <td class="py-1">{{ row.f1|floatformat:3 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">Coefficients (top 6 by |odds ratio − 1|)</p>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-xs">
+                        <thead class="text-left text-gray-500"><tr><th class="py-1 pr-3">Feature</th><th class="py-1 pr-3">Coefficient</th><th class="py-1">Odds ratio</th></tr></thead>
+                        <tbody>
+                            {% for c in active.coefficients_json|slice:":6" %}
+                            <tr><td class="py-1 pr-3">{{ c.feature }}</td><td class="py-1 pr-3">{{ c.coefficient|floatformat:4 }}</td><td class="py-1">{{ c.odds_ratio|floatformat:3 }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="rounded-2xl border border-gray-200 bg-white p-4">
+                <p class="mb-3 text-sm font-semibold text-gray-700">Confusion matrix</p>
+                <table class="w-full text-center text-sm">
+                    <tr><td></td><td class="text-xs text-gray-500">Pred 0</td><td class="text-xs text-gray-500">Pred 1</td></tr>
+                    <tr><td class="text-xs text-gray-500">Actual 0</td><td class="rounded bg-green-50 py-2 font-semibold">{{ active.confusion_matrix_json.0.0 }}</td><td class="rounded bg-red-50 py-2 font-semibold">{{ active.confusion_matrix_json.0.1 }}</td></tr>
+                    <tr><td class="text-xs text-gray-500">Actual 1</td><td class="rounded bg-red-50 py-2 font-semibold">{{ active.confusion_matrix_json.1.0 }}</td><td class="rounded bg-green-50 py-2 font-semibold">{{ active.confusion_matrix_json.1.1 }}</td></tr>
+                </table>
+            </div>
+        </div>
+    {% else %}
+        {% include "partials/_empty_state.html" with icon="chart" title="No active model yet" description="Train one above, then Activate it from the version history below." %}
+    {% endif %}
+    {% endwith %}
+
+    <div class="mt-4 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-2">Version</th>
+                    <th class="px-4 py-2">Trained</th>
+                    <th class="px-4 py-2">Source</th>
+                    <th class="px-4 py-2">N</th>
+                    <th class="px-4 py-2">Recall</th>
+                    <th class="px-4 py-2">ROC-AUC</th>
+                    <th class="px-4 py-2">Status</th>
+                    <th class="px-4 py-2 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for v in versions_by_checkpoint|dict_get:checkpoint %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-2 font-medium text-gray-900">v{{ v.pk }}</td>
+                    <td class="px-4 py-2 text-gray-600">{{ v.trained_at|date:"M d, Y H:i" }}</td>
+                    <td class="px-4 py-2 text-gray-600">{{ v.get_training_source_display }}</td>
+                    <td class="px-4 py-2 text-gray-600">{{ v.n_samples }}</td>
+                    <td class="px-4 py-2 text-gray-600">{{ v.metrics_json.recall|floatformat:3 }}</td>
+                    <td class="px-4 py-2 text-gray-600">{{ v.metrics_json.roc_auc|floatformat:3 }}</td>
+                    <td class="px-4 py-2">
+                        {% if v.is_active %}<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>{% else %}<span class="text-xs text-gray-400">Inactive</span>{% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-right">
+                        {% if not v.is_active %}
+                        <form method="post" action="{% url 'forecasting:model_activate' v.pk %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">Activate</button>
+                        </form>
+                        {% endif %}
+                        <a href="{% url 'forecasting:model_report_pdf' v.pk %}" target="_blank" class="ml-2 text-xs font-medium text-brand-primary-700 underline hover:no-underline">PDF</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="px-4 py-4 text-center text-gray-400">No versions trained yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

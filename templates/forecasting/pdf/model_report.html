@@ -1,0 +1,64 @@
+{% extends "reports/pdf/_pdf_base.html" %}
+{% block content %}
+<div class="report-title">FORECAST MODEL EVALUATION REPORT</div>
+
+<table class="meta-table">
+    <tr>
+        <td class="meta-label">Checkpoint</td><td>{{ version.get_checkpoint_display }}</td>
+        <td class="meta-label">Version</td><td>v{{ version.pk }}</td>
+    </tr>
+    <tr>
+        <td class="meta-label">Trained</td><td>{{ version.trained_at|date:"M d, Y H:i" }}</td>
+        <td class="meta-label">Threshold</td><td>{{ version.threshold }}</td>
+    </tr>
+</table>
+
+<p style="margin-top:8px; font-size:9pt;">
+    <strong>Dataset:</strong> source = {{ version.get_training_source_display }},
+    n = {{ version.n_samples }}, positive rate = {{ version.positive_rate }}.
+    {% if version.training_source != "HISTORICAL" %}
+    <strong style="color:#b45309;">Trained on {{ version.get_training_source_display|upper }} data — for
+    demonstration only. The Chapter 4 / final-defense model must be trained on real, masked CITCI
+    historical data (or a MIXED set, clearly reported).</strong>
+    {% endif %}
+    Identities are masked (SHA-256) before any training data is stored — no names or ID numbers.
+</p>
+
+<table class="data-table" style="margin-top:12px;">
+    <thead><tr><th>Metric</th><th>Value</th><th>95% CI</th></tr></thead>
+    <tbody>
+        <tr><td>Accuracy</td><td class="text-center">{{ version.metrics_json.accuracy|floatformat:3 }}</td><td class="text-center">[{{ version.metrics_json.ci_95.accuracy.0|floatformat:3 }}, {{ version.metrics_json.ci_95.accuracy.1|floatformat:3 }}]</td></tr>
+        <tr><td>Precision</td><td class="text-center">{{ version.metrics_json.precision|floatformat:3 }}</td><td class="text-center">[{{ version.metrics_json.ci_95.precision.0|floatformat:3 }}, {{ version.metrics_json.ci_95.precision.1|floatformat:3 }}]</td></tr>
+        <tr><td>Recall</td><td class="text-center">{{ version.metrics_json.recall|floatformat:3 }}</td><td class="text-center">[{{ version.metrics_json.ci_95.recall.0|floatformat:3 }}, {{ version.metrics_json.ci_95.recall.1|floatformat:3 }}]</td></tr>
+        <tr><td>F1</td><td class="text-center">{{ version.metrics_json.f1|floatformat:3 }}</td><td class="text-center">[{{ version.metrics_json.ci_95.f1.0|floatformat:3 }}, {{ version.metrics_json.ci_95.f1.1|floatformat:3 }}]</td></tr>
+        <tr><td>ROC-AUC</td><td class="text-center">{{ version.metrics_json.roc_auc|floatformat:3 }}</td><td class="text-center">[{{ version.metrics_json.ci_95.roc_auc.0|floatformat:3 }}, {{ version.metrics_json.ci_95.roc_auc.1|floatformat:3 }}]</td></tr>
+    </tbody>
+</table>
+
+<p style="margin-top:10px; font-size:9pt;"><strong>5-fold stratified cross-validation (mean ± SD):</strong></p>
+<table class="data-table">
+    <thead><tr><th>Metric</th><th>Mean</th><th>SD</th></tr></thead>
+    <tbody>
+        {% for key, value in version.cv_json.items %}
+        <tr><td>{{ key }}</td><td class="text-center">{{ value.mean|floatformat:3 }}</td><td class="text-center">{{ value.sd|floatformat:3 }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<p style="margin-top:10px; font-size:9pt;"><strong>Confusion matrix:</strong></p>
+<table class="data-table" style="width:50%;">
+    <tr><td></td><td class="text-center"><strong>Pred 0</strong></td><td class="text-center"><strong>Pred 1</strong></td></tr>
+    <tr><td><strong>Actual 0</strong></td><td class="text-center">{{ version.confusion_matrix_json.0.0 }}</td><td class="text-center">{{ version.confusion_matrix_json.0.1 }}</td></tr>
+    <tr><td><strong>Actual 1</strong></td><td class="text-center">{{ version.confusion_matrix_json.1.0 }}</td><td class="text-center">{{ version.confusion_matrix_json.1.1 }}</td></tr>
+</table>
+
+<p style="margin-top:10px; font-size:9pt;"><strong>Coefficients (interpretability):</strong></p>
+<table class="data-table">
+    <thead><tr><th>Feature</th><th>Coefficient</th><th>Odds ratio</th></tr></thead>
+    <tbody>
+        {% for c in version.coefficients_json %}
+        <tr><td>{{ c.feature }}</td><td class="text-center">{{ c.coefficient|floatformat:4 }}</td><td class="text-center">{{ c.odds_ratio|floatformat:3 }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

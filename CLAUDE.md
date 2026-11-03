@@ -32,6 +32,14 @@
 > (live running grade); see section 8's "Student" entry and the Phase 5 bullet under "Build Phases".
 > Forecasting (O4) is still not built — the dashboard's "Academic Forecast" card is a clearly-marked
 > placeholder.
+>
+> **2026-11-04:** **Phase 6 (Forecasting — ML core) is done, with one correction to the original
+> spec: no separate FastAPI "ml-service."** The model lives in-process inside Django
+> (`forecasting/ml/`) — see the rewritten Tech Stack and section 7, and the Phase 6 bullet under
+> "Build Phases." Checkpoints (PRELIM/MIDTERM) replace the old spec's "midterm grade" concept, and
+> the at-risk label is `FINAL grade > 3.00` (not `== 5.00`) or INC/DROPPED. Deliberately not built
+> this phase (Phase 7): the at-risk list UI, the student's forecast card, early-warning
+> notifications.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -73,15 +81,19 @@ student assignment submission, online quizzes, or login-activity tracking.
   charts are actually needed, same local-vendoring rule)
 - PDF/Excel export: added in the grading-workflow phase (e.g. `weasyprint`/`reportlab` and `openpyxl`)
 - Tests: Django's test runner (`manage.py test`), app-per-module test files
-- Queue: added when forecasting jobs need one (Django's own management commands + cron, or
-  `django-rq`/Celery if warranted — decide when that phase starts)
+- Queue: **none — decided against, Phase 6.** Predictions are cheap at this data scale; no
+  Celery/Redis/django-rq. Recomputed synchronously after score saves (Phase 7) plus a `run_forecasts`
+  management command schedulable via Windows Task Scheduler/cron.
 - Local dev: PostgreSQL running locally; see `README.md` for Windows setup
 
-**Forecasting service** (`/ml-service`, separate folder in the same repo, added in its own phase)
-- Python 3.11+, FastAPI, scikit-learn, pandas, numpy, joblib, pydantic, pytest
-- Called by Django over HTTP with a shared API key header (`X-API-KEY`, from `.env` on both sides)
-- Django must keep working if the ML service is down (show "Forecast unavailable", log the error,
-  retry via a scheduled job)
+**Forecasting (Phase 6, built in-process — not a separate service)**
+- scikit-learn, pandas, numpy, joblib — all **in the `forecasting` app**, same process as the rest
+  of Django. **No FastAPI, no `/ml-service`, no network hop, no API key.** The original spec's
+  "forecasting service" design (separate FastAPI process called over HTTP) was superseded before any
+  of it was built — at this data scale a same-process `forecasting/ml/` package (`features.py`,
+  `synthetic.py`, `train.py`, `evaluate.py`, `predict.py`) does the same job as plain Python
+  functions, with no deployment/availability story to build (Django can't "lose connectivity" to
+  code running in its own process). See section 7 for what actually got built.
 
 ## Brand palette
 
@@ -383,80 +395,169 @@ record needed neither — see section 4):
   Dean doesn't sign) and show_unofficial_scores_to_students (BooleanField, default True — the
   student portal's OFFICIAL-vs-UNOFFICIAL toggle, see section 8).
 
-**Still to add:**
-- `grading.GwaRecord` or similar — not needed yet, `approvals.services.compute_gwa()` is cheap
-  enough at this data scale and now powers every student-facing GWA display (Phase 5).
-- `forecasting.MlModelVersion` (version, trained_at, training_source enum synthetic/historical, n_samples, threshold, accuracy, precision, recall, f1, ci_json, confusion_matrix_json, coefficients_json, is_active)
-- `forecasting.Prediction` (roster_entry, ml_model_version, probability, risk_label enum needs_attention/on_track, features_json, contributions_json, created_at)
-- `forecasting.Intervention` (roster_entry, instructor, note, created_at)
-- `forecasting.HistoricalRecord` (masked_student_key, subject_code, school_year, semester, feature columns, final_outcome) — for model training only, no names
+**Built (`forecasting`, Phase 6):**
+- `forecasting.MlModelVersion` — checkpoint (`Checkpoint`: PRELIM/MIDTERM), trained_at,
+  training_source (`TrainingSource`: SYNTHETIC/HISTORICAL/MIXED), n_samples, positive_rate,
+  threshold (default 0.5, admin-adjustable), metrics_json (accuracy/precision/recall/f1/roc_auc +
+  95% bootstrap CIs), cv_json (5-fold stratified CV mean ± SD), confusion_matrix_json,
+  coefficients_json (feature, coefficient, odds ratio), feature_list (JSON — the exact feature
+  names/order the model was trained on, plus each missing-category imputation median), is_active,
+  model_file (joblib path under `MEDIA_ROOT/models/`, **not committed to git**). At most one active
+  version per checkpoint (`save()` deactivates any other active version for the same checkpoint, same
+  single-active pattern as `Semester`/`GradingTemplate`).
+- `forecasting.Prediction` — roster_entry FK (CASCADE), checkpoint, model_version FK (PROTECT),
+  probability, label (`RiskLabel`: AT_RISK/NOT_AT_RISK — internal/staff-facing value; the student-
+  facing copy is "Needs Attention"/"On Track", applied at the template layer, never stored this way),
+  contributions_json (per-feature contribution + plain-language reasons, sorted by impact),
+  computed_at.
+- `forecasting.HistoricalImportBatch` — uploaded_by FK User, uploaded_at, file_count, row_count,
+  positive_count, term_assignment_note (the disclosed chronological-order-by-position assumption for
+  old sheets' non-exam items — see section 7), skipped_rows_json (row, reason).
+- `forecasting.HistoricalRecord` — masked_id (SHA-256, app-secret salt — **never** a name or
+  ID number), semester_label, subject_code, checkpoint, features_json, label, batch FK (CASCADE to
+  `HistoricalImportBatch`). No `StudentProfile`/`User` FK anywhere on this model, by design.
+
+**Still to add (Phase 7):**
+- `forecasting.Intervention` (roster_entry, instructor, note, created_at) — instructor's free-text
+  notes on an at-risk student, shown on the class's at-risk list.
 - `accounts.AuditLog` (user, action, auditable model/id, old_values json, new_values json, ip, created_at)
 
 Produce `docs/ERD.md` as a Mermaid `erDiagram` that matches the final migrations exactly, once these exist.
 
 ---
 
-## 7. Forecasting Module (Logistic Regression — not yet built)
+## 7. Forecasting Module (Logistic Regression)
 
-**Goal:** predict, **mid-semester**, whether a student will fail a subject, so the instructor can
-intervene early.
+**Status: Phase 6 (ML core, O4) is done — model lives in-process inside Django, no FastAPI, no
+network hop.** The at-risk UIs, student forecast card, and early-warning notifications are Phase 7,
+not yet built — see the Phase 6/7 split under "Build Phases".
 
-**Target label (y = 1):** final grade 5.00, INC, or DRP. Otherwise 0.
+**Goal:** predict, at a **checkpoint** mid-semester, whether a student is at risk of failing a
+subject, so the instructor can intervene early.
 
-**Features** (grade-based only, all available by midterm, all scaled 0–100) — **keyed off
-`grading.ComponentCategory`, never off a component's free-text `name`**, since instructors rename
-and reweight their own (unlocked) components per class (section 4) — a feature-extraction query
-groups `SchemeComponent`/`Score` by `category` (e.g. sum every `QUIZ`-category component's
-earned/possible, regardless of what the instructor called it) so a renamed/instructor-invented
-component still feeds the right feature:
-1. `midterm_grade_pct`
-2. `quiz_avg_pct` (category=QUIZ)
-3. `activity_avg_pct` (category=PROJECT, and/or RECITATION/OTHER — finalize the category→feature
-   mapping when this phase starts)
-4. `attendance_pct` (category=ATTENDANCE)
-5. `midterm_exam_pct` (category=EXAM, term=MIDTERM)
-6. `missing_rate_pct` (% of assessments with no score so far)
+**No separate ML service.** `forecasting/ml/` is a plain Python package (`features.py`,
+`synthetic.py`, `train.py`, `evaluate.py`, `predict.py`) imported directly by Django views/commands
+— same process, same deploy, nothing to keep available. This superseded the original spec's
+FastAPI-service design before any of it was built (see Tech Stack).
 
-**Pipeline:** `StandardScaler` → `LogisticRegression(class_weight="balanced", max_iter=1000)`,
-fitted with maximum likelihood (scikit-learn default solver).
+**Checkpoints, not "midterm grade."** CITCI's class record has no separate midterm grade (section
+4) — only four grading *periods* (Prelim/Midterm/Semi-final/Final, `grading.AssessmentTerm`). A
+forecast is computed for a `(roster_entry, checkpoint)` pair, `checkpoint ∈ {PRELIM, MIDTERM}`
+(`forecasting.Checkpoint`). Features for a checkpoint use **only** assessment items whose term is at
+or before that checkpoint — Semi-final/Final items must never reach a PRELIM or MIDTERM feature row
+(data leakage) — enforced by `features.py` and covered by a dedicated leakage-guard test. **Two
+active model versions exist at a time, one per checkpoint** — trained, evaluated, and activated
+independently.
 
-**Threshold:** default 0.5, stored per model version, adjustable by admin. Prioritize recall in the
-evaluation write-up.
+**Target label (y = 1, "at risk"):** FINAL grade > 3.00 (CITCI passing is ≤ 3.00 — grades are
+continuous 1.00–5.00, not only a flat 5.00, so the comparison must be `> 3.00`, never `== 5.00`),
+or remarks = INC, or remarks = DROPPED. Otherwise 0. Labels come **only** from RELEASED/LOCKED
+`GradeSheetEntry` snapshots (live/in-progress data has no final label yet) or from
+`HistoricalRecord` rows.
 
-**Explainability:** for each prediction return per-feature contribution = coefficient × standardized
-value, sorted by impact, plus a plain-language message (e.g., "Quiz average is lower than usual for
-passing students"). Store in `predictions.contributions_json`.
+**Features** (`forecasting/ml/features.py`) — **keyed off `grading.ComponentCategory`, never off a
+component's free-text name**, since instructors rename/reweight their own (unlocked) components per
+class (section 4); a renamed/instructor-invented component still feeds the right feature because
+extraction groups by category, not name. All percentages are earned ÷ possible × 100 over items
+with term ≤ the checkpoint and at least one score anywhere in the class (same "encoded" rule
+`grading.services.running_grade` already uses). The final feature list:
+
+| Feature | Source |
+|---|---|
+| `quiz_pct` | category=QUIZ |
+| `recitation_pct` | category=RECITATION |
+| `project_pct` | category=PROJECT **or** OTHER (merged — CITCI's "Other" bucket is project-adjacent, not its own signal) |
+| `attendance_pct` | category=ATTENDANCE |
+| `exam_pct` | category=EXAM, items up to the checkpoint only |
+| `running_grade` | the 1.00–5.00 running grade at the checkpoint (`grading.services`' formula, restricted to items up to the checkpoint — not the live current-term running grade) |
+| `missing_rate_pct` | % of in-scope items (term ≤ checkpoint) with no score for this student |
+
+A **missing category** (the instructor never set up that component at all — not to be confused with
+a category that exists but isn't yet scored) is imputed with the **training-set median** for that
+feature, plus a binary `<feature>_missing` indicator column so the model can still distinguish
+"never had this component" from "scored 0 on it." Imputation values are fit on the training split
+only and reused as-is for the test split and for live prediction (never refit on new data) — stored
+in the model version's `feature_list` JSON alongside the median used.
+
+**Pipeline:** `StandardScaler` → `LogisticRegression(class_weight="balanced", max_iter=1000,
+random_state=<fixed>)`, fitted with maximum likelihood (scikit-learn's default solver).
+
+**Threshold:** default 0.5, stored per model version, adjustable by admin — the Model Performance
+page shows a precision/recall trade-off table for thresholds 0.3–0.7 so the admin can choose with
+recall explicitly prioritized (missing an at-risk student costs more than a false alarm).
+
+**Explainability** (`forecasting/ml/predict.py`): per-feature contribution = coefficient ×
+standardized value, sorted by |impact|, plus a plain-language reason per top feature (e.g. "Quiz
+average (42%) is low", "Many missing scores (35%)") — stored in `Prediction.contributions_json`.
+Contributions plus the intercept sum exactly to the logit (`ln(p/(1-p))`) — a dedicated test checks
+this to the Decimal/float precision scikit-learn allows.
 
 **Training data**
-- `ml-service/scripts/generate_synthetic.py` — realistic synthetic dataset (≈2,000 rows, ~15–25%
-  positive class, correlated features, random seed fixed). Used for initial deployment and demo.
-- Historical import: admin uploads CSV/Excel of past CITCI records → Django **masks** student
-  identifiers (SHA-256 with app-secret salt, names dropped) before saving to `historical_records`.
-  Only masked data is ever sent to the ML service.
+- **Synthetic** (`forecasting/ml/synthetic.py` + `generate_synthetic_data` management command):
+  ≈2,000 rows per checkpoint, 15–25% positive class, correlated features (low exam/quiz → higher
+  risk, `missing_rate_pct` strongly predictive), fixed random seed. **Development and demo only —
+  see the Chapter 4 rule below.**
+- **Historical import** (admin "Historical Data" page): upload past CITCI class records as `.xlsx`
+  — either the CITCI class-record layout (`grading-system.xlsx`'s shape) or this system's own Class
+  Record export (`reports/excel.py`) — one file per class, many files per batch. Reuses the existing
+  preview → confirm import pattern (`reports/excel_import.py`'s shape, not its code — a different
+  domain). Column mapping: component headers (Attendance/Quizzes/Recitation/Project/Examination) map
+  to `ComponentCategory`; the four Examination columns (P/M/S/F) map to
+  Prelim/Midterm/Semi-final/Final. **Old sheets' non-exam items carry no term** — assumed
+  chronological-order-by-position, split into quarters (1st quarter of columns → Prelim, 2nd →
+  Midterm, …). **This is a disclosed limitation, not a silent guess** — recorded on the import batch
+  (`HistoricalImportBatch.term_assignment_note`) and called out here for Chapter 3. Identities are
+  masked before anything is saved: `masked_id = SHA256(app secret salt + student identifier)`, names
+  are **never** stored or logged — `HistoricalRecord` only ever holds `masked_id`, semester label,
+  subject code, checkpoint, a features JSON, the label, and a batch FK.
+- **Live data → historical**: an admin action ("Add released semesters to training data") exports
+  the system's own RELEASED/LOCKED `GradeSheetEntry` data into masked `HistoricalRecord` rows the
+  same way, for classes CITCI has actually run through GradeTrack.
 
-**Evaluation** (on every training run)
-- Stratified 80/20 train-test split, fixed random seed
-- Accuracy, precision, recall, F1, confusion matrix, ROC-AUC
-- 95% confidence intervals via 1,000 bootstrap resamples of the test set
-- Results saved to `ml_model_versions` and shown on an admin "Model Performance" page; exportable as
-  PDF for Chapter 4
+**Evaluation** (`forecasting/ml/evaluate.py`, run on every training run)
+- Stratified 80/20 train/test split, fixed random seed
+- Accuracy, precision, recall, F1, ROC-AUC, confusion matrix
+- 95% CIs via 1,000 bootstrap resamples of the test set
+- 5-fold stratified cross-validation mean ± SD (in addition to the single-split metrics, not instead
+  of them — CV guards against an unlucky split; the single split is what the CIs are computed on)
+- A coefficients table (feature, coefficient, odds ratio = `exp(coefficient)`) for interpretability
+- **Refuse to train on HISTORICAL alone** if fewer than 200 rows or fewer than 30 positives for that
+  checkpoint — raise with a message explaining why and suggesting MIXED for development (never
+  silently fall back to synthetic).
+- Results saved to `forecasting.MlModelVersion` and shown on the admin **Model Performance** page;
+  exportable as a PDF for Chapter 4 (`reports/pdf.py`, same `link_callback` pattern as every other
+  report).
 
-**ML service endpoints**
-- `GET /health`
-- `POST /train` — body: training rows + threshold → returns version, metrics, CIs, coefficients
-- `POST /predict` — body: list of feature rows → returns probability, label, contributions per row
-- `GET /model` — active model info
-- Save models with joblib under `ml-service/models/{version}.joblib`
+**`train_forecast_model` management command** — `--checkpoint {PRELIM,MIDTERM} --source
+{synthetic,historical,mixed}`; trains, evaluates, saves a new (inactive) `MlModelVersion`. Activating
+a version is a separate admin action (Model Performance page's "Activate" button on a version in its
+history), never automatic on training — a newly-trained model must be reviewed first.
 
-**When predictions run (Django)**
-- Queued/scheduled job after an instructor saves scores, debounced per class
-- "Recompute forecasts" button for instructors/program heads
-- Nightly scheduled job for all active class-list entries in the current term
-- Only predict when at least the midterm period has some scores; otherwise show "Not enough data yet"
+**Prediction** (`forecasting/ml/predict.py`): `predict(roster_entry, checkpoint)` →
+`{probability, label ("at_risk"/"not_at_risk"), contributions}`, or `"insufficient_data"` when the
+class has no scored items up to that checkpoint yet (nothing to extract features from). Every
+prediction is persisted to `forecasting.Prediction` (roster_entry, checkpoint, model_version,
+probability, label, contributions_json, computed_at) — no UI beyond the admin pages this phase; the
+instructor/program-head at-risk list and the student's own forecast card are Phase 7.
 
-**Early warning:** when a student's label changes to `needs_attention`, notify the instructor (and
-program head summary). Notify the student with a supportive message and generic study tips. Never
-show raw probability to students; instructors and program heads see probability + factors.
+**When predictions run:** no task queue (Celery/Redis — decided against, see Tech Stack) — cheap
+enough to run synchronously. Phase 7 will recompute after an instructor saves scores (debounced per
+class) and offer a "Recompute" button; this phase ships the primitive both of those will call,
+`run_forecasts` — a management command (no view yet) that predicts for every active class-list entry
+at both checkpoints, schedulable via Windows Task Scheduler/cron (no Celery beat needed for a
+once/twice-daily job at this scale).
+
+**Chapter 4 / final-defense rule:** The model shown in the final defense and Chapter 4 **must** be
+trained and evaluated on real, masked CITCI historical data (or a MIXED set only if clearly
+reported as such). Synthetic data is for development and demo only and **must always be labeled as
+such** — the Model Performance page shows a prominent banner ("Trained on SYNTHETIC data — for
+demonstration only") whenever `training_source != HISTORICAL`, and the PDF export carries the same
+disclosure in its dataset-summary section.
+
+**Early warning (Phase 7, not yet built):** when a student's label changes to at-risk, notify the
+instructor (and a program-head summary) and the student with a supportive message + generic study
+tips — never show the raw probability to students; instructors/program heads see probability +
+factors. Student-facing copy still says "Needs Attention"/"On Track", never "at-risk" (section 3).
 
 ---
 
@@ -779,11 +880,32 @@ until the previous one passes its tests.
   past semester (A.Y. 2025–2026, 2nd Sem) with released+locked grades so GWA history has 2+ points —
   on top of whatever `seed_grading_demo` already produced (RELEASED, in-progress-with-partial-
   scores, no-scores-yet all come free from its existing classes).
-- **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
-  predict endpoint with contributions, pytest.
-- **Phase 7 — Integration (O3, O4):** Django ↔ ML client, queued/scheduled predictions, forecast
-  UIs for all roles, interventions, early-warning notifications, historical data import with
-  masking, model performance page.
+- **Phase 6 — ML core (O4, done):** the model lives **in-process inside Django** (`forecasting/ml/`
+  — `features.py`/`synthetic.py`/`train.py`/`evaluate.py`/`predict.py`), not a separate FastAPI
+  service — that part of the original spec was superseded before anything was built (see Tech
+  Stack and section 7). Checkpoints (PRELIM/MIDTERM) replace "midterm grade" since CITCI's class
+  record has no such field; features are keyed off `ComponentCategory`, never component name; the
+  leakage guard (no Semi-final/Final item ever reaches a PRELIM/MIDTERM feature row) is unit-tested.
+  Label: FINAL grade > 3.00, INC, or DROPPED = at risk — from RELEASED/LOCKED `GradeSheetEntry`
+  snapshots or `HistoricalRecord` only. `StandardScaler` → `LogisticRegression(class_weight=
+  "balanced")`; stratified 80/20 split, bootstrap CIs, 5-fold CV, a 0.3–0.7 threshold trade-off
+  table, coefficients/odds-ratios. Training data: a synthetic generator
+  (`generate_synthetic_data` command, dev/demo only) and a masked historical import (admin
+  "Historical Data" page, `.xlsx`, SHA-256-salted `masked_id`, names never stored — plus an
+  "Add released semesters to training data" action that masks GradeTrack's own released data the
+  same way). Training refuses HISTORICAL-only runs under 200 rows / 30 positives for a checkpoint.
+  No task queue — predictions are synchronous; `run_forecasts` management command is the
+  schedulable primitive Phase 7's "after score save" and "Recompute" triggers will both call. Admin
+  **Model Performance** page (metrics/CIs/CV/confusion matrix/ROC/coefficients, a "Trained on
+  SYNTHETIC data" banner when applicable, version history with Activate, a PDF export for Chapter
+  4) and **Historical Data** page (batch list, import, delete). **Chapter 4 rule:** the model shown
+  in the final defense must be trained on real masked CITCI data (or MIXED, clearly reported) —
+  synthetic is dev/demo only and always labeled as such. Deliberately **not** built this phase
+  (Phase 7): the at-risk list UI, the student's forecast card, and early-warning notifications —
+  this phase ships the model and the data pipeline those will read from, not the UI.
+- **Phase 7 — Integration (O3, O4):** queued/scheduled predictions wired to real triggers (score
+  save, a "Recompute" button), forecast UIs for all roles, interventions, early-warning
+  notifications.
 - **Phase 8 — Testing & evaluation (O5):**
   - Feature/unit tests for all modules; target ≥ 80% coverage of services and access-control logic
   - Seeder: 1 admin, 2 program heads, 15 instructors, 450 students, current + 2 past terms with
@@ -809,7 +931,12 @@ until the previous one passes its tests.
   validation.
 - Never hardcode grading weights or the transmutation scale — they're DB-backed config once that
   phase is built.
-- Never send names or real student numbers to the ML service.
+- Never store or log a name or real student/ID number in `forecasting.HistoricalRecord` or anywhere
+  else in the ML training pipeline — mask with `SHA256(app secret salt + identifier)` first, always.
+- **The model shown in the final defense and Chapter 4 must be trained and evaluated on real,
+  masked CITCI historical data (or a MIXED set only if clearly reported).** Synthetic data is for
+  development and demo only and must always be labeled as such in the UI and reports (see section
+  7's Chapter 4 rule) — never present a SYNTHETIC-trained model's numbers as the real result.
 - No features outside the current phase's scope (no LMS, chat, file submissions) unless asked.
 - Keep code readable for undergraduate students: clear names, short comments only on non-obvious
   logic.

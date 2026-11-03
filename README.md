@@ -22,9 +22,11 @@ Sheet PDF, the formula-driven Class Record Excel export/import, and the role-awa
 Grade Report PDF) — see "Reports & exports" below (a same-day follow-up pass fixed a provisional-
 remarks bug in grade sheet snapshots, made PDF images resolve without a network round trip, and let
 the Excel import create a new assessment item for an unmatched column instead of only reporting
-it). **Phase 5** (this state of the repo) adds the student portal: dashboard, My Grades, Subject
-detail, My Progress, and a Report of Grades PDF — see "Student portal" below. Forecasting is still
-a role-gated "Coming soon" placeholder.
+it). **Phase 5** adds the student portal: dashboard, My Grades, Subject detail, My Progress, and a
+Report of Grades PDF — see "Student portal" below. **Phase 6** (this state of the repo) adds the
+forecasting ML core — in-process (no separate service, see "Forecasting" below for why), trained on
+synthetic or masked-historical data, with a Model Performance admin page. The at-risk list, student
+forecast card, and early-warning notifications are Phase 7, not yet built.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -315,6 +317,62 @@ roster entry already scoped that way), and a mismatched id 404s rather than 403s
   — plus a past semester (A.Y. 2025–2026, 2nd Sem, released + locked) so GWA history has 2+ points.
   Idempotent; safe to re-run.
 
+## Forecasting
+
+**No separate ML service.** The original spec called for a FastAPI microservice (`/ml-service`,
+called over HTTP with an API key) — that was superseded before anything was built. The model lives
+in-process inside Django (`forecasting/ml/`: `features.py`/`synthetic.py`/`train.py`/`evaluate.py`/
+`predict.py`), imported directly by views and management commands. No network hop, no API key, no
+"what if the ML service is down" story to build.
+
+- **Checkpoints, not "midterm grade."** CITCI's class record has no separate midterm grade — only
+  four grading periods. A forecast is computed at PRELIM or MIDTERM; features for a checkpoint use
+  only items whose term is at or before it (Semi-final/Final items never reach a feature row — a
+  data-leakage guard, unit-tested). Two active model versions exist at a time, one per checkpoint.
+- **Label:** FINAL grade > 3.00 (not `== 5.00` — grades are continuous), or INC, or DROPPED = at
+  risk. From RELEASED/LOCKED `GradeSheetEntry` snapshots or `HistoricalRecord` only.
+- **Features**, keyed off `grading.ComponentCategory` (never a component's free-text name):
+  `quiz_pct`, `recitation_pct`, `project_pct` (PROJECT + OTHER merged), `attendance_pct`, `exam_pct`,
+  `running_grade` (checkpoint-windowed), `missing_rate_pct`. A category the instructor never set up
+  is imputed with the **training set's** median plus a `<feature>_missing` flag — fit once at train
+  time, reused as-is for prediction, never refit.
+- **Pipeline:** `StandardScaler` → `LogisticRegression(class_weight="balanced")`, fixed
+  `random_state`. Stratified 80/20 split, 95% bootstrap CIs (1,000 resamples), 5-fold stratified CV,
+  a 0.3–0.7 threshold trade-off table (recall prioritized), coefficients + odds ratios.
+- **Training data:**
+  - *Synthetic* (dev/demo only): `python manage.py generate_synthetic_data` previews the generator
+    (no persistence — `train_model(source=synthetic)` regenerates the same ~2,000 rows per
+    checkpoint on demand, fixed seed).
+  - *Historical import* (admin → Management → Historical Data): upload past CITCI class records as
+    `.xlsx` — either CITCI's own class-record layout or this system's own Class Record export, one
+    file per class. Identities are masked (SHA-256, app-secret salt) **before** anything is saved —
+    names are never stored or logged. **Stated limitation:** an old sheet's non-exam items carry no
+    recorded term, so they're assigned to a grading period by column position (chronological order
+    assumed, split into quarters) — recorded on the batch and disclosed in the UI, not a silent
+    guess. The Examination block's own P/M/S/F sub-columns map directly to Prelim/Midterm/
+    Semi-final/Final (no assumption needed there).
+  - *Live → historical*: "Add released semesters to training data" on the Historical Data page
+    masks this system's own RELEASED/LOCKED grade sheets the same way — no term-assumption needed
+    there since every item already carries a real `AssessmentTerm`.
+- **Train:** `python manage.py train_forecast_model --checkpoint {prelim,midterm} --source
+  {synthetic,historical,mixed}`. Refuses a HISTORICAL-only run under 200 rows / 30 positives for
+  that checkpoint (train MIXED for development instead — never for the Chapter 4 model). A new
+  version is always **inactive** — Activate it from the Model Performance page after reviewing it.
+- **Predict / refresh:** `python manage.py run_forecasts` predicts for every active class-list entry
+  at both checkpoints — no task queue (Celery/Redis decided against; cheap enough to run
+  synchronously). Schedule it with Windows Task Scheduler or cron. This is the same primitive Phase
+  7's "after score save" and "Recompute" button will call.
+- **Model Performance page** (admin → Management → Forecast Model): metrics + CIs, 5-fold CV,
+  confusion matrix, threshold trade-off table, coefficients, version history with Activate, and
+  "Export evaluation report (PDF)" (Chapter 4). Shows a prominent "Trained on SYNTHETIC data — for
+  demonstration only" banner whenever the active model's source isn't HISTORICAL.
+- **Chapter 4 / final-defense rule:** the model shown there must be trained on real, masked CITCI
+  historical data (or MIXED, clearly reported). Synthetic is dev/demo only and always labeled as
+  such — in the UI and in the PDF export.
+- **Not built yet (Phase 7):** the at-risk list UI (program head/instructor), the student's forecast
+  card ("Needs Attention"/"On Track" — never "at-risk" to a student), and early-warning
+  notifications. This phase ships the model and the data pipeline those will read from.
+
 ## Running tests
 
 ```powershell
@@ -404,6 +462,13 @@ python manage.py test
   `grading/management/commands/seed_student_portal_demo.py` fills in the demo states
   `seed_grading_demo` doesn't reliably cover (SUBMITTED, a running-grade warning, a released+locked
   past semester) — auto-run at the end of `seed_citci_academics`.
+- **Forecasting** (ML core, no separate service): `forecasting/ml/` (`features.py` — extraction +
+  imputation, `synthetic.py` — dev/demo generator, `train.py`, `evaluate.py`, `predict.py`),
+  `forecasting/historical_import.py` (parsing + masking + the "live data → historical" export),
+  `forecasting/models.py` (`MlModelVersion`, `Prediction`, `HistoricalImportBatch`,
+  `HistoricalRecord`), `forecasting/views.py` + `forecasting/urls.py` (Model Performance, Historical
+  Data), management commands `generate_synthetic_data`/`train_forecast_model`/`run_forecasts`.
+  Templates under `templates/forecasting/` (+ `templates/forecasting/pdf/model_report.html`).
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js
@@ -417,9 +482,10 @@ Django 5.2, PostgreSQL (via psycopg 3), Django Templates + HTMX + Alpine.js, Tai
 standalone CLI (`django-tailwind-cli`, no Node.js required), Chart.js (vendored, grade-distribution
 chart only), Pillow, openpyxl (class list / bulk-import templates, class record exports/imports,
 report exports), xhtml2pdf (Grade Sheet / Program Grade Report PDFs — see "Reports & exports"
-above for why xhtml2pdf over WeasyPrint), django-axes (login lockout). `requirements-dev.txt` adds
-python-docx, needed only to regenerate the seed data JSON from a Registrar .docx. See `CLAUDE.md`
-for the full rationale and later-phase plans (grading engine, ML forecasting service, etc.).
+above for why xhtml2pdf over WeasyPrint), django-axes (login lockout), scikit-learn/pandas/numpy/
+joblib (forecasting — in-process, no separate ML service; see "Forecasting" above).
+`requirements-dev.txt` adds python-docx, needed only to regenerate the seed data JSON from a
+Registrar .docx. See `CLAUDE.md` for the full rationale and later-phase plans.
 
 ### Gotcha: custom form widget templates (`FORM_RENDERER`)
 

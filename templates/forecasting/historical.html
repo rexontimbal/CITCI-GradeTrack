@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block page_title %}Historical Data{% endblock %}
+{% block content %}
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    {% include "partials/_page_header.html" with title="Historical Data" subtitle="Masked past class records used to train the forecast model." %}
+    <div class="flex gap-2">
+        <form method="post" action="{% url 'forecasting:historical_export_live' %}">
+            {% csrf_token %}
+            <button type="submit" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Add released semesters to training data
+            </button>
+        </form>
+        <button type="button" hx-get="{% url 'forecasting:historical_import' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Import Historical Records
+        </button>
+    </div>
+</div>
+
+<div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+    Identities are masked (SHA-256) before anything is saved — no names or ID numbers are ever stored here.
+    Non-exam items in an uploaded sheet with no recorded term are assigned to a grading period by column
+    position (chronological order assumed, split into quarters) — a disclosed limitation, recorded per batch below.
+</div>
+
+{% if batches %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Date</th>
+                <th class="px-4 py-3">Files</th>
+                <th class="px-4 py-3">Rows</th>
+                <th class="px-4 py-3">Positive rate</th>
+                <th class="px-4 py-3">Uploaded by</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for batch in batches %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-gray-700">{{ batch.created_at|date:"M d, Y H:i" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ batch.file_count }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ batch.row_count }} {% if batch.skipped_rows_json %}<span class="text-xs text-amber-600">({{ batch.skipped_rows_json|length }} skipped)</span>{% endif %}</td>
+                <td class="px-4 py-3 text-gray-700">{% if batch.row_count %}{% widthratio batch.positive_count batch.row_count 100 %}%{% else %}—{% endif %}</td>
+                <td class="px-4 py-3 text-gray-700">{{ batch.uploaded_by.full_name|default:"System" }}</td>
+                <td class="px-4 py-3 text-right">
+                    <form method="post" action="{% url 'forecasting:historical_delete' batch.pk %}" class="inline" onsubmit="return confirm('Delete this batch and its records?');">
+                        {% csrf_token %}
+                        <button type="submit" class="text-xs font-medium text-red-700 underline hover:no-underline">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="folder" title="No historical data yet" description="Import past CITCI class records, or add already-released semesters from this system." %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,43 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Preview — {{ preview.file_names|length }} file(s)</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<form hx-post="{% url 'forecasting:historical_import_confirm' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+        <div class="rounded-lg bg-green-50 px-3 py-2 text-green-800"><strong>{{ preview.row_count }}</strong> feature rows</div>
+        <div class="rounded-lg bg-blue-50 px-3 py-2 text-blue-800"><strong>{{ preview.positive_count }}</strong> positive</div>
+        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-600"><strong>{{ preview.skipped|length }}</strong> skipped</div>
+    </div>
+
+    {% if preview.skipped %}
+    <div class="max-h-32 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <strong>Skipped rows:</strong>
+        <ul class="mt-1 list-inside list-disc">
+            {% for s in preview.skipped %}
+            <li>{{ s.file }} — row {{ s.row }}: {{ s.reason }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <p class="text-xs text-gray-500">
+        Only masked data (no names/ID numbers) will be saved. Non-exam items with no recorded term were
+        assigned to a grading period by column position (chronological order assumed, split into quarters).
+    </p>
+
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" {% if not preview.row_count %}disabled{% endif %}
+                class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700 disabled:opacity-50">
+            Confirm Import
+        </button>
+    </div>
+</form>

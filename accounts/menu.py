@@ -34,6 +34,7 @@ MENUS = {
                 ("grading:templates", "Grading Templates", "sliders"),
                 ("approvals:admin_sheets", "Grade Sheets", "clipboard"),
                 ("forecasting:model", "Forecast Model", "chart"),
+                ("forecasting:historical", "Historical Data", "folder"),
             ],
         },
         {

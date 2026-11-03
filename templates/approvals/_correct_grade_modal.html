@@ -1,0 +1,34 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Correct Grade — {{ entry.roster_entry.student.full_name }}</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{% url 'approvals:correct_entry' entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        Current: {{ entry.final_grade }} ({{ entry.get_remarks_display }}). This change is logged and shown on the sheet's timeline.
+    </div>
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div>
+        <label for="{{ form.final_grade.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.final_grade.label }}</label>
+        {{ form.final_grade }}
+        {% for error in form.final_grade.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div>
+        <label for="{{ form.remarks.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Remarks</label>
+        {{ form.remarks }}
+    </div>
+    <div>
+        <label for="{{ form.reason.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.reason.label }}</label>
+        {{ form.reason }}
+        {% for error in form.reason.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">Save Correction</button>
+    </div>
+</form>

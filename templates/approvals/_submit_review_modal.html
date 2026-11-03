@@ -1,0 +1,57 @@
+{% load sidebar_icons grading_extras %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Submit Grades — {{ class_offering }}</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<div class="mt-4 space-y-4">
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div class="rounded-lg border border-gray-200 p-2 text-center">
+            <p class="text-[10px] uppercase text-gray-500">Passed</p>
+            <p class="font-bold text-green-700">{{ summary.counts.PASSED }}</p>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-2 text-center">
+            <p class="text-[10px] uppercase text-gray-500">Failed</p>
+            <p class="font-bold text-red-700">{{ summary.counts.FAILED }}</p>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-2 text-center">
+            <p class="text-[10px] uppercase text-gray-500">INC</p>
+            <p class="font-bold text-amber-700">{{ summary.counts.INC }}</p>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-2 text-center">
+            <p class="text-[10px] uppercase text-gray-500">Average</p>
+            <p class="font-bold text-brand-primary-800">{{ summary.average|grade_display }}</p>
+        </div>
+    </div>
+
+    {% if summary.missing_results %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p class="font-semibold">{{ summary.missing_results|length }} student(s) have missing scores:</p>
+        <ul class="mt-1 list-inside list-disc">
+            {% for result in summary.missing_results %}
+            <li>{{ result.roster_entry.student.full_name }} — {{ result.missing_items|length }} missing cell{{ result.missing_items|length|pluralize }}</li>
+            {% endfor %}
+        </ul>
+        <p class="mt-1">Encode these scores or mark each student INC (with a reason) before submitting.</p>
+    </div>
+    {% else %}
+    <form method="post" hx-post="{% url 'approvals:submit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="space-y-4">
+        {% csrf_token %}
+        <label class="flex items-start gap-2 text-sm text-gray-700">
+            {{ form.certify }}
+            <span>{{ form.certify.label }}</span>
+        </label>
+        {% for error in form.certify.errors %}<p class="text-xs text-red-600">{{ error }}</p>{% endfor %}
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">Submit</button>
+        </div>
+    </form>
+    {% endif %}
+</div>

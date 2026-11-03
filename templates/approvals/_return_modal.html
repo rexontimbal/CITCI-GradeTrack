@@ -1,0 +1,23 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Return Grade Sheet</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{% url 'approvals:return_sheet' sheet.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    <p class="text-sm text-gray-600">{{ sheet.class_offering }} will go back to the instructor as Returned — they'll need to fix and resubmit.</p>
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div>
+        <label for="{{ form.remarks.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.remarks.label }}</label>
+        {{ form.remarks }}
+        {% for error in form.remarks.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="submit" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">Return</button>
+    </div>
+</form>

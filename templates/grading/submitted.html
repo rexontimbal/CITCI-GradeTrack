@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block page_title %}Submitted Grades{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Submitted Grades" subtitle="Your grade sheets for the active semester." %}
+
+{% if not active_semester_set %}
+{% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
+{% else %}
+<form hx-get="{% url 'approvals:submitted' %}" hx-target="#submitted-table" hx-swap="outerHTML" class="mb-4 flex items-center gap-2">
+    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" hx-trigger="change" hx-get="{% url 'approvals:submitted' %}" hx-target="#submitted-table" hx-swap="outerHTML">
+        <option value="">All statuses</option>
+        {% for status, label in statuses %}<option value="{{ status }}" {% if status_filter == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+</form>
+{% include "grading/_submitted_table.html" %}
+{% endif %}
+{% endblock %}

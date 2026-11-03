@@ -1,4 +1,4 @@
-{% load sidebar_icons %}
+{% load sidebar_icons core_extras %}
 <li class="relative group/item" data-active="{% if url_name == active_url_name %}true{% else %}false{% endif %}">
     <a href="{% url url_name %}"
        class="flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition
@@ -9,6 +9,12 @@
             {% sidebar_icon icon "w-4.5 h-4.5" %}
         </span>
         <span class="whitespace-nowrap" x-show="forMobile || !collapsed">{{ label }}</span>
+        {% with badge=sidebar_badges|dict_get:url_name %}
+        {% if badge %}
+        <span class="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand-accent-500 px-1 text-[11px] font-bold text-brand-primary-900"
+              x-show="forMobile || !collapsed">{{ badge }}</span>
+        {% endif %}
+        {% endwith %}
     </a>
     <span x-show="!forMobile && collapsed"
           x-cloak

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block page_title %}Notifications{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Notifications" subtitle="Updates about your grade sheets." %}
+
+{% if notifications %}
+<div class="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+    {% for n in notifications %}
+    <a href="{% url 'dashboard:mark_read' n.pk %}" class="block px-4 py-3 hover:bg-gray-50 {% if not n.is_read %}bg-brand-accent-50{% endif %}">
+        <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-gray-900">{{ n.title }}</p>
+            <p class="text-xs text-gray-400">{{ n.created_at|date:"M d, Y H:i" }}</p>
+        </div>
+        {% if n.message %}<p class="mt-1 text-sm text-gray-600">{{ n.message }}</p>{% endif %}
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="bell" title="No notifications yet" description="You'll see updates about your grade sheets here." %}
+{% endif %}
+{% endblock %}

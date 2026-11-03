@@ -32,6 +32,7 @@ MENUS = {
             "items": [
                 ("accounts:users", "Users", "users"),
                 ("grading:templates", "Grading Templates", "sliders"),
+                ("approvals:admin_sheets", "Grade Sheets", "clipboard"),
                 ("forecasting:model", "Forecast Model", "chart"),
             ],
         },
@@ -81,7 +82,7 @@ MENUS = {
             "label": "Teaching",
             "items": [
                 ("academics:my_classes", "My Classes", "chalkboard"),
-                ("grading:submitted", "Submitted Grades", "clipboard"),
+                ("approvals:submitted", "Submitted Grades", "clipboard"),
                 ("forecasting:at_risk", "At-Risk Students", "alert"),
             ],
         },

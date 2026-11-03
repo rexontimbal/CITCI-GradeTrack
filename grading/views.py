@@ -72,7 +72,15 @@ def _parse_whole_number(raw_value):
 
 
 def _can_edit(user, class_offering):
-    return user.is_instructor and class_offering.instructor_id == user.id
+    """Instructor-owned AND the grade sheet is still editable (no sheet yet,
+    DRAFT, or RETURNED) — local import to avoid a grading<->approvals
+    import cycle at app-loading time (approvals imports grading.services
+    at module level; this direction can only be a function-local import)."""
+    from approvals.services import is_class_editable
+
+    return (
+        user.is_instructor and class_offering.instructor_id == user.id and is_class_editable(class_offering)
+    )
 
 
 def _get_class_offering_for_grading(request, pk):
@@ -318,8 +326,12 @@ def _build_summary_context(class_offering):
 
 @role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_grading(request, pk):
+    from approvals.services import get_grade_sheet, missing_score_students
+
     class_offering = _get_class_offering_for_grading(request, pk)
     can_edit = _can_edit(request.user, class_offering)
+    grade_sheet = get_grade_sheet(class_offering)
+    is_owner = request.user.is_instructor and class_offering.instructor_id == request.user.id
 
     scheme_error = None
     try:
@@ -335,6 +347,9 @@ def class_grading(request, pk):
         "class_offering": class_offering,
         "can_edit": can_edit,
         "is_admin": request.user.is_admin_role,
+        "is_owner": is_owner,
+        "grade_sheet": grade_sheet,
+        "missing_count_for_submit": len(missing_score_students(class_offering)) if is_owner else 0,
         "scheme": scheme,
         "scheme_error": scheme_error,
         "tab": request.GET.get("tab", "setup"),
@@ -610,11 +625,6 @@ def mark_incomplete(request, pk):
 # ---------------------------------------------------------------------------
 # Student-/placeholder pages kept from before this phase
 # ---------------------------------------------------------------------------
-
-
-@role_required(INSTRUCTOR)
-def submitted(request):
-    return coming_soon(request, "Submitted Grades")
 
 
 @role_required(STUDENT)

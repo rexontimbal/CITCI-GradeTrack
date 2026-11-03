@@ -15,6 +15,11 @@
 > for what was actually built, which also supersedes section 4's old placeholder rules (Midterm/
 > Final only, 25/25/10/40 weights) with CITCI's real class record — confirmed against
 > `grading-system.xlsx` at the repo root.
+>
+> **2026-11-03:** Phase 4 part 1 (Grade Sheet Workflow) is done — the submit → approve/return →
+> release → lock state machine, frozen-at-submission grade snapshots, in-app notifications, and the
+> GWA service; see section 5 (superseding its old "not yet built" framing) and the Phase 4 part 1
+> bullet under "Build Phases". Part 2 (PDF/Excel exports) is still the plan, not yet implemented.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -193,17 +198,62 @@ hang "Provisional" off of.
 
 ---
 
-## 5. Grade Sheet Workflow (not yet built)
+## 5. Grade Sheet Workflow (built, Phase 4 part 1 — see the build-phase note below for part 2)
 
 `draft → submitted → approved → released → locked`, plus `returned` (program head sends back with
-remarks → instructor edits → resubmits).
+remarks → instructor edits → resubmits). One `approvals.GradeSheet` per (`ClassOffering`, period) —
+`period` defaults to FINAL today; MIDTERM is a reserved, unused choice (CITCI hasn't confirmed
+whether midterm grades get their own submit/approve cycle) so adding it later needs no schema
+change, just a UI entry point. Every transition goes through `approvals/services.py` — explicit
+allowed-from-status checks (`_require_status`), never a bare `sheet.status = ...` in a view — and is
+logged to `approvals.GradeSheetTransition` (shown as a timeline on the review page).
 
-- Instructor edits only in `draft`/`returned`
-- Students see **running (unofficial) component scores** during the term, clearly labeled
-  "Unofficial"; official final grades only after `released`
-- Admin locks a whole term; locked grades can only change through an admin "grade correction" with
-  a required reason, recorded in audit logs
-- Notify the relevant users at each transition (in-app notifications)
+- **Instructor edits only while DRAFT/RETURNED** (or no sheet row exists yet, which is the same as
+  DRAFT) — enforced server-side via `approvals.services.is_class_editable`, consulted from
+  `grading.views._can_edit` (a function-local import; `approvals` imports `grading.services` at
+  module level, so the reverse direction can only be local to avoid an import cycle at app-loading
+  time). Every grading mutation route (`save_cell`, `fill_column`, `mark_incomplete`,
+  `class_components_save`, assessment-item CRUD) already runs through `_can_edit`, so this one
+  change locks all of them at once. The class grading page shows a status badge next to the title,
+  a "Submit Grades"/"Resubmit Grades" button when appropriate, and a banner explaining *why* it's
+  read-only (e.g. "Submitted on Nov 3 — awaiting Program Head approval") or showing the Program
+  Head's return remarks prominently.
+- **Submit** (`approvals.services.submit_grade_sheet`) is blocked if any active, non-INC student has
+  a missing score (`missing_score_students`) — the instructor sees a pre-submit review modal first
+  (counts, class average, the specific missing cells/INC students, a required "I certify these
+  grades are final and correct" checkbox). On success it **snapshots** every roster entry's
+  `compute_student()` result into `approvals.GradeSheetEntry` (final grade, remarks, INC reason, a
+  JSON component breakdown) — approved/released grades always read from this snapshot, **never**
+  recomputed live. Re-submitting (after a return) replaces the whole snapshot, not a diff.
+- **Approve / Return** — Program Head of the class's program (a class shared across programs via
+  its M2M `sections` can be approved/returned by *any* of those programs' heads — see
+  `approvals.views._program_head_owns`). Return requires remarks (shown on the instructor's class
+  page) and sends the sheet back to RETURNED, editable again.
+- **Release** — Program Head or Admin, only from APPROVED. Makes the snapshot official (students
+  will see it once the student portal phase exists). "Release all approved" releases every APPROVED
+  sheet for the Program Head's program(s) in the active semester in one action.
+- **Lock** — Admin only, "Lock term" locks every RELEASED sheet in the active semester at once
+  (with a confirmation showing the count). Locked (and released) grades can only change through an
+  admin **grade correction** (`approvals.services.correct_grade`, required reason) — logged to
+  `approvals.GradeCorrection` and the sheet's timeline; the corrected entry shows a "Corrected" tag.
+- **Notifications** (`dashboard.Notification`, `dashboard.services.notify`/`notify_many`) fire on
+  submit (→ every owning Program Head), return (→ instructor, includes remarks), approve
+  (→ instructor), release (→ instructor — students get theirs once the portal phase exists), and
+  correction (→ instructor). Topbar bell: unread badge + dropdown (latest 10, HTMX-polled every
+  60s via `dashboard:bell`; `notifOpen` lives on `base.html`'s body-level Alpine state, not inside
+  the polled fragment, so an open dropdown survives each poll instead of snapping shut). Clicking a
+  notification is a **plain link** (not `hx-*`) to `dashboard:mark_read`, which marks it read then
+  redirects to its `link` — htmx intercepts clicks on elements carrying its own attributes, so an
+  `hx-post` on the same `<a>` would have eaten the navigation.
+- **GWA** (`approvals.services.compute_gwa`) — Σ(final grade × units) ÷ Σ units over a student's
+  RELEASED/LOCKED `GradeSheetEntry` rows in a semester, excluding DROPPED and INC; `is_complete` is
+  False if any of the student's (non-dropped) classes in that semester isn't released yet or carries
+  an INC. Decimal throughout, quantized to 2 places. No UI yet beyond what the review pages show —
+  full display is the student portal phase (O3).
+- Students still see **running (unofficial) component scores** during the term (student portal
+  phase, not built yet), clearly labeled "Unofficial"; official final grades only after `released`.
+
+**Not built this pass (Phase 4 part 2):** PDF/Excel grade-sheet exports.
 
 ---
 
@@ -287,17 +337,38 @@ record needed neither — see section 4):
   User, changed_at — written by `grading.services.save_score()` on every value change (not on saves
   that don't actually change the value)
 
+**Built (`approvals`, Phase 4 part 1):**
+- `approvals.GradeSheet` — class_offering FK (CASCADE), period (`GradeSheetPeriod`: FINAL/MIDTERM,
+  default FINAL — MIDTERM reserved, unused), status (`GradeSheetStatus`:
+  DRAFT/SUBMITTED/RETURNED/APPROVED/RELEASED/LOCKED, default DRAFT), submitted/approved/
+  released/locked_at + _by (each nullable FK User), return_remarks (most recent, shown on the
+  instructor's page while RETURNED); unique per (class_offering, period).
+  `get_or_create_draft()` lazily creates the DRAFT row; `is_editable` property is
+  `status in (DRAFT, RETURNED)`.
+- `approvals.GradeSheetEntry` — sheet FK (CASCADE) + roster_entry FK (PROTECT), final_grade
+  (Decimal, nullable), remarks (PASSED/FAILED/INC/DROPPED), inc_reason, components_json (list of
+  `{name, category, weight, earned, possible, grade}`, numbers stored as strings since Decimal
+  isn't JSON-native) — the frozen-at-submission snapshot; unique per (sheet, roster_entry).
+  `is_corrected` property = `self.corrections.exists()`.
+- `approvals.GradeSheetTransition` — sheet FK (CASCADE), from_status, to_status, actor FK User,
+  remarks, timestamp — the audit trail + review-page timeline. A grade correction also writes one
+  of these with `from_status == to_status` (the sheet's own status doesn't change), so it still
+  shows up on the timeline.
+- `approvals.GradeCorrection` — entry FK (CASCADE), old/new_grade, old/new_remarks, reason
+  (required), corrected_by FK User, timestamp.
+
+**Built (`dashboard`, Phase 4 part 1):**
+- `dashboard.Notification` — recipient FK User (CASCADE), title, message, link, is_read,
+  created_at. Created via `dashboard.services.notify()`/`notify_many()`, never directly.
+
 **Still to add:**
-- `grading.TermGrade` or equivalent (status enum draft/submitted/approved/released/locked,
-  submitted_at, approved_by, released_at, remarks) — the grade-sheet workflow this phase explicitly
-  did not build (no submit/approval, no student-facing pages yet)
-- `approvals.GradeSheetLog` (class_offering, from_status, to_status, user, remarks, timestamp)
-- `grading.GwaRecord` (student, academic_term, term_gwa, units_counted, is_provisional, computed_at)
+- `grading.GwaRecord` or similar, if the student portal phase (O3) needs a *persisted* GWA instead
+  of calling `approvals.services.compute_gwa()` on every page load — not needed yet, the function is
+  cheap enough at this data scale.
 - `forecasting.MlModelVersion` (version, trained_at, training_source enum synthetic/historical, n_samples, threshold, accuracy, precision, recall, f1, ci_json, confusion_matrix_json, coefficients_json, is_active)
 - `forecasting.Prediction` (roster_entry, ml_model_version, probability, risk_label enum needs_attention/on_track, features_json, contributions_json, created_at)
 - `forecasting.Intervention` (roster_entry, instructor, note, created_at)
 - `forecasting.HistoricalRecord` (masked_student_key, subject_code, school_year, semester, feature columns, final_outcome) — for model training only, no names
-- Django's own notifications / a small `dashboard.Notification` model
 - `accounts.AuditLog` (user, action, auditable model/id, old_values json, new_values json, ip, created_at)
 
 Produce `docs/ERD.md` as a Mermaid `erDiagram` that matches the final migrations exactly, once these exist.
@@ -374,8 +445,9 @@ show raw probability to students; instructors and program heads see probability 
 a voluntary "Change Password" page — `accounts:force_password_change` has no must-change-password
 guard, it just also redirects to privacy consent if that's still outstanding), profile (view all
 fields; the only one the user can edit themselves is email — name/ID/role changes are admin-only),
-help (placeholder), notifications bell (placeholder, topbar only), responsive sidebar/topbar
-layout, Data Privacy notice/consent shown on first login (RA 10173), styled 403 page.
+help (placeholder), notifications bell (built, Phase 4 part 1 — unread badge + dropdown, HTMX-
+polled every 60s, see section 5), responsive sidebar/topbar layout, Data Privacy notice/consent
+shown on first login (RA 10173), styled 403 page.
 
 Layout specifics worth preserving: the sidebar is flush against the left edge (no outer margin/
 rounded corners/shadow — only inner elements like the active-item tile and popover are rounded);
@@ -424,18 +496,33 @@ touches a class's existing `ClassGradingScheme` snapshot. Admin can also view an
 page read-only and change its template via "Change Template" (blocked once the class has any score
 encoded).
 
-*(Transmutation scale doesn't apply here — see section 4. Historical data import, model training,
-and audit logs are still placeholder pages.)*
+*(Transmutation scale doesn't apply here — see section 4. Historical data import and model training
+are still placeholder pages.)*
 
-**Program Head:** Classes (built, Phase 2 — read-only, classes in the active semester for programs
-they head, object-level-checked: a different program head gets 403) · dashboard (grade distribution
-chart, pass/fail rates, at-risk counts), At-Risk Students, Grade Sheet Approvals, Reports export
-*(still placeholders)*
+**Admin — Grade Sheets (built, Phase 4 part 1):** `approvals:admin_sheets`, under Management. Every
+grade sheet in the active semester, filterable by program/status/instructor, a funnel progress
+summary ("X / Y submitted", "X / Y approved", "X / Y released" — each cumulative: "submitted" means
+SUBMITTED-or-further, not currently-exactly-SUBMITTED), a "Lock Term" button (confirms the count of
+RELEASED sheets it's about to lock), and a "View" link into the same read-only review page the
+Program Head uses, with a "Correct grade" action per entry once the sheet is RELEASED/LOCKED.
 
-**Instructor:** My Classes (built, Phase 2 — card layout, active-semester classes; "Encode Grades"
-button now live, built Phase 3 — links to the class grading page below) · Class Grading page
+**Program Head (built, Phase 4 part 1):** Classes (built, Phase 2 — read-only, classes in the
+active semester for programs they head, object-level-checked: a different program head gets 403) ·
+**Grade Approvals** (`approvals:index`) — status tabs (Submitted/Returned/Approved/Released/All)
+each with a live count, a sidebar badge showing the SUBMITTED count · **Review page**
+(`approvals:review`) — read-only snapshot table (always from `GradeSheetEntry`, never recomputed),
+class summary + Chart.js distribution, the transition timeline, and Approve / Return (remarks
+required, modal) / Release buttons gated by the sheet's current status · "Release all approved"
+releases every APPROVED sheet across the Program Head's program(s) in the active semester in one
+action. *(Dashboard grade-distribution chart, At-Risk Students, Reports export are still
+placeholders — those are O4/forecasting and reporting phases.)*
+
+**Instructor (built, Phase 4 part 1):** My Classes (built, Phase 2 — card layout, active-semester
+classes; "Encode Grades" button links to the class grading page below) · Class Grading page
 (`grading:class_grading`, built Phase 3) with three tabs, all server-rendered together and switched
-client-side via Alpine `x-show` (no per-tab page load):
+client-side via Alpine `x-show` (no per-tab page load) — now status-aware: a status badge next to
+the title, a "Submit Grades"/"Resubmit Grades" button, a banner explaining *why* the page is
+read-only once submitted, and the Program Head's return remarks shown prominently while RETURNED:
   - **Setup** — the "Grading Components" panel (`grading:class_components_save`): an editable
     formset, one row per component — locked ones (e.g. Examination) read-only with a lock icon and
     a "Set by the school" tooltip, unlocked ones freely rename/recategorize/reweight/delete
@@ -452,14 +539,19 @@ client-side via Alpine `x-show` (no per-tab page load):
     missing-score warning banner
   - **Summary** — passed/failed/INC/dropped counts, class average, Chart.js grade-distribution bar
     chart (vendored, `static/vendor/chartjs/`), per-student component/running-grade table
-  Excel template import/export for score encoding is **not built this phase** (explicitly out of
-  scope — see the Phase 3 note below) · Forecast · Submit Grade Sheet · Export PDF/Excel are still
-  placeholders (Phase 4+)
+  All three tabs become read-only (server-enforced, not just hidden buttons — see section 5) once
+  the grade sheet leaves DRAFT/RETURNED. **Submitted Grades** (`approvals:submitted`, replaces the
+  old placeholder) — the instructor's own grade sheets in the active semester, status-filterable.
+  Excel template import/export for score encoding and PDF/Excel grade-sheet export are **not built
+  yet** (export is explicitly Phase 4 part 2) · Forecast is still a placeholder (O4 phase).
 
 **Student:** Dashboard (built, Phase 2 — real class-list subject count and subject list for the
-active semester; term/cumulative GWA still placeholder) · Subject detail (component breakdown,
-assessment scores, period grades, progress chart, forecast card) · Grade history per term (GWA
-trend chart) · Downloadable grade report PDF *(still placeholders)*
+active semester; term/cumulative GWA still placeholder — `approvals.services.compute_gwa()` exists
+but has no student-facing display yet) · Notifications (built, Phase 4 part 1 — shares
+`dashboard.views.notifications`/`dashboard:notifications` with every other role, just the only one
+with a sidebar menu entry today) · Subject detail (component breakdown, assessment scores, period
+grades, progress chart, forecast card) · Grade history per term (GWA trend chart) · Downloadable
+grade report PDF *(still placeholders — student portal is O3, not this phase)*
 
 **PDF grade sheet layout (future):** institution name, college department, subject code/title,
 section, term, instructor, table of students (student no., name, midterm, final term, final grade,
@@ -534,8 +626,19 @@ until the previous one passes its tests.
   tab's editable "Grading Components" panel (formset, live total bar, add/delete, change history),
   and `grading.SchemeComponentChangeLog` — see section 4 for the confirmed CITCI policy and section
   6 for the schema.
-- **Phase 4 — Workflow & reports (O2):** grade sheet status flow, approvals, release, lock, grade
-  corrections, GWA computation service, PDF/Excel exports.
+- **Phase 4 part 1 — Grade sheet workflow (O2, done):** the full
+  draft→submitted→approved→released→locked (+returned) state machine in `approvals/services.py`
+  with explicit allowed-transition checks and a `GradeSheetTransition` timeline; the frozen-at-
+  submission `GradeSheetEntry` snapshot (approved/released grades never recomputed live); the
+  instructor's submit pre-review modal (counts/average/missing-or-INC list, required certify
+  checkbox) and server-side edit lock (`grading.views._can_edit` now also checks
+  `approvals.services.is_class_editable`); Program Head approve/return/release (object-level
+  checked — any head of a shared class's programs) and "release all approved"; Admin "Lock term"
+  and per-entry grade correction (`GradeCorrection`, required reason); in-app notifications
+  (`dashboard.Notification`, HTMX-polled bell) on every transition; `approvals.services.compute_gwa`
+  (Decimal, excludes DROPPED/INC, `is_complete` flag) with no UI yet beyond what review pages show.
+  Deliberately **not** built this pass (Phase 4 part 2): PDF/Excel grade-sheet exports.
+- **Phase 4 part 2 — Reports (O2):** PDF/Excel grade-sheet exports.
 - **Phase 5 — Student portal (O3):** dashboard, subject details, charts, grade history, PDF report.
 - **Phase 6 — ML service (O4):** synthetic generator, training, evaluation with bootstrap CIs,
   predict endpoint with contributions, pytest.
@@ -573,6 +676,12 @@ until the previous one passes its tests.
   logic.
 - The sidebar menu is defined once in `accounts/menu.py`; icons are inline SVG via
   `accounts/templatetags/sidebar_icons.py` (no icon CDN, per the original design constraint).
+- `INSTALLED_APPS` order is `..., academics, grading, approvals, forecasting, reports, dashboard`.
+  `approvals` imports `grading.services`/`grading.models` at module level (grading loads first,
+  that's fine); the reverse (`grading` needing an `approvals` status check, e.g.
+  `grading.views._can_edit` consulting `approvals.services.is_class_editable`) can only be a
+  function-local import, or Django's app loading order breaks. Same pattern for
+  `accounts.context_processors` reading `approvals.models` for the sidebar badge count.
 - For a new admin list+CRUD page, extend `core.crud.EntityListView`/`EntityFormView`/
   `EntityDeleteView` (see any class in `academics/views.py` for the pattern) rather than writing
   list/create/update/delete from scratch — it's already wired for search, filters, pagination, the

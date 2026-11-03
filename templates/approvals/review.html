@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% load grading_extras %}
+{% block page_title %}Review — {{ sheet.class_offering }}{% endblock %}
+{% block content %}
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div>
+        {% if is_admin %}
+        <a href="{% url 'approvals:admin_sheets' %}" class="text-sm text-gray-500 hover:underline">&larr; Grade Sheets</a>
+        {% else %}
+        <a href="{% url 'approvals:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Grade Approvals</a>
+        {% endif %}
+        <h2 class="mt-1 text-xl font-bold text-gray-900">{{ sheet.class_offering.subject.code }} — {{ sheet.class_offering.subject.title }}</h2>
+        <p class="mt-1 text-sm text-gray-500">
+            {% for section in sheet.class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            · {{ sheet.class_offering.instructor.full_name|default:"Unassigned" }}
+            · {% include "approvals/_status_badge.html" with status=sheet.status %}
+        </p>
+    </div>
+    <div class="flex gap-2">
+        {% if can_approve_return %}
+        <button hx-get="{% url 'approvals:return_sheet' sheet.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-amber-300 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50">
+            Return
+        </button>
+        <form method="post" action="{% url 'approvals:approve' sheet.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Approve
+            </button>
+        </form>
+        {% endif %}
+        {% if can_release %}
+        <form method="post" action="{% url 'approvals:release' sheet.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">
+                Release
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if sheet.status == "RETURNED" and sheet.return_remarks %}
+<div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    <p class="font-semibold">Return remarks</p>
+    <p class="mt-0.5">{{ sheet.return_remarks }}</p>
+</div>
+{% endif %}
+
+<div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Passed</p>
+        <p class="mt-1 text-2xl font-bold text-green-700">{{ counts.PASSED }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Failed</p>
+        <p class="mt-1 text-2xl font-bold text-red-700">{{ counts.FAILED }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">INC</p>
+        <p class="mt-1 text-2xl font-bold text-amber-700">{{ counts.INC }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Class Average</p>
+        <p class="mt-1 text-2xl font-bold text-brand-primary-800">{{ average|grade_display }}</p>
+    </div>
+</div>
+
+<div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll lg:col-span-2">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Student</th>
+                    <th class="px-4 py-3">Final Grade</th>
+                    <th class="px-4 py-3">Remarks</th>
+                    {% if is_admin and sheet.status == "RELEASED" or is_admin and sheet.status == "LOCKED" %}
+                    <th class="px-4 py-3 text-right">Actions</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for entry in entries %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">
+                        {{ entry.roster_entry.student.last_name }}, {{ entry.roster_entry.student.first_name }}
+                        {% if entry.is_corrected %}<span class="ml-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">Corrected</span>{% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-gray-700">{{ entry.final_grade|grade_display }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ entry.get_remarks_display }}{% if entry.remarks == "INC" and entry.inc_reason %} <span class="text-xs text-gray-400">({{ entry.inc_reason }})</span>{% endif %}</td>
+                    {% if is_admin and sheet.status == "RELEASED" or is_admin and sheet.status == "LOCKED" %}
+                    <td class="px-4 py-3 text-right">
+                        <button hx-get="{% url 'approvals:correct_entry' entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">
+                            Correct grade
+                        </button>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+        <p class="mb-2 text-sm font-semibold text-gray-700">Grade Distribution</p>
+        <canvas id="distribution-chart" height="140"
+                data-labels='["1.00–1.99","2.00–2.99","3.00–3.99","4.00–4.99","5.00"]'
+                data-values="[{{ distribution.1 }}, {{ distribution.2 }}, {{ distribution.3 }}, {{ distribution.4 }}, {{ distribution.5 }}]"></canvas>
+    </div>
+</div>
+
+<div class="rounded-2xl border border-gray-200 bg-white p-4">
+    <p class="mb-3 text-sm font-semibold text-gray-700">Timeline</p>
+    <ol class="space-y-3">
+        {% for t in transitions %}
+        <li class="flex gap-3 text-sm">
+            <span class="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-brand-primary-600"></span>
+            <div>
+                <p class="text-gray-800">
+                    {% if t.from_status == t.to_status %}
+                    <span class="font-medium">Correction</span> by {{ t.actor.full_name|default:"System" }}
+                    {% else %}
+                    <span class="font-medium">{{ t.get_from_status_display }} → {{ t.get_to_status_display }}</span> by {{ t.actor.full_name|default:"System" }}
+                    {% endif %}
+                </p>
+                {% if t.remarks %}<p class="text-gray-500">{{ t.remarks }}</p>{% endif %}
+                <p class="text-xs text-gray-400">{{ t.created_at|date:"M d, Y H:i" }}</p>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var canvas = document.getElementById("distribution-chart");
+        if (!canvas || typeof Chart === "undefined") return;
+        new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: JSON.parse(canvas.dataset.labels),
+                datasets: [{ label: "Students", data: JSON.parse(canvas.dataset.values), backgroundColor: "#283082" }],
+            },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } },
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,34 @@
+<div id="admin-sheets-table">
+    {% if sheets %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3">Class</th>
+                    <th class="px-4 py-3">Instructor</th>
+                    <th class="px-4 py-3">Status</th>
+                    <th class="px-4 py-3">Submitted</th>
+                    <th class="px-4 py-3">Released</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for sheet in sheets %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ sheet.class_offering }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ sheet.class_offering.instructor.full_name|default:"—" }}</td>
+                    <td class="px-4 py-3">{% include "approvals/_status_badge.html" with status=sheet.status %}</td>
+                    <td class="px-4 py-3 text-gray-500">{{ sheet.submitted_at|date:"M d, Y"|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-500">{{ sheet.released_at|date:"M d, Y"|default:"—" }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <a href="{% url 'approvals:review' sheet.pk %}" class="text-sm font-medium text-brand-primary-700 hover:underline">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="clipboard" title="No grade sheets yet" description="Nothing matches these filters." %}
+    {% endif %}
+</div>

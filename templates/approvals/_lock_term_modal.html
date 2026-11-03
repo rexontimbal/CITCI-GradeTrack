@@ -1,0 +1,26 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 class="text-base font-semibold text-gray-900">Lock Term</h3>
+    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    {% if active_semester %}
+    <p class="text-sm text-gray-600">
+        This locks all {{ count }} Released grade sheet{{ count|pluralize }} in <strong>{{ active_semester }}</strong>.
+        Locked grades can only be changed afterward through an admin grade correction.
+    </p>
+    {% else %}
+    <p class="text-sm text-red-600">No active semester is set.</p>
+    {% endif %}
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        {% if active_semester and count %}
+        <button hx-post="{% url 'approvals:admin_lock_term' %}" hx-target="#modal-content" hx-swap="innerHTML"
+                class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Lock {{ count }} Sheet{{ count|pluralize }}
+        </button>
+        {% endif %}
+    </div>
+</div>

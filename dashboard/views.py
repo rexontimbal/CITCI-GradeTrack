@@ -1,10 +1,12 @@
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
 from accounts.decorators import role_required
 from accounts.models import User
-from accounts.utils import coming_soon
+
+from .models import Notification
 
 
 @login_required
@@ -60,6 +62,37 @@ def _student_dashboard(request):
     return render(request, "dashboard/student_dashboard.html", context)
 
 
-@role_required(User.Role.STUDENT)
+# ---------------------------------------------------------------------------
+# Notifications — topbar bell (HTMX-polled dropdown) + full list page
+# ---------------------------------------------------------------------------
+
+
+@login_required
+def bell(request):
+    notifications = Notification.objects.filter(recipient=request.user)[:10]
+    unread_count = Notification.objects.filter(recipient=request.user, is_read=False).count()
+    return render(request, "partials/_notification_bell.html", {"notifications": notifications, "unread_count": unread_count})
+
+
+@login_required
+def mark_read(request, pk):
+    """Plain navigation (not HTMX) — marks read, then sends the user on to
+    wherever the notification points, so clicking one both acts as "mark
+    read" and as the link in a single click."""
+    notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
+    notification.is_read = True
+    notification.save(update_fields=["is_read"])
+    return redirect(notification.link or reverse("dashboard:home"))
+
+
+@login_required
+def mark_all_read(request):
+    Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+    return bell(request)
+
+
+@login_required
 def notifications(request):
-    return coming_soon(request, "Notifications")
+    notification_list = Notification.objects.filter(recipient=request.user)
+    context = {"page_title": "Notifications", "notifications": notification_list}
+    return render(request, "dashboard/notifications.html", context)

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Grade Sheets{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Grade Sheets" subtitle="All grade sheets for the active semester." %}
+
+{% if not active_semester %}
+{% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
+{% else %}
+
+<div class="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+    <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.submitted }} / {{ total_classes }}</strong> submitted</span>
+    <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.approved }} / {{ total_classes }}</strong> approved</span>
+    <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.released }} / {{ total_classes }}</strong> released</span>
+    <button hx-get="{% url 'approvals:admin_lock_term' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="ml-auto flex items-center gap-1.5 rounded-lg bg-brand-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+        {% sidebar_icon "lock" "w-4 h-4" %} Lock Term
+    </button>
+</div>
+
+<form hx-get="{% url 'approvals:admin_sheets' %}" hx-target="#admin-sheets-table" hx-swap="outerHTML"
+      hx-trigger="change from:select" class="mb-4 flex flex-wrap items-center gap-2">
+    <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All programs</option>
+        {% for p in programs %}<option value="{{ p.pk }}" {% if selected_program == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.code }}</option>{% endfor %}
+    </select>
+    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All statuses</option>
+        {% for status, label in statuses %}<option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="instructor" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All instructors</option>
+        {% for i in instructors %}<option value="{{ i.pk }}" {% if selected_instructor == i.pk|stringformat:"s" %}selected{% endif %}>{{ i.full_name }}</option>{% endfor %}
+    </select>
+</form>
+
+{% include "approvals/_admin_sheets_table.html" %}
+{% endif %}
+{% endblock %}

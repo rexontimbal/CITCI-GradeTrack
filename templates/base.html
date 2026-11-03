@@ -19,6 +19,7 @@
           collapsed: (() => { try { return localStorage.getItem('citci_sidebar_collapsed') === '1'; } catch (e) { return false; } })(),
           mobileOpen: false,
           modalOpen: false,
+          notifOpen: false,
           toggleCollapsed() {
               this.collapsed = !this.collapsed;
               try { localStorage.setItem('citci_sidebar_collapsed', this.collapsed ? '1' : '0'); } catch (e) {}
@@ -48,9 +49,7 @@
                 </div>
             </div>
 
-            <button type="button" title="Notifications" class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
-                {% sidebar_icon "bell" "w-5 h-5" %}
-            </button>
+            <div id="notification-bell" hx-get="{% url 'dashboard:bell' %}" hx-trigger="load, every 60s" hx-swap="innerHTML"></div>
         </header>
 
         <main class="flex-1 p-4 md:p-6">

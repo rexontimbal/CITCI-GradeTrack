@@ -12,20 +12,50 @@
             {% else %}
             <a href="{% url 'academics:program_head_classes' %}" class="text-sm text-gray-500 hover:underline">&larr; Classes</a>
             {% endif %}
-            <h2 class="mt-1 text-xl font-bold text-gray-900">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</h2>
+            <h2 class="mt-1 flex items-center gap-2 text-xl font-bold text-gray-900">
+                {{ class_offering.subject.code }} — {{ class_offering.subject.title }}
+                {% if grade_sheet %}{% include "approvals/_status_badge.html" with status=grade_sheet.status %}{% endif %}
+            </h2>
             <p class="mt-1 text-sm text-gray-500">
                 {% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
                 · {{ class_offering.semester }}
-                {% if not can_edit %}· <span class="font-medium text-amber-600">Read-only</span>{% endif %}
+                {% if not can_edit and is_owner %}· <span class="font-medium text-amber-600">Read-only — {{ grade_sheet.get_status_display }}</span>{% elif not can_edit and not is_owner %}· <span class="font-medium text-amber-600">Read-only</span>{% endif %}
             </p>
         </div>
-        {% if is_admin and scheme %}
-        <button hx-get="{% url 'grading:class_change_template' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            Change Template
-        </button>
-        {% endif %}
+        <div class="flex gap-2">
+            {% if is_admin and scheme %}
+            <button hx-get="{% url 'grading:class_change_template' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Change Template
+            </button>
+            {% endif %}
+            {% if is_owner and scheme and not scheme_error %}
+                {% if not grade_sheet or grade_sheet.status == "DRAFT" %}
+                <button hx-get="{% url 'approvals:submit_review' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                        class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                    Submit Grades
+                </button>
+                {% elif grade_sheet.status == "RETURNED" %}
+                <button hx-get="{% url 'approvals:submit_review' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                        class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                    Resubmit Grades
+                </button>
+                {% endif %}
+            {% endif %}
+        </div>
     </div>
+
+    {% if grade_sheet.status == "RETURNED" and grade_sheet.return_remarks %}
+    <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p class="font-semibold">Returned by the Program Head — {{ grade_sheet.updated_at|date:"M d, Y" }}</p>
+        <p class="mt-0.5">{{ grade_sheet.return_remarks }}</p>
+    </div>
+    {% elif grade_sheet and grade_sheet.status != "DRAFT" %}
+    <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+        Submitted on {{ grade_sheet.submitted_at|date:"M d, Y" }} — {{ grade_sheet.get_status_display }}.
+        {% if is_owner %}The Class Record and Setup tabs are read-only until it's returned.{% endif %}
+    </div>
+    {% endif %}
 
     {% if scheme_error %}
     {% include "partials/_empty_state.html" with icon="alert" title="No grading template available" description=scheme_error %}

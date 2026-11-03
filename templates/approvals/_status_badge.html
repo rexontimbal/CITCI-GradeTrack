@@ -1,0 +1,15 @@
+{% if status == "DRAFT" %}
+<span class="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Draft</span>
+{% elif status == "SUBMITTED" %}
+<span class="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Submitted</span>
+{% elif status == "RETURNED" %}
+<span class="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Returned</span>
+{% elif status == "APPROVED" %}
+<span class="inline-block rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">Approved</span>
+{% elif status == "RELEASED" %}
+<span class="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Released</span>
+{% elif status == "LOCKED" %}
+<span class="inline-block rounded-full bg-gray-800 px-2 py-0.5 text-xs font-medium text-white">Locked</span>
+{% else %}
+<span class="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ status }}</span>
+{% endif %}

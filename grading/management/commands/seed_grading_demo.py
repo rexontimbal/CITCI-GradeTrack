@@ -30,6 +30,8 @@ TERM_CYCLE = [AssessmentTerm.PRELIM, AssessmentTerm.MIDTERM, AssessmentTerm.SEMI
 RANDOM_SEED = 20261026  # fixed so re-running the command never drifts
 LOW_PERFORMER_COUNT = 2  # first N active students in each roster score poorly
 
+_STATUS_RANK = {"DRAFT": 0, "SUBMITTED": 1, "RETURNED": 1, "APPROVED": 2, "RELEASED": 3, "LOCKED": 4}
+
 
 class Command(BaseCommand):
     help = "Seeds the default grading template and demo assessment items/scores (Phase 4). Idempotent."
@@ -47,21 +49,29 @@ class Command(BaseCommand):
             .distinct()
             .order_by("id")
         )
-        demo_classes = list(classes_with_roster[:2])
+        demo_classes = list(classes_with_roster[:3])
 
         if not demo_classes:
             self.stdout.write(self.style.WARNING("No class with an instructor and a roster yet — run seed_citci_academics first."))
             return
 
+        # index 0 stays DRAFT with its Final exam deliberately blank (demos
+        # the running-grade rule); index 1 goes all the way to RELEASED;
+        # index 2 (if a third demo class exists) stops at SUBMITTED — so the
+        # Program Head queue and Admin Grade Sheets page aren't empty.
+        workflow_targets = ["DRAFT", "RELEASED", "SUBMITTED"]
+
         for index, class_offering in enumerate(demo_classes):
             scheme = ClassGradingScheme.get_or_create_default(class_offering)
             if scheme.source_template_id != template.id:
                 scheme = ClassGradingScheme.apply_template(class_offering, template)
-            # Leave the Final exam unencoded in the first demo class, so its
-            # Class Record tab visibly demonstrates the running-grade rule.
             skip_final_exam = index == 0
             self._seed_class_scores(class_offering, scheme, skip_final_exam, class_offering.instructor)
             self.stdout.write(self.style.SUCCESS(f"Grading data ready for {class_offering}."))
+
+            target = workflow_targets[index] if index < len(workflow_targets) else "DRAFT"
+            if target != "DRAFT":
+                self._progress_grade_sheet(class_offering, target)
 
         self.stdout.write(self.style.SUCCESS("Grading demo data ready."))
 
@@ -122,3 +132,37 @@ class Command(BaseCommand):
                     fraction = rng.uniform(*score_range)
                     value = max(0, min(item.max_score, round(fraction * item.max_score)))
                     save_score(roster_entry, item, value, instructor)
+
+    def _progress_grade_sheet(self, class_offering, target_status):
+        """Idempotent: only takes whatever steps haven't already happened —
+        safe to re-run without re-submitting an already-SUBMITTED sheet."""
+        from accounts.models import User
+        from approvals.models import GradeSheet, GradeSheetStatus
+        from approvals.services import approve_grade_sheet, release_grade_sheet, submit_grade_sheet
+
+        reviewer = (
+            User.objects.filter(
+                role=User.Role.PROGRAM_HEAD, headed_programs__sections__class_offerings=class_offering
+            )
+            .distinct()
+            .first()
+        ) or User.objects.filter(role=User.Role.PROGRAM_HEAD).first()
+
+        def current_status():
+            sheet = GradeSheet.objects.filter(class_offering=class_offering).first()
+            return sheet.status if sheet else GradeSheetStatus.DRAFT
+
+        if _STATUS_RANK[current_status()] < _STATUS_RANK["SUBMITTED"] <= _STATUS_RANK[target_status]:
+            submit_grade_sheet(class_offering, class_offering.instructor)
+
+        if reviewer is None:
+            self.stdout.write(self.style.WARNING(f"No program head found to approve/release {class_offering} — left SUBMITTED."))
+            return
+
+        if _STATUS_RANK[current_status()] < _STATUS_RANK["APPROVED"] <= _STATUS_RANK[target_status]:
+            sheet = GradeSheet.objects.get(class_offering=class_offering)
+            approve_grade_sheet(sheet, reviewer)
+
+        if _STATUS_RANK[current_status()] < _STATUS_RANK["RELEASED"] <= _STATUS_RANK[target_status]:
+            sheet = GradeSheet.objects.get(class_offering=class_offering)
+            release_grade_sheet(sheet, reviewer)

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load core_extras %}
+{% block page_title %}Grade Approvals{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Grade Approvals" subtitle="Grade sheets submitted for classes under your program(s)." %}
+
+<div class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
+    {% for status, label in statuses %}
+    <a href="?status={{ status }}"
+       hx-get="?status={{ status }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+       class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == status %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        {{ label }} <span class="ml-1 text-xs opacity-75">{{ counts|dict_get:status|default:0 }}</span>
+    </a>
+    {% endfor %}
+    <a href="?status=ALL"
+       hx-get="?status=ALL" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+       class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        All
+    </a>
+</div>
+
+{% include "approvals/_queue_table.html" %}
+{% endblock %}

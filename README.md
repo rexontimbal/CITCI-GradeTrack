@@ -11,11 +11,13 @@ sections, subjects, classes (which can serve several sections at once), student 
 class lists. **Phase 2.2** added full user management: the admin Users page (replacing the
 read-only Students list), bulk import of students/instructors, login lockout (django-axes) and
 sliding session expiry, and a reusable searchable-select widget. **Phase 3 / "Phase 4" in the
-original spec doc** (this state of the repo) adds the grading engine: grading templates, a
-class's frozen grading-scheme snapshot, assessment items, the spreadsheet-style score-encoding
-grid (Setup / Class Record / Summary tabs), and the CITCI-verified grade computation service.
-Approvals and forecasting are still role-gated "Coming soon" placeholders — no submit/approval
-workflow or student-facing grade pages exist yet.
+original spec doc** added the grading engine: grading templates, a class's frozen grading-scheme
+snapshot, assessment items, the spreadsheet-style score-encoding grid (Setup / Class Record /
+Summary tabs), and the CITCI-verified grade computation service. **Phase 4 part 1** (this state of
+the repo) adds the grade-sheet workflow: submit → approve/return → release → lock, frozen-at-
+submission grade snapshots, in-app notifications, and a GWA service — see "Grade sheet workflow"
+below. PDF/Excel exports (Phase 4 part 2) and forecasting are still role-gated "Coming soon"
+placeholders.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -103,11 +105,16 @@ an existing instructor by `last_name` before generating a new username, so it no
 
 `python manage.py seed_grading_demo` (also runs automatically at the end of `seed_citci_academics`)
 seeds the "CITCI Default" grading template (Attendance 5% / Quizzes 30% / Recitation 15% /
-Project 10% / Examination 40%, matching `grading-system.xlsx`) and, for the first two classes it
+Project 10% / Examination 40%, matching `grading-system.xlsx`) and, for the first three classes it
 finds with both an instructor and an active roster, realistic assessment items + scores (a few
-deliberately low-scoring students so FAILED/at-risk cases exist). The first of those two classes
-leaves its Final Exam unencoded on purpose, so its Class Record tab visibly demonstrates the
-running-grade re-normalization rule.
+deliberately low-scoring students so FAILED/at-risk cases exist) — then pushes those three classes'
+grade sheets to three different workflow states so the Program Head queue and Admin Grade Sheets
+page aren't empty: the 1st class stays DRAFT with its Final Exam left deliberately unencoded (so
+its Class Record tab visibly demonstrates the running-grade re-normalization rule), the 2nd goes
+all the way to RELEASED, and the 3rd (if a third demo class exists) stops at SUBMITTED. Both
+transitions use the real `approvals.services` functions (not a shortcut), so notifications and a
+timeline get created too — idempotent either way (re-running never re-submits an already-submitted
+sheet).
 
 That JSON is generated from the Registrar's .docx via
 `python manage.py import_offerings_docx docs/source/all_subject_per_major.docx` (needs
@@ -166,6 +173,41 @@ Juan B. → final grade 1.7743118580765638..., displayed 1.77, PASSED).
   page, `ClassGradingScheme.get_or_create_default` snapshots the template's components onto a
   per-class `ClassGradingScheme`, so editing the template later never changes a class already using
   it. Admin can re-apply a different template to a class only while it has zero scores encoded.
+
+## Grade sheet workflow
+
+`draft → submitted → approved → released → locked`, plus `returned` (Program Head sends it back
+with remarks → instructor edits → resubmits). See `approvals/services.py` for the state machine —
+every transition is an explicit, role-checked function (never a bare `sheet.status = ...` in a
+view) and is logged to `approvals.GradeSheetTransition`.
+
+- **One `approvals.GradeSheet` per (class, period).** `period` is always `FINAL` today;
+  `MIDTERM` is a reserved, unused choice.
+- **Submit** snapshots every student's computed grade into `approvals.GradeSheetEntry` — approved/
+  released grades always read from that snapshot, never recomputed live. Blocked if any active,
+  non-INC student has a missing score; the instructor sees a pre-submit review (counts, average,
+  the specific missing cells) and must check "I certify these grades are final and correct."
+  Re-submitting after a return replaces the whole snapshot.
+- **The instructor can only edit scores/items/components while DRAFT or RETURNED** —
+  server-enforced via `grading.views._can_edit`, which now also checks
+  `approvals.services.is_class_editable`, so every grading mutation route is locked at once. The
+  class grading page shows a status badge, a context-appropriate "Submit"/"Resubmit" button, and a
+  banner explaining why it's read-only (or the Program Head's return remarks, if returned).
+- **Approve/Return** (Program Head of the class's program — any of them, for a class shared across
+  programs) · **Release** (Program Head or Admin, only from Approved; "Release all approved" does a
+  whole program/semester at once) · **Lock term** (Admin only, locks every Released sheet in the
+  active semester) · **Grade correction** (Admin only, Released/Locked sheets, required reason,
+  logged to `approvals.GradeCorrection` + the sheet's timeline).
+- **Notifications** (`dashboard.Notification`) fire on submit/return/approve/release/correction.
+  The topbar bell polls `dashboard:bell` every 60s; its open/closed state lives on `base.html`'s
+  body-level Alpine data (not inside the polled fragment) so an open dropdown doesn't snap shut on
+  the next poll. Clicking a notification is a plain link to `dashboard:mark_read` (marks it read,
+  then redirects to its `link`) rather than an `hx-post` — htmx intercepts clicks on any element
+  carrying its own attributes, which would have eaten the navigation.
+- **GWA** (`approvals.services.compute_gwa`): Σ(final grade × units) ÷ Σ units over a student's
+  Released/Locked entries in a semester, excluding Dropped and INC; `is_complete` is False if any
+  non-dropped class in that semester isn't released yet or carries an INC. No UI yet beyond what the
+  Program Head/Admin review pages show — full display is the student portal phase.
 
 ## Running tests
 
@@ -226,6 +268,18 @@ python manage.py test
   weights total exactly 100%; `static/js/grading-components.js` only handles the live total bar and
   cloning/removing rows client-side (same "clone the empty_form, bump TOTAL_FORMS" trick any Django
   formset JS uses), never the actual validation.
+- **Grade sheet workflow** (state machine, snapshot, notifications, GWA): `approvals/models.py`
+  (`GradeSheet`, `GradeSheetEntry`, `GradeSheetTransition`, `GradeCorrection`), `approvals/services.py`
+  (pure functions — `submit_grade_sheet`, `approve_grade_sheet`, `return_grade_sheet`,
+  `release_grade_sheet`, `lock_term`, `correct_grade`, `compute_gwa`, `is_class_editable`; no view/
+  HTTP concerns), `approvals/views.py` + `approvals/urls.py` for the instructor submit-review modal
+  and Submitted Grades list, the Program Head approvals queue + review page, and the Admin Grade
+  Sheets page. `dashboard.Notification` + `dashboard/services.py` (`notify`/`notify_many`) is the
+  in-app notification system; the topbar bell is `templates/partials/_notification_bell.html`,
+  HTMX-polled from `base.html` every 60s. `grading.views._can_edit` and
+  `accounts.context_processors.sidebar` (for the Grade Approvals sidebar badge) both import
+  `approvals` lazily (function-local) to avoid a module-load-time import cycle — see CLAUDE.md
+  section 11 for why.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js

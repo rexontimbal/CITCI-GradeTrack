@@ -76,6 +76,14 @@ class Prediction(TimeStampedModel):
     contributions_json = models.JSONField(help_text="per-feature contribution + plain-language reasons, sorted by impact")
     computed_at = models.DateTimeField(auto_now_add=True)
 
+    # Early-warning de-duplication (CLAUDE.md section 7 part 2) — set when a
+    # notification was actually sent for the CURRENT at-risk/watch episode
+    # at this (roster_entry, checkpoint); cleared back to None once the
+    # level drops, so a later episode can notify again. Never re-notify on
+    # every recompute while still at the same level.
+    instructor_notified_at = models.DateTimeField(null=True, blank=True)
+    student_notified_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-computed_at"]
         constraints = [
@@ -129,3 +137,37 @@ class HistoricalRecord(models.Model):
 
     def __str__(self):
         return f"{self.subject_code} ({self.semester_label}) @ {self.checkpoint} — label={self.label}"
+
+
+class InterventionType(models.TextChoices):
+    CONSULTATION = "CONSULTATION", "Consultation"
+    REMEDIAL = "REMEDIAL", "Remedial activity"
+    REFERRAL = "REFERRAL", "Referral to guidance"
+    PARENT_CONTACT = "PARENT_CONTACT", "Parent or guardian contact"
+    OTHER = "OTHER", "Other"
+
+
+class InterventionOutcome(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    IMPROVED = "IMPROVED", "Improved"
+    NO_CHANGE = "NO_CHANGE", "No change"
+
+
+class Intervention(TimeStampedModel):
+    """An instructor's (or program head's) free-text note on an at-risk
+    student — visible to instructor and program head, never to students
+    (CLAUDE.md section 7 part 2)."""
+
+    roster_entry = models.ForeignKey(ClassRosterEntry, on_delete=models.CASCADE, related_name="interventions")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    date = models.DateField()
+    type = models.CharField(max_length=20, choices=InterventionType.choices)
+    notes = models.TextField(blank=True)
+    follow_up_date = models.DateField(null=True, blank=True)
+    outcome = models.CharField(max_length=10, choices=InterventionOutcome.choices, default=InterventionOutcome.PENDING)
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.get_type_display()} for {self.roster_entry} on {self.date}"

@@ -6,7 +6,7 @@
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {% include "partials/_stat_card.html" with icon="chalkboard" label="Classes in Department" value="—" %}
         {% include "partials/_stat_card.html" with icon="check-circle" label="Pending Approvals" value="—" %}
-        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value="—" %}
+        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value=at_risk_count %}
         {% include "partials/_stat_card.html" with icon="chart" label="Avg. Pass Rate" value="—" %}
     </div>
 

@@ -30,6 +30,24 @@
     {% endif %}
 </div>
 
+{% if forecast %}
+<div class="mb-5 rounded-2xl border p-4 {% if forecast.level == 'AT_RISK' %}border-red-200 bg-red-50{% elif forecast.level == 'WATCH' %}border-amber-200 bg-amber-50{% else %}border-green-200 bg-green-50{% endif %}">
+    <p class="text-sm font-semibold text-gray-800">{{ forecast.message }}</p>
+    {% if forecast.factors %}
+    <ul class="mt-2 list-inside list-disc text-xs text-gray-600">
+        {% for factor in forecast.factors %}<li>{{ factor|capfirst }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if forecast.tips %}
+    <p class="mt-2 text-xs font-medium text-gray-600">A few things that can help:</p>
+    <ul class="mt-1 list-inside list-disc text-xs text-gray-600">
+        {% for tip in forecast.tips %}<li>{{ tip }}</li>{% endfor %}
+    </ul>
+    <p class="mt-2 text-xs font-medium text-brand-primary-700">Talk to your instructor.</p>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if not can_view_detail %}
 {% include "partials/_empty_state.html" with icon="book" title="Grades not yet released" description="Your instructor hasn't released grades for this subject yet." %}
 {% else %}

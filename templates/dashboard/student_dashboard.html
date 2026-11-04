@@ -91,10 +91,29 @@
 </div>
 
 <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    {% if forecast %}
+    <div class="rounded-2xl border p-5 {% if forecast.level == 'AT_RISK' %}border-red-200 bg-red-50{% elif forecast.level == 'WATCH' %}border-amber-200 bg-amber-50{% else %}border-green-200 bg-green-50{% endif %}">
+        <p class="text-sm font-semibold text-gray-800">Academic Forecast</p>
+        <p class="mt-1 text-sm text-gray-700">{{ forecast.message }}</p>
+        {% if forecast.factors %}
+        <ul class="mt-2 list-inside list-disc text-xs text-gray-600">
+            {% for factor in forecast.factors %}<li>{{ factor|capfirst }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if forecast.tips %}
+        <p class="mt-2 text-xs font-medium text-gray-600">A few things that can help:</p>
+        <ul class="mt-1 list-inside list-disc text-xs text-gray-600">
+            {% for tip in forecast.tips %}<li>{{ tip }}</li>{% endfor %}
+        </ul>
+        <p class="mt-2 text-xs font-medium text-brand-primary-700">Talk to your instructor.</p>
+        {% endif %}
+    </div>
+    {% else %}
     <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5">
         <p class="text-sm font-semibold text-gray-700">Academic Forecast</p>
         <p class="mt-1 text-sm text-gray-500">Coming soon — early warning based on your grades.</p>
     </div>
+    {% endif %}
 
     <div class="rounded-2xl border border-gray-200 bg-white p-4">
         <div class="mb-2 flex items-center justify-between">

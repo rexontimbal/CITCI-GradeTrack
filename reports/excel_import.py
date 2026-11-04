@@ -309,6 +309,7 @@ def validate_new_item_decisions(class_offering, stashed, post_data):
 
 
 def commit_import(class_offering, stashed, user, new_item_decisions=None):
+    touched_ids = set()
     with transaction.atomic():
         for decision in new_item_decisions or []:
             item = AssessmentItem.objects.create(
@@ -327,6 +328,7 @@ def commit_import(class_offering, stashed, user, new_item_decisions=None):
                 if value is None or value < 0 or value > item.max_score:
                     continue  # invalid individual score — skipped, same as any other invalid cell
                 save_score(entry, item, value, user)
+                touched_ids.add(roster_entry_id)
 
         items_by_id = {item.id: item for item in AssessmentItem.objects.filter(class_offering=class_offering)}
         entries_by_id = {e.id: e for e in class_offering.roster_entries.all()}
@@ -336,3 +338,14 @@ def commit_import(class_offering, stashed, user, new_item_decisions=None):
             if entry is None or item is None:
                 continue
             save_score(entry, item, write["new_value"], user)
+            touched_ids.add(write["roster_entry_id"])
+
+    # Recompute forecasts for exactly the students whose scores changed —
+    # outside the atomic block since it's a separate (non-grading) concern
+    # and must never roll back the import if it fails (it can't raise, but
+    # keep it clearly decoupled regardless).
+    if touched_ids:
+        from forecasting.services import recompute_and_notify
+
+        entries_by_id = {e.id: e for e in class_offering.roster_entries.filter(id__in=touched_ids)}
+        recompute_and_notify(entries_by_id.values())

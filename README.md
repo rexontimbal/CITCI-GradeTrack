@@ -25,8 +25,11 @@ the Excel import create a new assessment item for an unmatched column instead of
 it). **Phase 5** adds the student portal: dashboard, My Grades, Subject detail, My Progress, and a
 Report of Grades PDF — see "Student portal" below. **Phase 6** (this state of the repo) adds the
 forecasting ML core — in-process (no separate service, see "Forecasting" below for why), trained on
-synthetic or masked-historical data, with a Model Performance admin page. The at-risk list, student
-forecast card, and early-warning notifications are Phase 7, not yet built.
+synthetic or masked-historical data, with a Model Performance admin page. **Phase 7** (this state of
+the repo) puts those predictions in front of users: at-risk lists for instructors and program heads,
+a forecast drawer with per-student feature contributions, logged interventions, a supportive
+(never-numeric) forecast card for students, and early-warning notifications — see "Forecasting"
+below for the full detail, including the measured recompute-after-save latency.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -369,9 +372,80 @@ in-process inside Django (`forecasting/ml/`: `features.py`/`synthetic.py`/`train
 - **Chapter 4 / final-defense rule:** the model shown there must be trained on real, masked CITCI
   historical data (or MIXED, clearly reported). Synthetic is dev/demo only and always labeled as
   such — in the UI and in the PDF export.
-- **Not built yet (Phase 7):** the at-risk list UI (program head/instructor), the student's forecast
-  card ("Needs Attention"/"On Track" — never "at-risk" to a student), and early-warning
-  notifications. This phase ships the model and the data pipeline those will read from.
+- **Display risk level — one helper, never stored.** `forecasting.services.risk_level(probability,
+  threshold)` returns `AT_RISK` (probability ≥ threshold), `WATCH` (≥ threshold − 0.15), or
+  `ON_TRACK` — purely derived at display time from the already-stored `Prediction.probability` and
+  the active model's threshold; there's no 3-tier column anywhere, since `AT_RISK` here is
+  mathematically identical to the stored binary `RiskLabel.AT_RISK`, so storing it twice would just
+  be a sync-drift risk for nothing.
+- **Current checkpoint of a class**
+  (`forecasting.services.current_checkpoint_for_class`): MIDTERM if any Examination-category item
+  with term ≤ MIDTERM has a score anywhere in the class; else PRELIM if any PRELIM item has a score;
+  else `None` ("Not enough data yet" everywhere the UI shows a forecast).
+- **When predictions recompute:** `forecasting.services.recompute_and_notify(roster_entries)` is the
+  one function every trigger calls — a score save (`grading.views.save_cell`), a fill-column action,
+  an Excel import confirm (`reports/excel_import.py`), the per-class/per-program "Recompute
+  forecasts" buttons, and the scheduled `run_forecasts` command. It no-ops for a class whose grade
+  sheet is SUBMITTED or later (`approvals.services.is_class_editable`) — the last forecast stays on
+  the record for evaluation, sitting next to the eventual actual outcome, rather than drifting after
+  grading is done. Display reads (`get_display_forecast`/`get_display_forecasts_for_class`) also
+  lazily backfill any still-missing prediction, but only while the class is still editable, and
+  never on the cheap dashboard-stat-card path (`count_at_risk_watch`), which only ever reads what's
+  already stored.
+- **Measured latency** (the spec's 150ms budget for "must not slow saves noticeably"): calling
+  `save_score` + `recompute_and_notify` for one student directly ran with a median of ~4–6ms and a
+  worst case under 25ms across repeated runs (warm model cache); the same path through the real
+  `grading:save_cell` HTTP view (Django test client) measured ~4ms median, ~5ms worst case. Both are
+  well under budget, so synchronous recompute-after-save stays exactly as designed — the "recompute
+  on next page load instead" fallback the spec allowed for was never needed.
+- **At-Risk Students pages** (`forecasting:at_risk`, role-dispatched): the instructor sees every
+  AT_RISK/WATCH student across their own active-semester classes (class/level filters, sorted by
+  probability desc); the Program Head sees the same, scoped to their program(s), plus summary stat
+  cards (at risk / watch / classes affected / interventions logged), a by-class breakdown table with
+  a per-class Recompute action, and an Excel export (`forecasting:at_risk_export`). Both show the
+  "Demo model — trained on synthetic data" banner whenever the active model for either checkpoint
+  isn't HISTORICAL.
+- **Forecast drawer** (`forecasting:forecast_detail`, HTMX modal): probability + risk badge +
+  checkpoint + computed-at timestamp, a horizontal Chart.js bar of every feature's contribution
+  (positive = increases risk, negative = decreases — `json_script`-embedded data so the inline
+  `<script>` that builds the chart survives an HTMX swap), the Prelim → Midterm forecast history for
+  that student, and the interventions list.
+- **Interventions** (`forecasting.Intervention`: date, type — Consultation/Remedial
+  activity/Referral to guidance/Parent or guardian contact/Other — notes, optional follow-up date,
+  outcome — Pending/Improved/No change): logged from the drawer (`forecasting:intervention_create`),
+  visible to the instructor and program head only, never to students. The class's Class Record grid
+  gets an optional "Forecast" column (toggle, default on) showing the same risk badge per row; the
+  Summary tab gets an AT_RISK/WATCH/ON_TRACK count row.
+- **Students never see a probability or the words "at risk."**
+  `forecasting.services.student_forecast_card(roster_entry)` returns a supportive message
+  ("You're on track in PEd 205. Keep it up!" / "PEd 205 needs your attention.") plus up to two
+  plain-language factors (its own `_STUDENT_FACTOR_LABELS` mapping — never the instructor-facing
+  contribution-reason strings, which contain percentages) and three generic study tips, or `None`
+  entirely when the setting below is off. Replaces the student dashboard's old "Coming soon"
+  placeholder card and adds a matching section to Subject detail.
+- **`InstitutionSettings.show_forecasts_to_students`** (System → Settings): off by default — while
+  the active checkpoint models are SYNTHETIC, students see no forecast content at all, not even a
+  placeholder. Admin turns it on once a real, masked-historical model is active.
+- **Early-warning notifications**, de-duplicated per *episode* (not per recompute) via two nullable
+  timestamps on `Prediction` — `instructor_notified_at`/`student_notified_at` — set when a
+  notification actually fires for the student's current at-risk/watch run and cleared back to `None`
+  the moment the level drops, so a later episode can notify again without ever repeating on every
+  save while the level hasn't changed:
+  - **Instructor:** one notification per class per recompute batch when any student newly crosses
+    into AT_RISK ("2 students in PEd 205 may need attention"), linking to the At-Risk page.
+  - **Program Head:** one daily digest from `run_forecasts` ("N students newly flagged as at risk in
+    your program(s) today"), built from the same episode-level de-dup.
+  - **Student:** one supportive notification per class per checkpoint when newly WATCH-or-worse
+    (only if the settings toggle above is on, and never for an already-released class).
+- **Demo data:** `python manage.py seed_forecasting_demo` (auto-run at the end of
+  `seed_citci_academics`) trains + activates a synthetic model per checkpoint if none is active,
+  recomputes forecasts for the existing demo classes' rosters (their low-scoring seeded students
+  naturally produce a mix of AT_RISK/WATCH/ON_TRACK — a one-student "nudge" fallback exists for the
+  rare case a run produces no variety at all, but wasn't needed on a normal seed), and logs one or
+  two Interventions for an at-risk student so the At-Risk pages and forecast drawer aren't empty on a
+  fresh environment. `show_forecasts_to_students` is deliberately left off by the seeder, matching
+  its documented synthetic-model default — turn it on by hand (System → Settings) to see the student
+  forecast card with real content.
 
 ## Running tests
 
@@ -466,9 +540,30 @@ python manage.py test
   imputation, `synthetic.py` — dev/demo generator, `train.py`, `evaluate.py`, `predict.py`),
   `forecasting/historical_import.py` (parsing + masking + the "live data → historical" export),
   `forecasting/models.py` (`MlModelVersion`, `Prediction`, `HistoricalImportBatch`,
-  `HistoricalRecord`), `forecasting/views.py` + `forecasting/urls.py` (Model Performance, Historical
-  Data), management commands `generate_synthetic_data`/`train_forecast_model`/`run_forecasts`.
-  Templates under `templates/forecasting/` (+ `templates/forecasting/pdf/model_report.html`).
+  `HistoricalRecord`, `Intervention`), `forecasting/views.py` + `forecasting/urls.py` (Model
+  Performance, Historical Data), management commands
+  `generate_synthetic_data`/`train_forecast_model`/`run_forecasts`. `generate_synthetic_data --csv
+  <path>` exports the deterministic synthetic dataset (features + label, both checkpoints) to CSV
+  for the paper's appendix — no DB persistence. Templates under `templates/forecasting/` (+
+  `templates/forecasting/pdf/model_report.html`).
+- **Forecasting UI** (predictions in front of users, interventions, early warning):
+  `forecasting/services.py` (pure functions, no view/HTTP concerns — `risk_level`,
+  `current_checkpoint_for_class`, `get_display_forecast`/`get_display_forecasts_for_class`,
+  `count_at_risk_watch`, `student_forecast_card`, `recompute_and_notify`), `forecasting/forms.py`
+  (`InterventionForm`), `forecasting/views.py` (`at_risk`, `at_risk_export`, `recompute_class`,
+  `recompute_program`, `forecast_detail`, `intervention_create`). Templates:
+  `templates/forecasting/at_risk_instructor.html`/`at_risk_program_head.html`,
+  `_forecast_drawer.html`, `_intervention_modal.html`, `_risk_badge.html`, `_synthetic_banner.html`.
+  Integration points in other apps: `grading/views.py` (`save_cell`/`fill_column` call
+  `recompute_and_notify` after a successful score write; `_build_class_record_context`/
+  `_build_summary_context` add the Forecast column/risk counts), `reports/excel_import.py`
+  (`commit_import` calls `recompute_and_notify` once per import, outside the atomic block),
+  `dashboard/views.py` (`_admin_dashboard`/`_program_head_dashboard` use `count_at_risk_watch` for
+  the stat card; `_student_dashboard` uses `student_forecast_card`), `reports/models.py`
+  (`InstitutionSettings.show_forecasts_to_students`). Cross-app imports here follow the same
+  function-local rule as the `approvals`↔`grading` pattern in CLAUDE.md section 11 — `forecasting`
+  loads after `grading`/`approvals`/`academics` in `INSTALLED_APPS`, so `grading`/`dashboard`/
+  `reports` importing from it must do so inside the function, never at module level.
 - **Templates:** `templates/` (shared layout + partials in `templates/partials/`, app templates
   under `templates/<app>/`).
 - **Static files:** `static/` — `static/vendor/` holds the locally-vendored HTMX and Alpine.js

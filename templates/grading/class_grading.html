@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Grading — {{ class_offering.subject.code }}{% endblock %}
 {% block content %}
-<div x-data="{ tab: '{{ tab|default:'setup' }}' }">
+<div x-data="{ tab: '{{ tab|default:'setup' }}', showForecast: true }">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
             {% if can_edit %}

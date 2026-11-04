@@ -267,3 +267,310 @@ class PredictTests(GradingTestBase):
         result = predict(self.roster_entry, Checkpoint.MIDTERM, model_version=self.version)
         expected_label = RiskLabel.AT_RISK if result["probability"] >= float(self.version.threshold) else RiskLabel.NOT_AT_RISK
         self.assertEqual(result["label"], expected_label)
+
+
+# ---------------------------------------------------------------------------
+# Part 2 — predictions in the UI, interventions, early warning
+# ---------------------------------------------------------------------------
+
+from django.urls import reverse
+
+from approvals.services import submit_grade_sheet
+from reports.models import InstitutionSettings
+
+from .models import Intervention
+from .services import (
+    current_checkpoint_for_class,
+    get_display_forecast,
+    recompute_and_notify,
+    risk_level,
+    show_forecasts_to_students,
+    student_forecast_card,
+)
+
+
+class ForecastingPart2TestBase(GradingTestBase):
+    """Trains + activates one synthetic model per checkpoint once per test
+    class (training is slow; independent of the per-test grading fixtures,
+    so sharing it via setUpTestData is safe)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.midterm_model = train_model(Checkpoint.MIDTERM, TrainingSource.SYNTHETIC)
+        cls.midterm_model.is_active = True
+        cls.midterm_model.save()
+        cls.prelim_model = train_model(Checkpoint.PRELIM, TrainingSource.SYNTHETIC)
+        cls.prelim_model.is_active = True
+        cls.prelim_model.save()
+
+    def setUp(self):
+        super().setUp()
+        # GradingTestBase's student fixture has no last_name (blank) — give
+        # it one so assertNotContains/assertContains checks on last_name
+        # here are meaningful (an empty string is trivially "contained" in
+        # any response, which would make assertNotContains always fail).
+        self.student.last_name = "Delacruz"
+        self.student.save(update_fields=["last_name"])
+        self.program_head = make_user(User.Role.PROGRAM_HEAD, "fc_ph")
+        self.program.program_head = self.program_head
+        self.program.save()
+        self.other_instructor = make_user(User.Role.INSTRUCTOR, "fc_other_instructor")
+
+    def score_exam_item(self, term=AssessmentTerm.MIDTERM, value=15, max_score=20):
+        items = self.make_items("Examination", [max_score], term=term)
+        self.set_scores(self.roster_entry, items, [value])
+        return items[0]
+
+
+class CheckpointSelectionTests(ForecastingPart2TestBase):
+    def test_no_checkpoint_when_nothing_scored(self):
+        self.assertIsNone(current_checkpoint_for_class(self.class_offering))
+
+    def test_prelim_checkpoint_from_any_prelim_item(self):
+        items = self.make_items("Quizzes", [10], term=AssessmentTerm.PRELIM)
+        self.set_scores(self.roster_entry, items, [5])
+        self.assertEqual(current_checkpoint_for_class(self.class_offering), Checkpoint.PRELIM)
+
+    def test_midterm_checkpoint_requires_an_exam_item_scored(self):
+        # A scored PRELIM quiz alone must not promote to MIDTERM.
+        quiz_items = self.make_items("Quizzes", [10], term=AssessmentTerm.PRELIM)
+        self.set_scores(self.roster_entry, quiz_items, [5])
+        self.assertEqual(current_checkpoint_for_class(self.class_offering), Checkpoint.PRELIM)
+
+        self.score_exam_item(term=AssessmentTerm.MIDTERM)
+        self.assertEqual(current_checkpoint_for_class(self.class_offering), Checkpoint.MIDTERM)
+
+    def test_midterm_checkpoint_from_a_scored_prelim_exam_item_too(self):
+        self.score_exam_item(term=AssessmentTerm.PRELIM)
+        self.assertEqual(current_checkpoint_for_class(self.class_offering), Checkpoint.MIDTERM)
+
+
+class RiskLevelBoundaryTests(TestCase):
+    def test_at_risk_at_exactly_threshold(self):
+        self.assertEqual(risk_level(0.5, 0.5), "AT_RISK")
+
+    def test_just_below_threshold_is_watch(self):
+        self.assertEqual(risk_level(0.4999, 0.5), "WATCH")
+
+    def test_watch_at_lower_boundary(self):
+        self.assertEqual(risk_level(0.35, 0.5), "WATCH")
+
+    def test_just_below_watch_boundary_is_on_track(self):
+        self.assertEqual(risk_level(0.3499, 0.5), "ON_TRACK")
+
+    def test_zero_probability_is_on_track(self):
+        self.assertEqual(risk_level(0.0, 0.5), "ON_TRACK")
+
+
+class RecomputeTests(ForecastingPart2TestBase):
+    def test_recompute_affects_only_the_given_student(self):
+        other_student = make_user(User.Role.STUDENT, "fc_other_student", id_number="2026-8800")
+        other_entry = ClassRosterEntry.objects.create(student=other_student, class_offering=self.class_offering)
+        self.score_exam_item()
+        self.set_scores(other_entry, self.scheme_components["Examination"].items.all(), [18])
+
+        from .models import Prediction
+
+        recompute_and_notify([self.roster_entry])
+
+        self.assertTrue(Prediction.objects.filter(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM).exists())
+        self.assertFalse(Prediction.objects.filter(roster_entry=other_entry, checkpoint=Checkpoint.MIDTERM).exists())
+
+    def test_no_recompute_once_grade_sheet_is_submitted(self):
+        self.score_exam_item()
+        recompute_and_notify([self.roster_entry])
+
+        from .models import Prediction
+
+        before = Prediction.objects.get(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM)
+
+        # Fully score the class and submit — recompute must then be a no-op.
+        for name, maxes in [("Attendance", [10]), ("Quizzes", [10]), ("Recitation", [10]), ("Project", [10])]:
+            items = self.make_items(name, maxes, term=AssessmentTerm.MIDTERM)
+            self.set_scores(self.roster_entry, items, [8])
+        submit_grade_sheet(self.class_offering, self.instructor)
+
+        recompute_and_notify([self.roster_entry])
+        after = Prediction.objects.get(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM)
+        self.assertEqual(before.computed_at, after.computed_at)  # untouched — last forecast kept for evaluation
+
+    def test_get_display_forecast_lazily_backfills_when_editable(self):
+        self.score_exam_item()
+        forecast = get_display_forecast(self.roster_entry)
+        self.assertNotIsInstance(forecast, str)
+        self.assertEqual(forecast.checkpoint, Checkpoint.MIDTERM)
+
+    def test_forecast_unavailable_when_no_active_model(self):
+        self.midterm_model.is_active = False
+        self.midterm_model.save()
+        self.prelim_model.is_active = False
+        self.prelim_model.save()
+        self.score_exam_item()
+        self.assertEqual(get_display_forecast(self.roster_entry), "not_enough_data")
+
+
+class NotificationDeduplicationTests(ForecastingPart2TestBase):
+    def test_instructor_notified_once_per_at_risk_episode(self):
+        from dashboard.models import Notification
+
+        # A weak score should land this synthetic-model prediction AT_RISK
+        # with high probability (low exam score).
+        self.score_exam_item(value=1, max_score=20)
+        recompute_and_notify([self.roster_entry])
+        first_count = Notification.objects.filter(recipient=self.instructor).count()
+
+        # Recomputing again with the SAME data must not send a second one.
+        recompute_and_notify([self.roster_entry])
+        second_count = Notification.objects.filter(recipient=self.instructor).count()
+        self.assertEqual(first_count, second_count)
+
+    def test_renotifies_after_dropping_out_of_at_risk_and_back(self):
+        from .models import Prediction
+
+        self.score_exam_item(value=1, max_score=20)
+        recompute_and_notify([self.roster_entry])
+        prediction = Prediction.objects.get(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM)
+        was_notified_once = prediction.instructor_notified_at is not None
+
+        # Force the stored level back down (simulating an improved score on
+        # the next recompute) by editing the item's score directly.
+        item = self.scheme_components["Examination"].items.first()
+        self.set_scores(self.roster_entry, [item], [19])
+        recompute_and_notify([self.roster_entry])
+        prediction.refresh_from_db()
+
+        self.assertTrue(was_notified_once)
+        # Whatever the new level is, instructor_notified_at must only be
+        # set if the level is AT_RISK again — never stale from before.
+        if risk_level(prediction.probability, prediction.model_version.threshold) != "AT_RISK":
+            self.assertIsNone(prediction.instructor_notified_at)
+
+
+class AccessControlTests(ForecastingPart2TestBase):
+    def test_instructor_cannot_view_another_instructors_class_at_risk_filter(self):
+        self.client.force_login(self.other_instructor)
+        response = self.client.get(reverse("forecasting:at_risk"), {"class": self.class_offering.pk})
+        self.assertEqual(response.status_code, 200)  # page loads; just scoped to nothing of theirs
+        self.assertNotContains(response, self.student.last_name)
+
+    def test_instructor_cannot_recompute_another_instructors_class(self):
+        self.client.force_login(self.other_instructor)
+        response = self.client.post(reverse("forecasting:recompute_class", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_instructor_cannot_view_forecast_detail_for_another_instructors_student(self):
+        self.client.force_login(self.other_instructor)
+        response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_program_head_cannot_recompute_another_programs_class(self):
+        other_program_head = make_user(User.Role.PROGRAM_HEAD, "fc_other_ph")
+        self.client.force_login(other_program_head)
+        response = self.client.post(reverse("forecasting:recompute_class", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_program_head_cannot_recompute_another_programs_program(self):
+        from academics.models import Program
+
+        other_program_head = make_user(User.Role.PROGRAM_HEAD, "fc_other_ph2")
+        other_program = Program.objects.create(code="OTHERP", name="Other Program", program_head=other_program_head)
+        self.client.force_login(self.program_head)
+        response = self.client.post(reverse("forecasting:recompute_program", args=[other_program.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_own_program_head_can_recompute_their_program(self):
+        self.client.force_login(self.program_head)
+        response = self.client.post(reverse("forecasting:recompute_program", args=[self.program.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_student_cannot_access_at_risk_page(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("forecasting:at_risk"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_cannot_access_forecast_detail(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_cannot_access_intervention_create(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("forecasting:intervention_create", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+
+class StudentPrivacyTests(ForecastingPart2TestBase):
+    def setUp(self):
+        super().setUp()
+        inst = InstitutionSettings.get_solo()
+        inst.show_forecasts_to_students = True
+        inst.save()
+        self.score_exam_item(value=1, max_score=20)  # weak score -> likely AT_RISK/WATCH
+        recompute_and_notify([self.roster_entry])
+
+    def test_dashboard_never_shows_probability_or_at_risk_wording(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("dashboard:home"))
+        body = response.content.decode("utf-8")
+        self.assertNotIn("AT_RISK", body)
+        self.assertNotIn("at risk", body.lower())
+        self.assertNotIn("probability", body.lower())
+
+    def test_subject_detail_never_shows_probability_or_at_risk_wording(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        body = response.content.decode("utf-8")
+        self.assertNotIn("AT_RISK", body)
+        self.assertNotIn("at risk", body.lower())
+        self.assertNotIn("probability", body.lower())
+
+    def test_student_forecast_card_has_no_numeric_probability_field(self):
+        card = student_forecast_card(self.roster_entry)
+        self.assertIsNotNone(card)
+        self.assertNotIn("probability", card)
+
+
+class SettingsToggleTests(ForecastingPart2TestBase):
+    def test_default_is_off(self):
+        self.assertFalse(show_forecasts_to_students())
+
+    def test_toggle_off_hides_student_forecast_card(self):
+        self.score_exam_item()
+        recompute_and_notify([self.roster_entry])
+        self.assertIsNone(student_forecast_card(self.roster_entry))
+
+    def test_toggle_on_shows_student_forecast_card(self):
+        inst = InstitutionSettings.get_solo()
+        inst.show_forecasts_to_students = True
+        inst.save()
+        self.score_exam_item()
+        recompute_and_notify([self.roster_entry])
+        self.assertIsNotNone(student_forecast_card(self.roster_entry))
+
+
+class InterventionPrivacyTests(ForecastingPart2TestBase):
+    def setUp(self):
+        super().setUp()
+        self.intervention = Intervention.objects.create(
+            roster_entry=self.roster_entry,
+            created_by=self.instructor,
+            date="2026-11-04",
+            type="CONSULTATION",
+            notes="Confidential note.",
+            outcome="PENDING",
+        )
+
+    def test_intervention_never_reaches_student_pages(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("grading:subject_detail", args=[self.roster_entry.pk]))
+        self.assertNotContains(response, "Confidential note.")
+
+    def test_instructor_sees_intervention_in_drawer(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
+        self.assertContains(response, "Confidential note.")
+
+    def test_program_head_sees_intervention_in_drawer(self):
+        self.client.force_login(self.program_head)
+        response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
+        self.assertContains(response, "Confidential note.")

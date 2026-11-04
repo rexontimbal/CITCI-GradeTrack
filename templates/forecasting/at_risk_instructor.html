@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block page_title %}At-Risk Students{% endblock %}
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div>
+        <h2 class="text-xl font-bold text-gray-900">At-Risk Students</h2>
+        <p class="mt-1 text-sm text-gray-500">Students flagged At Risk or Watch across your classes this semester.</p>
+    </div>
+</div>
+
+{% include "forecasting/_synthetic_banner.html" %}
+
+<form method="get" class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+    <select name="class" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+        <option value="">All classes</option>
+        {% for c in classes %}
+        <option value="{{ c.pk }}" {% if class_filter == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.subject.code }}</option>
+        {% endfor %}
+    </select>
+    <select name="level" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+        <option value="">All risk levels</option>
+        <option value="AT_RISK" {% if level_filter == "AT_RISK" %}selected{% endif %}>At Risk</option>
+        <option value="WATCH" {% if level_filter == "WATCH" %}selected{% endif %}>Watch</option>
+    </select>
+    {% if class_filter %}
+    <form method="post" action="{% url 'forecasting:recompute_class' class_filter %}">
+        {% csrf_token %}
+        <button type="submit" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Recompute forecasts
+        </button>
+    </form>
+    {% endif %}
+</form>
+
+{% if rows %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Student</th>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3">Checkpoint</th>
+                <th class="px-4 py-3">Risk</th>
+                <th class="px-4 py-3">Probability</th>
+                <th class="px-4 py-3">Top reasons</th>
+                <th class="px-4 py-3">Last intervention</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ row.entry.student.full_name }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ row.class_offering.subject.code }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.checkpoint|title }}</td>
+                <td class="px-4 py-3">{% include "forecasting/_risk_badge.html" with level=row.level %}</td>
+                <td class="px-4 py-3 text-gray-700">{{ row.probability|floatformat:2 }}%</td>
+                <td class="px-4 py-3 text-xs text-gray-500">{{ row.reasons|join:"; " }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500">
+                    {% if row.last_intervention %}{{ row.last_intervention.get_type_display }} ({{ row.last_intervention.date }}){% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-right">
+                    <button type="button" hx-get="{% url 'forecasting:forecast_detail' row.entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                            class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">
+                        View
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="alert" title="No at-risk students right now" description="Students flagged At Risk or Watch will show up here once there's enough encoded data." %}
+{% endif %}
+{% endblock %}

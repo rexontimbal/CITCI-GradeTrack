@@ -80,6 +80,7 @@ class Command(BaseCommand):
         self._seed_rosters(students, sections, classes)
         call_command("seed_grading_demo")
         call_command("seed_student_portal_demo")
+        call_command("seed_forecasting_demo")
 
         self.stdout.write(self.style.SUCCESS("\nCITCI academic data ready."))
 

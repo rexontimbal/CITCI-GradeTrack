@@ -19,4 +19,5 @@ class InstitutionSettingsForm(StyledModelForm):
             "registrar_name",
             "registrar_title",
             "show_unofficial_scores_to_students",
+            "show_forecasts_to_students",
         ]

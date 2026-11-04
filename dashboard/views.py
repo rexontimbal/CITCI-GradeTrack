@@ -15,7 +15,7 @@ def home(request):
     if user.is_admin_role:
         return _admin_dashboard(request)
     if user.is_program_head:
-        return render(request, "dashboard/program_head_dashboard.html")
+        return _program_head_dashboard(request)
     if user.is_instructor:
         return _instructor_dashboard(request)
     return _student_dashboard(request)
@@ -26,14 +26,31 @@ def _active_semester():
 
 
 def _admin_dashboard(request):
+    from forecasting.services import count_at_risk_watch
+
     active = _active_semester()
+    classes = ClassOffering.objects.filter(semester=active) if active else ClassOffering.objects.none()
     context = {
         "total_students": User.objects.filter(role=User.Role.STUDENT, is_active=True).count(),
         "total_instructors": User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True).count(),
-        "active_classes": ClassOffering.objects.filter(semester=active).count() if active else 0,
+        "active_classes": classes.count(),
         "total_programs": Program.objects.count(),
+        "at_risk_count": count_at_risk_watch(classes)["at_risk"],
     }
     return render(request, "dashboard/admin_dashboard.html", context)
+
+
+def _program_head_dashboard(request):
+    from forecasting.services import count_at_risk_watch
+
+    active = _active_semester()
+    classes = (
+        ClassOffering.objects.filter(sections__program__program_head=request.user, semester=active).distinct()
+        if active
+        else ClassOffering.objects.none()
+    )
+    context = {"at_risk_count": count_at_risk_watch(classes)["at_risk"]}
+    return render(request, "dashboard/program_head_dashboard.html", context)
 
 
 def _instructor_dashboard(request):
@@ -101,6 +118,13 @@ def _student_dashboard(request):
     released_display = f"{gwa['released_count']}/{gwa['total_count']}" if gwa else "0/0"
     notifications = request.user.notifications.all()[:5]
 
+    from forecasting.services import student_forecast_card
+
+    forecast_priority = {"AT_RISK": 0, "WATCH": 1, "ON_TRACK": 2}
+    forecast_cards = [card for card in (student_forecast_card(e) for e in roster_entries) if card is not None]
+    forecast_cards.sort(key=lambda c: forecast_priority[c["level"]])
+    forecast = forecast_cards[0] if forecast_cards else None
+
     context = {
         "cards": cards,
         "subjects_count": roster_entries.count(),
@@ -108,6 +132,7 @@ def _student_dashboard(request):
         "released_display": released_display,
         "warnings_count": warnings_count,
         "notifications": notifications,
+        "forecast": forecast,
     }
     return render(request, "dashboard/student_dashboard.html", context)
 

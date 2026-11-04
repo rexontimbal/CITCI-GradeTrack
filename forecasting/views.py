@@ -1,18 +1,20 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
 from accounts.decorators import role_required
 from accounts.models import User
-from accounts.utils import coming_soon
 
+from .forms import InterventionForm
 from .historical_import import build_import_preview, commit_import, export_released_data_to_historical
 from .ml.train import train_model
-from .models import Checkpoint, HistoricalImportBatch, MlModelVersion, TrainingSource
+from .models import Checkpoint, HistoricalImportBatch, Intervention, MlModelVersion, Prediction, TrainingSource
+from .services import current_checkpoint_for_class, get_display_forecasts_for_class, recompute_and_notify, risk_level
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
@@ -157,10 +159,290 @@ def historical_export_live(request):
 
 
 # ---------------------------------------------------------------------------
-# Phase 7 placeholder
+# At-Risk Students — instructor and program head
 # ---------------------------------------------------------------------------
+
+
+def _any_non_historical_active_model():
+    return MlModelVersion.objects.filter(is_active=True).exclude(training_source=TrainingSource.HISTORICAL).exists()
+
+
+def _class_at_risk_rows(class_offering, level_filter=None):
+    """[{entry, class_offering, checkpoint, level, probability, prediction,
+    reasons, last_intervention}, ...] for AT_RISK/WATCH students only."""
+    checkpoint, forecasts = get_display_forecasts_for_class(class_offering)
+    if checkpoint is None:
+        return []
+
+    roster_entries = {
+        e.id: e for e in class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).select_related("student")
+    }
+    rows = []
+    for entry_id, forecast in forecasts.items():
+        if not isinstance(forecast, Prediction):
+            continue
+        level = risk_level(forecast.probability, forecast.model_version.threshold)
+        if level not in ("AT_RISK", "WATCH"):
+            continue
+        if level_filter and level != level_filter:
+            continue
+        entry = roster_entries.get(entry_id)
+        if entry is None:
+            continue
+        rows.append(
+            {
+                "entry": entry,
+                "class_offering": class_offering,
+                "checkpoint": checkpoint,
+                "level": level,
+                "probability": round(float(forecast.probability) * 100, 1),
+                "prediction": forecast,
+                "reasons": (forecast.contributions_json or {}).get("reasons", [])[:3],
+                "last_intervention": entry.interventions.first(),
+            }
+        )
+    return rows
 
 
 @role_required(PROGRAM_HEAD, INSTRUCTOR)
 def at_risk(request):
-    return coming_soon(request, "At-Risk Students")
+    if request.user.is_instructor:
+        return _at_risk_instructor(request)
+    return _at_risk_program_head(request)
+
+
+def _at_risk_instructor(request):
+    active_semester = Semester.objects.filter(is_active=True).first()
+    classes = (
+        ClassOffering.objects.filter(instructor=request.user, semester=active_semester).select_related("subject")
+        if active_semester
+        else ClassOffering.objects.none()
+    )
+
+    class_filter = request.GET.get("class")
+    level_filter = request.GET.get("level")
+
+    rows = []
+    for class_offering in classes:
+        if class_filter and str(class_offering.pk) != class_filter:
+            continue
+        rows.extend(_class_at_risk_rows(class_offering, level_filter))
+    rows.sort(key=lambda r: r["probability"], reverse=True)
+
+    context = {
+        "page_title": "At-Risk Students",
+        "classes": classes,
+        "rows": rows,
+        "class_filter": class_filter,
+        "level_filter": level_filter,
+        "show_synthetic_banner": _any_non_historical_active_model(),
+    }
+    return render(request, "forecasting/at_risk_instructor.html", context)
+
+
+def _program_head_classes(user, active_semester):
+    if active_semester is None:
+        return ClassOffering.objects.none()
+    return (
+        ClassOffering.objects.filter(sections__program__program_head=user, semester=active_semester)
+        .select_related("subject", "instructor")
+        .distinct()
+    )
+
+
+def _at_risk_program_head(request):
+    active_semester = Semester.objects.filter(is_active=True).first()
+    classes = list(_program_head_classes(request.user, active_semester))
+
+    class_filter = request.GET.get("class")
+    level_filter = request.GET.get("level")
+
+    rows = []
+    by_class = {}
+    for class_offering in classes:
+        class_rows = _class_at_risk_rows(class_offering)
+        by_class[class_offering.pk] = {
+            "class_offering": class_offering,
+            "at_risk": sum(1 for r in class_rows if r["level"] == "AT_RISK"),
+            "watch": sum(1 for r in class_rows if r["level"] == "WATCH"),
+            "interventions": Intervention.objects.filter(roster_entry__class_offering=class_offering).count(),
+        }
+        if class_filter and str(class_offering.pk) != class_filter:
+            continue
+        for row in class_rows:
+            if level_filter and row["level"] != level_filter:
+                continue
+            rows.append(row)
+    rows.sort(key=lambda r: r["probability"], reverse=True)
+
+    total_at_risk = sum(c["at_risk"] for c in by_class.values())
+    total_watch = sum(c["watch"] for c in by_class.values())
+    classes_affected = sum(1 for c in by_class.values() if c["at_risk"] or c["watch"])
+    total_interventions = Intervention.objects.filter(
+        roster_entry__class_offering__in=[c["class_offering"] for c in by_class.values()]
+    ).count()
+
+    context = {
+        "page_title": "At-Risk Students",
+        "classes": classes,
+        "rows": rows,
+        "class_filter": class_filter,
+        "level_filter": level_filter,
+        "by_class": by_class.values(),
+        "summary": {
+            "at_risk": total_at_risk,
+            "watch": total_watch,
+            "classes_affected": classes_affected,
+            "interventions": total_interventions,
+        },
+        "show_synthetic_banner": _any_non_historical_active_model(),
+    }
+    return render(request, "forecasting/at_risk_program_head.html", context)
+
+
+@role_required(PROGRAM_HEAD)
+def at_risk_export(request):
+    from openpyxl import Workbook
+
+    from reports.excel import workbook_response
+
+    active_semester = Semester.objects.filter(is_active=True).first()
+    classes = list(_program_head_classes(request.user, active_semester))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "At-Risk Students"
+    ws.append(["Student", "ID Number", "Class", "Instructor", "Checkpoint", "Risk Level", "Probability %"])
+    for class_offering in classes:
+        for row in _class_at_risk_rows(class_offering):
+            ws.append(
+                [
+                    row["entry"].student.full_name,
+                    row["entry"].student.id_number or "",
+                    str(class_offering),
+                    class_offering.instructor.full_name if class_offering.instructor else "",
+                    row["checkpoint"],
+                    row["level"],
+                    row["probability"],
+                ]
+            )
+    return workbook_response(wb, "AtRiskStudents.xlsx")
+
+
+# ---------------------------------------------------------------------------
+# Recompute
+# ---------------------------------------------------------------------------
+
+
+def _owns_class_for_forecasting(user, class_offering):
+    if user.is_instructor:
+        return class_offering.instructor_id == user.id
+    if user.is_program_head:
+        return class_offering.sections.filter(program__program_head_id=user.id).exists()
+    return False
+
+
+@role_required(INSTRUCTOR, PROGRAM_HEAD)
+def recompute_class(request, pk):
+    class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not _owns_class_for_forecasting(request.user, class_offering):
+        raise PermissionDenied("This class is not yours to recompute.")
+    entries = class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE)
+    recompute_and_notify(entries)
+    messages.success(request, f"Forecasts recomputed for {class_offering}.")
+    return redirect(request.META.get("HTTP_REFERER") or "forecasting:at_risk")
+
+
+@role_required(PROGRAM_HEAD)
+def recompute_program(request, pk):
+    program = get_object_or_404(Program, pk=pk)
+    if program.program_head_id != request.user.id:
+        raise PermissionDenied("This program is not under your headship.")
+    active_semester = Semester.objects.filter(is_active=True).first()
+    classes = ClassOffering.objects.filter(sections__program=program, semester=active_semester).distinct()
+    entries = ClassRosterEntry.objects.filter(class_offering__in=classes, status=ClassRosterEntry.Status.ACTIVE)
+    recompute_and_notify(entries)
+    messages.success(request, f"Forecasts recomputed for {program.code}.")
+    return redirect("forecasting:at_risk")
+
+
+# ---------------------------------------------------------------------------
+# Forecast detail (drawer) + interventions
+# ---------------------------------------------------------------------------
+
+
+@role_required(INSTRUCTOR, PROGRAM_HEAD)
+def forecast_detail(request, pk):
+    roster_entry = get_object_or_404(ClassRosterEntry.objects.select_related("student", "class_offering__subject"), pk=pk)
+    if not _owns_class_for_forecasting(request.user, roster_entry.class_offering):
+        raise PermissionDenied("This student is not in one of your classes.")
+    return render(request, "forecasting/_forecast_drawer.html", _forecast_drawer_context(request, roster_entry))
+
+
+@role_required(INSTRUCTOR, PROGRAM_HEAD)
+def intervention_create(request, pk):
+    roster_entry = get_object_or_404(ClassRosterEntry, pk=pk)
+    class_offering = roster_entry.class_offering
+    if not _owns_class_for_forecasting(request.user, class_offering):
+        raise PermissionDenied("This student is not in one of your classes.")
+
+    if request.method == "GET":
+        form = InterventionForm(initial={"date": timezone.localdate()})
+        return render(request, "forecasting/_intervention_modal.html", {"roster_entry": roster_entry, "form": form})
+
+    form = InterventionForm(request.POST)
+    if not form.is_valid():
+        response = render(request, "forecasting/_intervention_modal.html", {"roster_entry": roster_entry, "form": form})
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    intervention = form.save(commit=False)
+    intervention.roster_entry = roster_entry
+    intervention.created_by = request.user
+    intervention.save()
+
+    # Re-render the drawer (not a "modal-success" close) — the point is to
+    # show the new intervention in place, not dismiss the drawer.
+    return render(request, "forecasting/_forecast_drawer.html", _forecast_drawer_context(request, roster_entry))
+
+
+def _forecast_drawer_context(request, roster_entry):
+    """Shared by intervention_create's post-save re-render so the drawer
+    refreshes with the new intervention in place."""
+    class_offering = roster_entry.class_offering
+    predictions = {
+        p.checkpoint: p
+        for p in Prediction.objects.filter(roster_entry=roster_entry).select_related("model_version")
+    }
+    current_checkpoint = current_checkpoint_for_class(class_offering)
+    current_prediction = predictions.get(current_checkpoint) if current_checkpoint else None
+    history = []
+    for checkpoint, label in Checkpoint.choices:
+        prediction = predictions.get(checkpoint)
+        if prediction is None:
+            continue
+        history.append(
+            {
+                "checkpoint": checkpoint,
+                "label": label,
+                "probability_pct": round(float(prediction.probability) * 100, 1),
+                "level": risk_level(prediction.probability, prediction.model_version.threshold),
+            }
+        )
+    contributions = (current_prediction.contributions_json or {}).get("values", []) if current_prediction else []
+    chart_labels = [c["feature"] for c in contributions]
+    chart_values = [c["contribution"] for c in contributions]
+    return {
+        "roster_entry": roster_entry,
+        "class_offering": class_offering,
+        "prediction": current_prediction,
+        "probability_pct": round(float(current_prediction.probability) * 100, 1) if current_prediction else None,
+        "level": risk_level(current_prediction.probability, current_prediction.model_version.threshold) if current_prediction else None,
+        "history": history,
+        "contributions": contributions,
+        "chart_labels": chart_labels,
+        "chart_values": chart_values,
+        "interventions": roster_entry.interventions.select_related("created_by"),
+        "show_synthetic_banner": current_prediction is not None and current_prediction.model_version.training_source != TrainingSource.HISTORICAL,
+    }

@@ -295,12 +295,28 @@ def _build_class_record_context(class_offering, term_filter=None):
 
     missing_count = sum(len(r["result"].missing_items) for r in rows if r["is_active"])
     selected_term_label = dict(AssessmentTerm.choices).get(term_filter, "") if term_filter else ""
+
+    from forecasting.services import get_display_forecasts_for_class, risk_level
+
+    forecast_checkpoint, forecasts_by_entry = get_display_forecasts_for_class(class_offering)
+    for row in rows:
+        forecast = forecasts_by_entry.get(row["result"].roster_entry.id)
+        if forecast is None:
+            row["forecast_level"] = None
+        elif isinstance(forecast, str):
+            row["forecast_level"] = forecast  # "not_enough_data" / "unavailable"
+        else:
+            row["forecast_level"] = risk_level(forecast.probability, forecast.model_version.threshold)
+            row["forecast_probability_pct"] = round(float(forecast.probability) * 100, 1)
+            row["forecast_reasons"] = (forecast.contributions_json or {}).get("reasons", [])[:3]
+
     return {
         "columns": columns,
         "rows": rows,
         "missing_count": missing_count,
         "selected_term_label": selected_term_label,
         "not_yet_set_up": not_yet_set_up,
+        "forecast_checkpoint": forecast_checkpoint,
     }
 
 
@@ -321,7 +337,23 @@ def _build_summary_context(class_offering):
         bucket = min(5, max(1, int(grade)))
         distribution[str(bucket)] += 1
 
-    return {"results": results, "counts": counts, "average": average, "distribution": distribution}
+    from forecasting.services import get_display_forecasts_for_class, risk_level
+
+    _checkpoint, forecasts_by_entry = get_display_forecasts_for_class(class_offering)
+    risk_counts = {"AT_RISK": 0, "WATCH": 0, "ON_TRACK": 0}
+    for forecast in forecasts_by_entry.values():
+        if isinstance(forecast, str):
+            continue
+        level = risk_level(forecast.probability, forecast.model_version.threshold)
+        risk_counts[level] += 1
+
+    return {
+        "results": results,
+        "counts": counts,
+        "average": average,
+        "distribution": distribution,
+        "risk_counts": risk_counts,
+    }
 
 
 @role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
@@ -544,6 +576,10 @@ def save_cell(request, roster_entry_pk, item_pk):
 
     if error is None:
         _, error = save_score(roster_entry, item, new_value, request.user)
+        if error is None:
+            from forecasting.services import recompute_and_notify
+
+            recompute_and_notify([roster_entry])
 
     term_filter = request.GET.get("term") or None
     record = _build_class_record_context(class_offering, term_filter)
@@ -570,10 +606,17 @@ def fill_column(request, pk):
     if not _can_edit(request.user, class_offering):
         raise PermissionDenied
 
+    touched = []
     for roster_entry in class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE):
         existing = Score.objects.filter(roster_entry=roster_entry, item=item).first()
         if existing is None or existing.score is None:
             save_score(roster_entry, item, item.max_score, request.user)
+            touched.append(roster_entry)
+
+    if touched:
+        from forecasting.services import recompute_and_notify
+
+        recompute_and_notify(touched)
 
     term_filter = request.GET.get("term") or None
     record = _build_class_record_context(class_offering, term_filter)
@@ -790,6 +833,8 @@ def subject_detail(request, pk):
 
     progression = running_grade_progression(roster_entry)
 
+    from forecasting.services import student_forecast_card
+
     context.update(
         {
             "components_display": components_display,
@@ -803,6 +848,7 @@ def subject_detail(request, pk):
             ],
             "chart_progression_labels": [label for _, label, _ in progression],
             "chart_progression_values": [float(grade) if grade is not None else None for _, _, grade in progression],
+            "forecast": student_forecast_card(roster_entry),
         }
     )
     return render(request, "grading/subject_detail.html", context)

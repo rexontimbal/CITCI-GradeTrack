@@ -28,6 +28,10 @@
             Import from Excel
         </button>
         {% endif %}
+        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+            <input type="checkbox" x-model="showForecast" class="h-3.5 w-3.5 rounded border-gray-300 text-brand-accent-600 focus:ring-brand-accent-500">
+            Forecast column
+        </label>
     </div>
 </div>
 
@@ -58,6 +62,7 @@
                 {% endfor %}
                 <th rowspan="2" class="sticky z-30 border-b border-l border-gray-200 bg-gray-50 px-2" style="top:0;" title="All terms">Running<br>Grade</th>
                 <th rowspan="2" class="sticky z-30 border-b border-gray-200 bg-gray-50 px-2" style="top:0;">Remarks</th>
+                <th rowspan="2" x-show="showForecast" class="sticky z-30 border-b border-l border-gray-200 bg-gray-50 px-2" style="top:0;" title="{{ record.forecast_checkpoint|title|default:'Not enough data yet' }}">Forecast</th>
             </tr>
             <tr>
                 {% for col in record.columns %}

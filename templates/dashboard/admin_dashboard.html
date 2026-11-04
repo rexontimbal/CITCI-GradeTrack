@@ -3,11 +3,12 @@
 {% block content %}
     {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="System-wide overview for the current semester." %}
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {% include "partials/_stat_card.html" with icon="users" label="Total Students" value=total_students %}
         {% include "partials/_stat_card.html" with icon="chalkboard" label="Total Instructors" value=total_instructors %}
         {% include "partials/_stat_card.html" with icon="clipboard" label="Active Classes" value=active_classes %}
         {% include "partials/_stat_card.html" with icon="folder" label="Programs" value=total_programs %}
+        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value=at_risk_count %}
     </div>
 
     <div class="mt-6">

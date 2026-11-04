@@ -1,5 +1,7 @@
 """
-Django settings for the CITCI GradeTrack project.
+Settings shared by every environment. Never import this module directly —
+use `config.settings.dev` or `config.settings.prod` (selected via the
+DJANGO_SETTINGS_MODULE environment variable; see README "Deployment").
 
 See https://docs.djangoproject.com/en/5.2/topics/settings/
 """
@@ -8,19 +10,23 @@ from pathlib import Path
 
 import environ
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-env = environ.Env(
-    DEBUG=(bool, False),
-)
-# Read .env from the project root (not committed; see .env.example).
+env = environ.Env()
+# Read .env from the project root (not committed; see .env.example). Safe to
+# call even when the file doesn't exist (e.g. env vars set directly by
+# systemd in production) — django-environ just skips it.
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY", default="django-insecure-change-me-in-.env")
+# Every environment needs a real SECRET_KEY from .env/the process
+# environment — dev.py falls back to an insecure default for convenience;
+# prod.py refuses to start without one (see prod.py).
+SECRET_KEY = env("SECRET_KEY", default="")
 
-DEBUG = env("DEBUG")
-
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# Overridden per-environment: False here is the safe default if a settings
+# module is ever imported without going through dev.py/prod.py.
+DEBUG = False
+ALLOWED_HOSTS = []
 
 
 # Application definition
@@ -105,7 +111,7 @@ AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},  # default min_length=8
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -129,18 +135,13 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Content-hashed filenames (e.g. tailwind.3f2a1b9c.css) in production so a
 # rebuilt static file is always a new URL — browsers can't serve a stale
-# cached copy. Needs `manage.py collectstatic` to generate the manifest. In
-# DEBUG, {% tailwind_css %} appends its own ?v=<mtime> instead (see
-# templates/tailwind_cli/tailwind_css.html) since collectstatic isn't run.
+# cached copy. Needs `manage.py collectstatic` to generate the manifest.
+# dev.py overrides this to plain StaticFilesStorage since collectstatic
+# isn't run in development ({% tailwind_css %} appends its own ?v=<mtime>
+# instead — see templates/tailwind_cli/tailwind_css.html).
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {
-        "BACKEND": (
-            "django.contrib.staticfiles.storage.StaticFilesStorage"
-            if DEBUG
-            else "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
-        )
-    },
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"},
 }
 
 # Media (uploaded files — bulk import sheets, exports, etc.)
@@ -154,6 +155,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # uses its own template engine that ignores TEMPLATES[0]['DIRS'], so without
 # this it can't find them (TemplateDoesNotExist) even though regular views can.
 FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
+
+
+# Styled error pages (accounts/views.py) — see docs/DEPLOYMENT.md and the
+# Phase 8 part A build note in CLAUDE.md for why 404/500 render a standalone
+# template with no context processors instead of extending base.html.
+CSRF_FAILURE_VIEW = "accounts.views.csrf_failure_view"
 
 
 # Auth redirects
@@ -192,3 +199,17 @@ GRADE_DISPLAY_DECIMALS = 2
 SESSION_COOKIE_AGE = 60 * 30
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
+
+# Backups (Phase 8 part A — see core/management/commands/backup_db.py).
+# BACKUP_DIR defaults to a top-level backups/ folder (gitignored); override
+# in prod via .env if backups should live elsewhere (e.g. a mounted volume).
+BACKUP_DIR = env("BACKUP_DIR", default=str(BASE_DIR / "backups"))
+BACKUP_KEEP = env.int("BACKUP_KEEP", default=30)
+
+
+# Clickjacking protection — Django's default is SAMEORIGIN; CITCI GradeTrack
+# never needs to be framed by anything, including itself.
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"

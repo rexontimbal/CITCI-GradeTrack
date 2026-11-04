@@ -25,11 +25,17 @@ the Excel import create a new assessment item for an unmatched column instead of
 it). **Phase 5** adds the student portal: dashboard, My Grades, Subject detail, My Progress, and a
 Report of Grades PDF — see "Student portal" below. **Phase 6** (this state of the repo) adds the
 forecasting ML core — in-process (no separate service, see "Forecasting" below for why), trained on
-synthetic or masked-historical data, with a Model Performance admin page. **Phase 7** (this state of
-the repo) puts those predictions in front of users: at-risk lists for instructors and program heads,
-a forecast drawer with per-student feature contributions, logged interventions, a supportive
-(never-numeric) forecast card for students, and early-warning notifications — see "Forecasting"
-below for the full detail, including the measured recompute-after-save latency.
+synthetic or masked-historical data, with a Model Performance admin page. **Phase 7** puts those
+predictions in front of users: at-risk lists for instructors and program heads, a forecast drawer
+with per-student feature contributions, logged interventions, a supportive (never-numeric) forecast
+card for students, and early-warning notifications — see "Forecasting" below for the full detail,
+including the measured recompute-after-save latency. **Phase 8 part A** (this state of the repo)
+is production hardening, polish, and deployment setup — split settings
+(`config/settings/{base,dev,prod}.py`), an admin Audit Log, standalone error pages, `/healthz`,
+database backups, rotating logs, a demo-seeder production guard, UI polish (toasts, loading states,
+per-page titles), a query-count pass, and deployment docs/configs for both an Ubuntu+Gunicorn+Nginx
+target and a Windows+Waitress+NSSM target — see "Production & deployment" below. Part B (the
+ISO/IEC 25010 UAT questionnaire + analysis script) is not built yet.
 
 **CITCI GradeTrack does not handle student enrollment** — that's the Registrar's own process. It
 only stores each class's official student list ("class list" — see `academics.ClassRosterEntry`),
@@ -447,6 +453,68 @@ in-process inside Django (`forecasting/ml/`: `features.py`/`synthetic.py`/`train
   its documented synthetic-model default — turn it on by hand (System → Settings) to see the student
   forecast card with real content.
 
+## Production & deployment (Phase 8 part A)
+
+**Settings are split**: `config/settings/{base,dev,prod}.py`, selected via the
+`DJANGO_SETTINGS_MODULE` environment variable (`manage.py` defaults to `config.settings.dev`;
+`config/wsgi.py`/`config/asgi.py` default to `config.settings.prod`, since a WSGI/ASGI server is
+inherently a production concern). `prod.py` refuses to start without a real `SECRET_KEY` and a
+non-empty `ALLOWED_HOSTS`, and gates HSTS/`SECURE_SSL_REDIRECT`/secure-cookies behind one
+`ENABLE_HTTPS` env flag — **off by default**, since CITCI may start on a plain-HTTP LAN with no
+certificate yet. `manage.py check --deploy` against `prod.py` is clean with `ENABLE_HTTPS=True`
+and shows exactly 4 expected HSTS/secure-cookie warnings with it `False` — see
+`config/settings/prod.py`'s docstring and `docs/DEPLOYMENT.md`.
+
+**Full deployment guide**: `docs/DEPLOYMENT.md` — step-by-step setup for both an Ubuntu Server +
+Gunicorn + Nginx target (primary) and a Windows Server/PC + Waitress + NSSM target (alternative),
+updating, backups/restore, log locations, rotating `SECRET_KEY`, giving the server a fixed LAN
+hostname, turning on HTTPS, and a post-install checklist. Configs/scripts live under `deploy/`
+(`gunicorn.service`, `nginx.conf`, `.env.prod.example`, `scripts/deploy.sh`, `waitress_serve.py`).
+`requirements-prod.txt` adds gunicorn/waitress/whitenoise on top of `requirements.txt`.
+
+**First run in production**: `python manage.py setup_production` — creates the first admin account
+(interactive prompts, or `--username`/`--email`/`--password` for scripted use), the
+`InstitutionSettings` singleton, and the CITCI Default grading template. Creates **no** demo data.
+Every `seed_*` command (`seed_demo_users`, `seed_citci_academics`, ...) refuses to run under the
+production settings module unless `--force-demo` is explicitly passed (`core/management/guards.py`)
+— seeding fake students/grades onto a live production database by habit would be a serious mistake.
+
+**Backups**: `python manage.py backup_db` (`pg_dump -Fc` to `BACKUP_DIR`, default `./backups`,
+plus a `MEDIA_ROOT` copy, pruning beyond the last `BACKUP_KEEP` of each — default 30) and
+`python manage.py restore_db <file> --yes-i-am-sure` (destructive, no interactive prompt — the
+flag is the confirmation). Scheduling examples (cron, Windows Task Scheduler) in
+`docs/DEPLOYMENT.md`.
+
+**Audit Log** (admin-only, `accounts:audit_log`, System → Settings-adjacent in the sidebar):
+combines the new `accounts.AuditLog` (user create/update/deactivate/reactivate, password reset,
+admin unlock, and — with no `actor` — an axes login-lockout event) with the pre-existing
+`grading.ScoreChangeLog`, `grading.SchemeComponentChangeLog`, `approvals.GradeSheetTransition`, and
+`approvals.GradeCorrection` into one filterable (date range, username, type), Excel-exportable
+list — `accounts/audit.py`'s `collect_audit_rows` normalizes all five sources rather than forcing
+them into one shared table.
+
+**Error pages & health check**: standalone 404/500/CSRF-failure templates
+(`templates/errors/`) that never extend `base.html` and never run a context processor — the whole
+point of the 500 page is to still render when the database (which the auth/sidebar context
+processors all touch) is what broke. `GET /healthz` (unauthenticated) returns 200
+`{"status": "ok", "db": true}` or 503 if the database doesn't answer.
+
+**UI polish**: a global toast system (Django messages + any HTMX response's `HX-Trigger` can pop
+one — see `core.crud.trigger_response`'s `toast=` kwarg), htmx loading-state CSS (`.htmx-request`
+dimming, applied automatically to any in-flight request's triggering element — no per-template
+wiring), a non-HTMX form double-submit guard (`static/js/form-guard.js`), and a per-page browser
+tab `<title>` mirrored from the existing topbar heading.
+
+**Query-count pass**: measured via `CaptureQueriesContext` against the four heaviest pages. Admin
+Grade Sheets went from 33 → 18 queries (a `ClassOffering`/`Section.__str__` N+1 on `sections.all()`,
+fixed with `prefetch_related`); the Program Head At-Risk page went from 176 → 118 (checkpoint
+determination rewritten to one `term__in=` query per tier instead of two round trips, an
+`Intervention` count-per-class loop replaced with one grouped query, and a `.first()`-per-row
+intervention lookup switched to read a `prefetch_related` cache). Class Record/Summary tabs (39
+queries each) and Reports (9) were already reasonable and weren't touched further. Pagination added
+to every previously-unpaginated list page that could plausibly grow (`approvals:index`/
+`approvals:submitted`, both At-Risk pages).
+
 ## Running tests
 
 ```powershell
@@ -579,8 +647,11 @@ chart only), Pillow, openpyxl (class list / bulk-import templates, class record 
 report exports), xhtml2pdf (Grade Sheet / Program Grade Report PDFs — see "Reports & exports"
 above for why xhtml2pdf over WeasyPrint), django-axes (login lockout), scikit-learn/pandas/numpy/
 joblib (forecasting — in-process, no separate ML service; see "Forecasting" above).
-`requirements-dev.txt` adds python-docx, needed only to regenerate the seed data JSON from a
-Registrar .docx. See `CLAUDE.md` for the full rationale and later-phase plans.
+`requirements-dev.txt` adds python-docx (regenerating the seed data JSON from a Registrar .docx)
+and django-debug-toolbar (dev only, guarded by a `try/except ImportError` in
+`config/settings/dev.py` so a fresh checkout without it installed still runs).
+`requirements-prod.txt` adds gunicorn, waitress, and whitenoise — see "Production & deployment"
+above. See `CLAUDE.md` for the full rationale and later-phase plans.
 
 ### Gotcha: custom form widget templates (`FORM_RENDERER`)
 

@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -140,9 +141,12 @@ def submitted_sheets(request):
     if status_filter:
         sheets = sheets.filter(status=status_filter)
 
+    paginator = Paginator(sheets, 20)
+    page = paginator.get_page(request.GET.get("page"))
+
     context = {
         "page_title": "Submitted Grades",
-        "sheets": sheets,
+        "sheets": page,
         "status_filter": status_filter or "",
         "statuses": GradeSheetStatus.choices,
         "active_semester_set": bool(active),
@@ -169,9 +173,12 @@ def index(request):
 
     counts = {status: base_qs.filter(status=status).count() for status, _ in GradeSheetStatus.choices}
 
+    paginator = Paginator(sheets, 20)
+    page = paginator.get_page(request.GET.get("page"))
+
     context = {
         "page_title": "Grade Approvals",
-        "sheets": sheets,
+        "sheets": page,
         "status_filter": status_filter,
         "counts": counts,
         "statuses": GradeSheetStatus.choices,
@@ -290,7 +297,15 @@ def admin_sheets(request):
         sheets = sheets.filter(status=status)
     if instructor_id:
         sheets = sheets.filter(class_offering__instructor_id=instructor_id)
-    sheets = sheets.distinct().select_related("class_offering__subject", "class_offering__instructor").order_by("-created_at")
+    sheets = (
+        sheets.distinct()
+        .select_related("class_offering__subject", "class_offering__instructor")
+        # str(class_offering) walks sections -> program/major for its
+        # label; without this, each row re-queries both per section
+        # (Phase 8 part A query-count pass).
+        .prefetch_related("class_offering__sections__program", "class_offering__sections__major")
+        .order_by("-created_at")
+    )
 
     submitted_or_further = (
         GradeSheet.objects.filter(

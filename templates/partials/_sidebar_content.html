@@ -6,11 +6,12 @@
     <button type="button"
             x-show="!forMobile"
             @click="toggleCollapsed()"
+            :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
         <span x-show="!collapsed">{% sidebar_icon "chevron-left" "w-5 h-5" %}</span>
         <span x-show="collapsed">{% sidebar_icon "menu" "w-5 h-5" %}</span>
     </button>
-    <button type="button" x-show="forMobile" @click="mobileOpen = false"
+    <button type="button" x-show="forMobile" @click="mobileOpen = false" aria-label="Close menu"
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-brand-primary-200 hover:bg-brand-primary-700 hover:text-white transition">
         {% sidebar_icon "chevron-left" "w-5 h-5" %}
     </button>

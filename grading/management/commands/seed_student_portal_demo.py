@@ -31,6 +31,7 @@ from academics.models import AcademicYear, ClassOffering, ClassRosterEntry, Sect
 from accounts.models import User
 from approvals.models import GradeSheet, GradeSheetStatus
 from approvals.services import approve_grade_sheet, lock_term, release_grade_sheet, submit_grade_sheet
+from core.management.guards import add_force_demo_argument, ensure_demo_allowed
 from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme
 from grading.services import save_score
 
@@ -40,7 +41,11 @@ PAST_ACADEMIC_YEAR_START = 2025
 class Command(BaseCommand):
     help = "Fills in the Phase 5 demo states the real seed data doesn't already cover for the `student` account. Idempotent."
 
+    def add_arguments(self, parser):
+        add_force_demo_argument(parser)
+
     def handle(self, *args, **options):
+        ensure_demo_allowed(options.get("force_demo"))
         student = User.objects.filter(username="student").first()
         if student is None:
             self.stdout.write(self.style.WARNING("No demo `student` account — run seed_demo_users first."))

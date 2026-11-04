@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from accounts.models import User
+from core.management.guards import add_force_demo_argument, ensure_demo_allowed
 
 DEMO_PASSWORD = "Demo@1234"
 
@@ -45,7 +46,11 @@ DEMO_USERS = [
 class Command(BaseCommand):
     help = "Creates (or updates) one demo account per role, all with password Demo@1234."
 
+    def add_arguments(self, parser):
+        add_force_demo_argument(parser)
+
     def handle(self, *args, **options):
+        ensure_demo_allowed(options.get("force_demo"))
         for data in DEMO_USERS:
             username = data["username"]
             user, created = User.objects.update_or_create(

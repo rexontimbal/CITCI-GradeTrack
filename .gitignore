@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.prod
 venv/
 __pycache__/
 *.pyc
@@ -10,6 +11,8 @@ db.sqlite3
 /static/css/tailwind.css
 /media/
 *.log
+/logs/
+/backups/
 
 # Tailwind CLI binary (downloaded automatically into this dir; source.css inside it is tracked)
 .django_tailwind_cli/tailwindcss*

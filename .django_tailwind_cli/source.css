@@ -194,3 +194,47 @@
 .grid-scroll.scrolled-x .sticky-shadow {
   box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.25);
 }
+
+/*
+ * HTMX loading state (Phase 8 part A polish pass) — htmx adds the
+ * "htmx-request" class to the triggering element itself (or to an
+ * explicit hx-indicator target) for the duration of any in-flight
+ * request, with no per-template wiring needed. Dimming + disabling
+ * pointer-events on it globally gives every existing hx-get/hx-post
+ * button/link a "busy" state and blocks double-submits, without having
+ * to touch every template individually.
+ */
+.htmx-request,
+.htmx-request * {
+  cursor: progress;
+}
+button.htmx-request,
+a.htmx-request,
+input[type="submit"].htmx-request {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Explicit spinner for a template that wants to show one next to an
+ * hx-indicator target (e.g. a "Saving…" label) — hidden by default,
+ * htmx toggles the "htmx-indicator" visibility itself via opacity. */
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.htmx-request.htmx-indicator,
+.htmx-request .htmx-indicator {
+  opacity: 1;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: spin 600ms linear infinite;
+}

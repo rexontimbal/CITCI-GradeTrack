@@ -158,21 +158,12 @@
                 </button>
             </div>
             <div class="space-y-3 text-sm leading-relaxed text-slate-600">
-                <p><em>Placeholder text — to be reviewed and finalized by the CITCI Registrar/Data Protection Officer.</em></p>
-                <p>
-                    CITCI GradeTrack collects and processes your personal and academic information
-                    (name, ID number, grades, and related academic records) solely to support
-                    grading, academic performance monitoring, and early-warning forecasting for
-                    Candelaria Institute of Technology of Cabadbaran, Inc.
-                </p>
-                <p>
-                    Your data is stored securely, accessed only by authorized personnel in line
-                    with their role, and is not shared with third parties except as required by
-                    law. In accordance with the Data Privacy Act of 2012 (RA 10173), you have the
-                    right to be informed, to access, and to request correction of your personal
-                    data held by the institution.
-                </p>
-                <p>For questions or concerns, please contact the College Department Registrar.</p>
+                {% for paragraph in institution_settings.privacy_notice_text.splitlines %}
+                {% if paragraph %}<p>{{ paragraph }}</p>{% endif %}
+                {% endfor %}
+                {% if institution_settings.data_privacy_officer_contact %}
+                <p>For questions or concerns, please contact: {{ institution_settings.data_privacy_officer_contact }}.</p>
+                {% endif %}
             </div>
         </div>
     </div>

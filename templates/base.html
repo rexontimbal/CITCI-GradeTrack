@@ -4,10 +4,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CITCI GradeTrack</title>
+    <title>{% block html_title %}CITCI GradeTrack{% endblock %}</title>
+    <link rel="icon" href="{% static 'img/citci-seal-256.png' %}">
     {% tailwind_css %}
+    <script>
+        /* Global toast store (Phase 8 part A) — must run before Alpine's
+           deferred script evaluates x-data="toasts()" below, so it's a
+           plain synchronous inline script, not static/js/*.js (deferred). */
+        function toasts() {
+            return {
+                items: [],
+                push(detail) {
+                    if (!detail || !detail.message) return;
+                    const id = Date.now() + Math.random();
+                    this.items.push({ id, message: detail.message, level: detail.level || "info" });
+                    setTimeout(() => this.dismiss(id), 5000);
+                },
+                dismiss(id) {
+                    this.items = this.items.filter((t) => t.id !== id);
+                },
+            };
+        }
+    </script>
     <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
     <script src="{% static 'js/htmx-csrf.js' %}" defer></script>
+    <script src="{% static 'js/form-guard.js' %}" defer></script>
     <script src="{% static 'js/searchable-select.js' %}" defer></script>
     <script src="{% static 'js/grading-grid.js' %}" defer></script>
     <script src="{% static 'js/grading-components.js' %}" defer></script>
@@ -26,6 +47,34 @@
           }
       }"
       @keydown.escape.window="modalOpen = false">
+
+{% comment %}
+Global toast stack (Phase 8 part A) — fed by Django messages on a full page
+load (partials/_messages.html dispatches one "toast" event per message) and
+by any HTMX response whose HX-Trigger JSON includes a "toast" key (see
+core.crud.trigger_response). aria-live announces new toasts to screen
+readers without moving focus.
+{% endcomment %}
+<div x-data="toasts()" @toast.window="push($event.detail)"
+     aria-live="polite" aria-atomic="true"
+     class="pointer-events-none fixed inset-x-0 top-4 z-[60] flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6">
+    <template x-for="t in items" :key="t.id">
+        <div x-show="true" x-transition
+             class="pointer-events-auto w-full max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg"
+             :class="{
+                'border-green-200 bg-green-50 text-green-700': t.level === 'success',
+                'border-red-200 bg-red-50 text-red-700': t.level === 'error',
+                'border-amber-200 bg-amber-50 text-amber-800': t.level === 'warning',
+                'border-brand-primary-200 bg-brand-primary-50 text-brand-primary-800': t.level === 'info'
+             }">
+            <div class="flex items-start justify-between gap-3">
+                <span x-text="t.message"></span>
+                <button type="button" @click="dismiss(t.id)" aria-label="Dismiss notification" class="shrink-0 text-current opacity-60 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-current rounded">&times;</button>
+            </div>
+        </div>
+    </template>
+</div>
+
 {% if user.is_authenticated %}
 <div class="min-h-full md:flex">
     {% include "partials/_sidebar.html" %}
@@ -33,11 +82,11 @@
     <div class="flex min-h-screen flex-1 flex-col">
         <header class="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 md:px-6">
             <div class="flex items-center gap-3">
-                <button type="button" @click="mobileOpen = true" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 md:hidden">
+                <button type="button" @click="mobileOpen = true" aria-label="Open menu" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 md:hidden">
                     {% sidebar_icon "menu" "w-5 h-5" %}
                 </button>
                 <div>
-                    <h1 class="text-base font-semibold leading-tight text-gray-900 md:text-lg">{% block page_title %}Dashboard{% endblock %}</h1>
+                    <h1 id="page-heading" class="text-base font-semibold leading-tight text-gray-900 md:text-lg">{% block page_title %}Dashboard{% endblock %}</h1>
                     {% if active_semester %}
                     <p class="text-xs leading-tight text-gray-500">{{ active_semester }}</p>
                     {% else %}
@@ -70,5 +119,19 @@
 {% else %}
     {% block guest_content %}{% endblock %}
 {% endif %}
+<script>
+    /* Per-page document.title (Phase 8 part A -- "Page -- CITCI GradeTrack"
+       on every page) without adding a second, differently-named block to
+       every single page template: the topbar h1#page-heading already
+       carries the right per-page text everywhere, so this just mirrors it
+       once the DOM exists. Guest pages (login, locked out) set their own
+       title block instead, since they have no #page-heading. */
+    document.addEventListener("DOMContentLoaded", () => {
+        const heading = document.getElementById("page-heading");
+        if (heading && heading.textContent.trim()) {
+            document.title = heading.textContent.trim() + " — CITCI GradeTrack";
+        }
+    });
+</script>
 </body>
 </html>

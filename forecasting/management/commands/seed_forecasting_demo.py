@@ -22,6 +22,7 @@ from django.core.management.base import BaseCommand
 
 from academics.models import ClassOffering, ClassRosterEntry
 from accounts.models import User
+from core.management.guards import add_force_demo_argument, ensure_demo_allowed
 from forecasting.ml.train import train_model
 from forecasting.models import Checkpoint, Intervention, InterventionType, MlModelVersion, TrainingSource
 from forecasting.services import recompute_and_notify, risk_level
@@ -30,7 +31,11 @@ from forecasting.services import recompute_and_notify, risk_level
 class Command(BaseCommand):
     help = "Fills in demo forecasting content (active models, a mix of risk levels, logged interventions). Idempotent."
 
+    def add_arguments(self, parser):
+        add_force_demo_argument(parser)
+
     def handle(self, *args, **options):
+        ensure_demo_allowed(options.get("force_demo"))
         self._ensure_active_models()
         predictions = self._recompute_demo_classes()
         self._log_demo_interventions(predictions)

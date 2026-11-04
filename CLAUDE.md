@@ -52,6 +52,21 @@
 > `student_forecast_card`, `InstitutionSettings.show_forecasts_to_students`, and episode-based
 > early-warning notification de-dup. See the Phase 7 bullet under "Build Phases" for the full list
 > and the judgment calls made along the way.
+>
+> **2026-11-04 (later still):** **Phase 8 part A (Production hardening, polish, deployment setup)
+> is done — part B (the ISO/IEC 25010 UAT questionnaire + analysis script) is not built yet, by
+> design (a separate, later task).** Settings are now split into `config/settings/{base,dev,prod}.py`
+> (`DJANGO_SETTINGS_MODULE` selects one — dev.py by default); prod.py refuses to start without a
+> real `SECRET_KEY`/`ALLOWED_HOSTS` and gates HSTS/secure-cookies behind one `ENABLE_HTTPS` flag
+> (off by default — CITCI may start on plain LAN HTTP). New: an admin Audit Log page combining
+> account changes + every existing domain change-log table, standalone 404/500/CSRF-failure pages
+> that don't depend on the database, `/healthz`, `backup_db`/`restore_db` management commands,
+> rotating file logging in prod, a global toast system + htmx loading-state CSS, a `setup_production`
+> first-run command, and every demo seeder now refuses to run under the production settings module
+> without `--force-demo`. Deployment docs/configs for both an Ubuntu+Gunicorn+Nginx target and a
+> Windows+Waitress+NSSM target live under `deploy/` and `docs/DEPLOYMENT.md`. See the Phase 8 part A
+> bullet under "Build Phases" for the full list, the measured query-count improvements, and the
+> judgment calls made along the way.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -97,6 +112,15 @@ student assignment submission, online quizzes, or login-activity tracking.
   Celery/Redis/django-rq. Recomputed synchronously after score saves (Phase 7) plus a `run_forecasts`
   management command schedulable via Windows Task Scheduler/cron.
 - Local dev: PostgreSQL running locally; see `README.md` for Windows setup
+- Settings (Phase 8 part A): split into `config/settings/{base,dev,prod}.py` — `DJANGO_SETTINGS_MODULE`
+  selects one (`manage.py`/dev default to `config.settings.dev`; `wsgi.py`/`asgi.py` default to
+  `config.settings.prod`). `prod.py` refuses to start without a real `SECRET_KEY`/`ALLOWED_HOSTS`,
+  gates HSTS/secure-cookies behind one `ENABLE_HTTPS` env flag, and adds rotating file logging. See
+  section 9 and `docs/DEPLOYMENT.md`.
+- Production WSGI/deployment (Phase 8 part A): Gunicorn (Ubuntu + systemd + Nginx, the primary
+  target) or Waitress (Windows + NSSM, the alternative), WhiteNoise (Windows target only — Nginx
+  serves static/ directly on the primary target). `requirements-prod.txt` adds these on top of
+  `requirements.txt`. See `deploy/` and `docs/DEPLOYMENT.md`.
 
 **Forecasting (Phase 6, built in-process — not a separate service)**
 - scikit-learn, pandas, numpy, joblib — all **in the `forecasting` app**, same process as the rest
@@ -441,8 +465,15 @@ record needed neither — see section 4):
   (nullable), outcome (`InterventionOutcome`: PENDING/IMPROVED/NO_CHANGE, default PENDING) — logged
   from the forecast drawer, visible to instructor + program head only, never to students.
 
-**Still to add:**
-- `accounts.AuditLog` (user, action, auditable model/id, old_values json, new_values json, ip, created_at)
+**Built (`accounts`, Phase 8 part A):**
+- `accounts.AuditLog` — actor FK User (SET_NULL, nullable — null for a system-originated event like
+  an axes lockout), action (`Action`: USER_CREATED/USER_UPDATED/USER_DEACTIVATED/USER_REACTIVATED/
+  PASSWORD_RESET/ACCOUNT_UNLOCKED/ACCOUNT_LOCKED_OUT), target_user FK User (SET_NULL, nullable),
+  details (JSONField — small non-personal context only, e.g. `{"role": "INSTRUCTOR"}` or
+  `{"ip_address": "..."}`, never a name/ID number/password). Written via `accounts.audit.log_audit`
+  from `accounts/views.py`'s user-management actions and from an `axes.signals.user_locked_out`
+  receiver (`accounts/signals.py`). Combined with the pre-existing domain change-log tables into
+  the admin Audit Log page — see section 9.
 
 Produce `docs/ERD.md` as a Mermaid `erDiagram` that matches the final migrations exactly, once these exist.
 
@@ -710,7 +741,12 @@ guard, it just also redirects to privacy consent if that's still outstanding), p
 fields; the only one the user can edit themselves is email — name/ID/role changes are admin-only),
 help (placeholder), notifications bell (built, Phase 4 part 1 — unread badge + dropdown, HTMX-
 polled every 60s, see section 5), responsive sidebar/topbar layout, Data Privacy notice/consent
-shown on first login (RA 10173), styled 403 page.
+shown on first login (RA 10173) — **built, Phase 8 part A:** both the login page's modal and the
+forced first-login consent page now render `InstitutionSettings.privacy_notice_text`/
+`data_privacy_officer_contact` (admin-editable, System → Settings) instead of two separately
+hardcoded copies of the same text — styled 403/404/500/CSRF-failure pages (the last three built
+Phase 8 part A, standalone templates, see section 9), a global toast notification system (Phase 8
+part A, see section 9), per-page browser tab `<title>`, favicon.
 
 Layout specifics worth preserving: the sidebar is flush against the left edge (no outer margin/
 rounded corners/shadow — only inner elements like the active-item tile and popover are rounded);
@@ -879,17 +915,145 @@ sheet has none) for reliable re-import matching.
 
 - Django's password hashing (PBKDF2 default), CSRF, session regeneration on login, login lockout
   after 5 failed attempts (django-axes, by username, 15 min cooloff — Phase 2.2), 30-minute sliding
-  session expiry + expire-on-browser-close (Phase 2.2), HTTPS-ready config for production
+  session expiry + expire-on-browser-close (Phase 2.2), HTTPS-ready config for production (built,
+  Phase 8 part A — `config/settings/prod.py`, see below)
 - RBAC enforced server-side on every route; IDOR tests as data ownership exists
-- Audit log for: logins, user changes, score changes, grade status transitions, grade corrections,
-  model training/activation (added alongside the features they audit)
+- **Audit log (built, Phase 8 part A):** `accounts.AuditLog` (user create/update/deactivate/
+  reactivate, password reset, admin unlock, login-lockout — the last written with no `actor`, via
+  an `axes.signals.user_locked_out` receiver in `accounts/signals.py`) combined with the existing
+  per-domain change logs (`grading.ScoreChangeLog`, `grading.SchemeComponentChangeLog`,
+  `approvals.GradeSheetTransition`, `approvals.GradeCorrection`) into one admin-only, filterable,
+  Excel-exportable page (`accounts:audit_log`, `accounts/audit.py`'s `collect_audit_rows` —
+  normalizes all five sources into one sorted list rather than a shared table, since each source
+  already exists with its own FKs into its own domain). Model-training/activation events are
+  implicit in `forecasting.MlModelVersion.trained_at`/`is_active` — not duplicated into AuditLog.
+- **Production settings split (built, Phase 8 part A):** `config/settings/{base,dev,prod}.py` —
+  `DJANGO_SETTINGS_MODULE` picks one (`manage.py` defaults to `config.settings.dev`; `wsgi.py`/
+  `asgi.py` default to `config.settings.prod`, since a WSGI/ASGI server is inherently a production
+  concern). `prod.py`: `DEBUG=False`; refuses to start (`ImproperlyConfigured`) on a missing/
+  insecure `SECRET_KEY` or empty `ALLOWED_HOSTS`; `CSRF_TRUSTED_ORIGINS` from env;
+  `X_FRAME_OPTIONS=DENY`/`SECURE_CONTENT_TYPE_NOSNIFF`/`SECURE_REFERRER_POLICY` always on (in
+  `base.py`, so dev gets them too); HSTS/`SECURE_SSL_REDIRECT`/`SESSION_COOKIE_SECURE`/
+  `CSRF_COOKIE_SECURE` all gated behind one `ENABLE_HTTPS` env flag (**off by default** — CITCI may
+  start on a plain-HTTP LAN with no certificate yet; turning it on without an actual TLS front end
+  makes the site unreachable, see `docs/DEPLOYMENT.md` "Turning on HTTPS"). `manage.py check
+  --deploy` against `prod.py` with `ENABLE_HTTPS=False` shows exactly 4 warnings
+  (W004/W008/W012/W016, all HSTS/secure-cookie related) — these are the **intentional, documented**
+  exceptions for a plain-LAN-HTTP deployment, not oversights; with `ENABLE_HTTPS=True` (and a real
+  cert) the same check is clean.
+- **Error pages (built, Phase 8 part A):** standalone, brand-colored 404/500/CSRF-failure
+  templates under `templates/errors/` (`accounts.views.not_found_view`/`server_error_view`/
+  `csrf_failure_view`) that do **not** `{% extends "base.html" %}` and are rendered via
+  `loader.render_to_string(name)` with no `request` argument, so they never run the
+  `auth`/`accounts.context_processors.sidebar`/`academics.context_processors.active_semester`
+  context processors — all three touch the database, and the whole point of a 500 page is to still
+  render when the database is the thing that broke. 403 (`accounts/403.html`, pre-existing) is
+  unchanged — it only ever fires post-authentication, so its DB dependency is lower-risk.
+  `CSRF_FAILURE_VIEW` wired to `csrf_failure_view` for an expired-session-friendly message instead
+  of Django's default raw CSRF error page.
+- **Health check (built, Phase 8 part A):** unauthenticated `GET /healthz` (`core.views.healthz`,
+  `core/tests.py`) — `SELECT 1`, 200 `{"status": "ok", "db": true}` or 503
+  `{"status": "error", "db": false}` on `OperationalError`. For the server admin / an external
+  monitor, not for app logic.
+- **Backups (built, Phase 8 part A):** `python manage.py backup_db`
+  (`core/management/commands/backup_db.py`) — `pg_dump -Fc` to `BACKUP_DIR` (env, default
+  `./backups`) with a timestamped filename, plus a timestamped `MEDIA_ROOT` copy, pruning beyond
+  the last `BACKUP_KEEP` (env, default 30) of each; `subprocess.run` is wrapped in an overridable
+  `Command._run` specifically so tests can mock it without a real `pg_dump`. `restore_db` runs
+  `pg_restore --clean --if-exists` and refuses without an explicit `--yes-i-am-sure` flag (no
+  interactive prompt — this is meant to be scriptable, the flag itself is the confirmation).
+  Scheduling examples (cron + Windows Task Scheduler) in `docs/DEPLOYMENT.md`.
+- **Logging (built, Phase 8 part A):** rotating file handlers in `prod.py` only (dev stays
+  console-only) — `logs/app.log` (INFO+, 10MB × 10 files) and `logs/error.log` (WARNING+ only, so
+  routine request noise doesn't drown out real errors), dir overridable via `LOG_DIR`. Reviewed
+  every existing logger call (`forecasting/services.py`, the only app-level logger in the codebase)
+  for personal data — it only ever logs a `roster_entry.pk`, never a name/ID number/score.
+- **Demo-seeder guard (built, Phase 8 part A):** every `seed_*` management command
+  (`seed_demo_users`, `seed_citci_academics` and the three it chains to internally) refuses to run
+  under the production settings module unless `--force-demo` is passed (`core/management/guards.py`'s
+  `ensure_demo_allowed`/`add_force_demo_argument`) — seeding fake students/grades onto a live
+  production database by habit (running the usual setup command) would be a serious mistake.
+  Deliberately checks `settings.SETTINGS_MODULE.endswith(".prod")`, not `settings.DEBUG` — Django's
+  test runner always forces `DEBUG=False` for every test regardless of settings module (so test
+  results never depend on dev-only behavior), which would make a DEBUG-based guard fire on every
+  test that calls a seed command; this was caught by `academics.tests.SeedCitciAcademicsIdempotencyTests`
+  failing when this guard first shipped, and fixed the same session.
+  `setup_production` (`accounts/management/commands/setup_production.py`) is the real first-run
+  command instead: creates the first admin (interactive by default, `--username`/`--email`/
+  `--password` for scripted/test use), `InstitutionSettings`, and the CITCI Default grading
+  template (`grading.services.ensure_default_grading_template`, extracted so both this command and
+  `seed_grading_demo` — which additionally needs per-item max-score lists for its fake data — share
+  the template-creation logic rather than duplicating it) — deliberately **no** demo data.
+- **UI polish (built, Phase 8 part A):** a global toast system (`templates/base.html`'s
+  `x-data="toasts()"` stack, `aria-live="polite"`) fed by Django messages
+  (`templates/partials/_messages.html`, one `toast` CustomEvent per message) and by any HTMX
+  response whose `HX-Trigger` JSON includes a `"toast": {"message": ..., "level": ...}` key —
+  `core.crud.trigger_response` grew an optional `toast=`/`toast_level=` kwarg, and the shared
+  `EntityFormView`/`EntityDeleteView`/`ToggleActiveView` (used by every admin academic-setup CRUD
+  page) plus several explicit `trigger_response` call sites (Users, Grading Templates, Class Lists,
+  Semester "Set active") now pass one — broad coverage from a few call sites rather than touching
+  every view in the app. HTMX loading state is global CSS, not per-template wiring: htmx already
+  adds an `htmx-request` class to the triggering element (or an explicit `hx-indicator` target) for
+  the duration of any request with zero template changes needed, so
+  `.django_tailwind_cli/source.css` just styles that class (dimmed + `pointer-events: none`) plus a
+  `.spinner`/`.htmx-indicator` utility for a template that wants an explicit "Saving…" indicator.
+  Non-HTMX `<form>` submits get the same double-submit protection via a tiny global listener
+  (`static/js/form-guard.js`) that disables submit buttons on `submit`, skipping any form that
+  already carries `hx-post`/`hx-get` (htmx handles its own). Per-page `<title>` ("Page — CITCI
+  GradeTrack") is the existing `h1#page-heading` topbar text mirrored into `document.title` by a
+  small inline script in `base.html` — not a second `{% block %}`, since Django disallows the same
+  block name twice in one template and this avoids needing a differently-named block added to every
+  page template; the two guest-only pages (login, locked-out) set `{% block html_title %}` directly
+  since they have no `#page-heading`. Favicon: `static/img/citci-seal-256.png` via `<link rel="icon">`.
 - Response time < 2 s for normal pages with seeded data of 500 users; `select_related`/
-  `prefetch_related`, add indexes, paginate lists
-- Deployable on an institution-controlled server (on-prem or institution-managed VPS); write
-  `docs/DEPLOYMENT.md` when a deployment target is chosen
+  `prefetch_related`, add indexes, paginate lists. **Query-count pass, Phase 8 part A** (measured
+  via `CaptureQueriesContext` against the four heaviest pages, instructor/program-head accounts,
+  the largest seeded class): Class Record tab 39 queries, Summary tab 39, Admin Grade Sheets
+  33 → **18** (fixed a `ClassOffering.__str__`/`Section.__str__` N+1 — iterating `sections.all()`
+  per sheet with no prefetch — via `prefetch_related("class_offering__sections__program",
+  "class_offering__sections__major")`), Program Head At-Risk 176 → **118** (two fixes:
+  `forecasting.services.current_checkpoint_for_class` rewritten to resolve its "term ≤ checkpoint"
+  cutoff to a list of term values in Python — no query — and check score existence via one
+  `term__in=` query per tier instead of materializing `AssessmentItem` objects first and querying
+  `Score` separately; `_at_risk_program_head`'s per-class `Intervention.objects....count()` replaced
+  with one grouped `.values(...).annotate(Count(...))` query; `_class_at_risk_rows`'s
+  `entry.interventions.first()` per AT_RISK/WATCH row now reads a `prefetch_related` cache via
+  `next(iter(entry.interventions.all()), None)` instead of re-querying). Further reduction on the
+  At-Risk page (e.g. batching checkpoint-determination across all of a program head's classes in one
+  query) would need a larger refactor of `current_checkpoint_for_class`'s per-class signature — not
+  attempted this pass. Pagination added to every list page that had none and could plausibly grow
+  past one screen: `approvals:index`/`approvals:submitted` (Django `Paginator`, 20/page,
+  HTMX-aware "Previous"/"Next" matching the existing `core.crud` pattern) and both At-Risk pages
+  (25/page; the Excel export still exports every row, unpaginated, by design). Admin academic-setup
+  CRUD pages were already paginated (`core.crud.EntityListView`, 20/page) — untouched.
+  `django-debug-toolbar` wired in `config/settings/dev.py` only (guarded by `try/except ImportError`
+  so a fresh checkout without `requirements-dev.txt` installed still runs), never loads in prod.
+- Deployable on an institution-controlled server (on-prem or institution-managed VPS) — **built,
+  Phase 8 part A**: `docs/DEPLOYMENT.md` (two targets — Ubuntu/Gunicorn/Nginx primary,
+  Windows/Waitress/NSSM alternative — first-time setup, updating, backups/restore, log locations,
+  SECRET_KEY rotation, giving the server a fixed LAN hostname, HTTPS setup, and a post-install
+  checklist) + `deploy/` (`gunicorn.service`, `nginx.conf`, `.env.prod.example`,
+  `scripts/deploy.sh`, `waitress_serve.py`) + `requirements-prod.txt` (gunicorn, waitress,
+  whitenoise — Windows needs `waitress_serve.py` to insert the project root onto `sys.path`
+  explicitly, since NSSM invokes it as a script file rather than a module, which otherwise puts only
+  its own `deploy/` directory on the path). Local prod-mode smoke test passed: `DEBUG=False`,
+  `collectstatic` (found and fixed a latent bug along the way — the vendored
+  `chart.umd.min.js`'s trailing `//# sourceMappingURL=chart.umd.js.map` comment pointed at a
+  `.map` file that was never vendored, which `ManifestStaticFilesStorage`/WhiteNoise's manifest
+  storage both reject by default since they validate every referenced asset exists — fixed by
+  stripping that comment line, a pure devtools convenience reference with no runtime effect),
+  Waitress + WhiteNoise serving manifest-hashed static files correctly, security headers present
+  (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`), and
+  the custom 404 page rendering (confirmed only reachable with `DEBUG=False` — Django's own
+  technical debug page takes over otherwise, by design).
 - Accessible: labels on inputs, sufficient color contrast (WCAG AA verified for the brand palette),
-  works at 360 px width
-- All dates/times in `Asia/Manila` (set in `config/settings.py`)
+  works at 360 px width. **Phase 8 part A pass** (global chrome, not an exhaustive per-template
+  audit — see the note under "Build Phases"): `aria-live="polite"` on the toast stack; `aria-label`
+  added to every icon-only button in the shared chrome that had none (sidebar collapse/expand
+  toggle, mobile menu open/close, notification bell); Escape-to-close on the shared modal
+  (pre-existing) and the mobile sidebar drawer/user-menu popover (pre-existing,
+  `@click.outside`/`@keydown.escape.window`) already cover keyboard reachability for those.
+- All dates/times in `Asia/Manila` (`config/settings/base.py`).
 
 ---
 
@@ -1081,7 +1245,29 @@ until the previous one passes its tests.
   "nudge one student" fallback. `show_forecasts_to_students` was deliberately left off by the
   seeder, matching its documented synthetic-model default, rather than force-enabled for demo
   purposes.
-- **Phase 8 — Testing & evaluation (O5):**
+- **Phase 8 part A — Production hardening, polish, and deployment setup (done):** settings split
+  into `config/settings/{base,dev,prod}.py` with hard SECRET_KEY/ALLOWED_HOSTS checks and an
+  `ENABLE_HTTPS`-gated security posture (see section 9 for the full list — 4 intentional
+  `check --deploy` warnings with HTTPS off, clean with it on); an admin Audit Log page combining
+  `accounts.AuditLog` (new — account changes + axes lockouts) with every existing domain
+  change-log table; standalone, DB-independent 404/500/CSRF-failure pages; `/healthz`;
+  `backup_db`/`restore_db` management commands (subprocess mocked in tests); rotating file logging
+  in prod only; every demo seeder gated behind `DEBUG` + `--force-demo`
+  (`core/management/guards.py`) and a new `setup_production` first-run command that creates a real
+  admin + Institution Settings + the CITCI Default template with **no** demo data; a global toast
+  system + htmx loading-state CSS + non-htmx double-submit guard; per-page `<title>` via the
+  existing topbar heading (no new per-template block); a query-count pass that took Admin Grade
+  Sheets from 33→18 queries and the Program Head At-Risk page from 176→118 (two N+1 fixes — see
+  section 9 for both); pagination added to every previously-unpaginated list page that could grow;
+  `docs/DEPLOYMENT.md` + `deploy/` (Gunicorn/Nginx/systemd for Ubuntu, Waitress/NSSM for Windows,
+  both smoke-tested locally — the Waitress/WhiteNoise test caught and fixed a latent vendored-asset
+  bug that would have broken `collectstatic` on either target, see section 9). Deliberately not
+  attempted this pass: an exhaustive per-template accessibility audit (did the shared chrome —
+  toast `aria-live`, icon-button `aria-label`s — rather than every form in every app) and further
+  At-Risk-page query reduction (would need batching `current_checkpoint_for_class` across classes,
+  a larger refactor of its per-class signature). **Part B (ISO/IEC 25010 UAT questionnaire +
+  analysis script) is the next phase, not built yet** — see below.
+- **Phase 8 part B — Testing & evaluation (O5):**
   - Feature/unit tests for all modules; target ≥ 80% coverage of services and access-control logic
   - Seeder: 1 admin, 2 program heads, 15 instructors, 450 students, current + 2 past terms with
     realistic scores

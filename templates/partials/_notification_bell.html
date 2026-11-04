@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="relative">
-    <button type="button" @click="notifOpen = !notifOpen" title="Notifications"
+    <button type="button" @click="notifOpen = !notifOpen" title="Notifications" aria-label="Notifications{% if unread_count %} ({{ unread_count }} unread){% endif %}"
             class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
         {% sidebar_icon "bell" "w-5 h-5" %}
         {% if unread_count %}

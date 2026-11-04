@@ -38,6 +38,31 @@ class InstitutionSettings(TimeStampedModel):
         "forecast card/section at all (never probability or the words \"at risk\" either way).",
     )
 
+    privacy_notice_text = models.TextField(
+        blank=True,
+        default=(
+            "CITCI GradeTrack collects and processes your personal and academic information "
+            "(name, ID number, grades, and related academic records) solely to support grading, "
+            "academic performance monitoring, and early-warning forecasting for Candelaria "
+            "Institute of Technology of Cabadbaran, Inc.\n\n"
+            "Your data is stored securely, accessed only by authorized personnel in line with "
+            "their role, and is not shared with third parties except as required by law. In "
+            "accordance with the Data Privacy Act of 2012 (RA 10173), you have the right to be "
+            "informed, to access, and to request correction of your personal data held by the "
+            "institution."
+        ),
+        help_text="Shown on both the login page's Data Privacy Notice modal and the forced "
+        "first-login consent page — one editable source for both, System → Settings. "
+        "Paragraphs separated by a blank line.",
+    )
+    data_privacy_officer_contact = models.CharField(
+        max_length=200,
+        blank=True,
+        default="College Department Registrar",
+        help_text="Who/how to contact about data privacy concerns — shown at the end of the "
+        "Data Privacy Notice.",
+    )
+
     class Meta:
         verbose_name = "Institution Settings"
         verbose_name_plural = "Institution Settings"

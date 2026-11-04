@@ -106,6 +106,19 @@
         </tbody>
     </table>
 </div>
+{% if rows.paginator.num_pages > 1 %}
+<div class="mt-3 flex items-center justify-between text-sm text-gray-600">
+    <p>Page {{ rows.number }} of {{ rows.paginator.num_pages }} ({{ rows.paginator.count }} total)</p>
+    <div class="flex gap-2">
+        {% if rows.has_previous %}
+        <a href="?class={{ class_filter }}&level={{ level_filter }}&page={{ rows.previous_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if rows.has_next %}
+        <a href="?class={{ class_filter }}&level={{ level_filter }}&page={{ rows.next_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% else %}
 {% include "partials/_empty_state.html" with icon="alert" title="No at-risk students right now" description="Students flagged At Risk or Watch across your program(s) will show up here." %}
 {% endif %}

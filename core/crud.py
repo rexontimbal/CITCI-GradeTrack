@@ -23,9 +23,18 @@ from django.views import View
 from .htmx import is_htmx
 
 
-def trigger_response(event_name):
+def trigger_response(event_name, toast=None, toast_level="success"):
+    """204 response that both tells the table to refresh (event_name),
+    closes the shared modal (modal-success), and — if `toast` is given —
+    pops a toast via the global toast listener in base.html. htmx fires a
+    DOM CustomEvent per top-level key in HX-Trigger's JSON, so the "toast"
+    key here reaches the same `@toast.window` handler used by Django
+    messages (templates/partials/_messages.html)."""
+    triggers = {event_name: True, "modal-success": True}
+    if toast:
+        triggers["toast"] = {"message": toast, "level": toast_level}
     response = HttpResponse(status=204)
-    response["HX-Trigger"] = json.dumps({event_name: True, "modal-success": True})
+    response["HX-Trigger"] = json.dumps(triggers)
     return response
 
 
@@ -117,7 +126,8 @@ class EntityFormView(View):
         form = self.form_class(request.POST, instance=obj)
         if form.is_valid():
             form.save()
-            return trigger_response(self.refresh_event)
+            verb = "updated" if obj else "created"
+            return trigger_response(self.refresh_event, toast=f"{self.model._meta.verbose_name.capitalize()} {verb}.")
         return render(request, self.form_template, self.get_context(request, form, obj))
 
 
@@ -155,11 +165,12 @@ class EntityDeleteView(View):
 
     def post(self, request, pk):
         obj = get_object_or_404(self.model, pk=pk)
+        label = self.get_label(obj)
         try:
             obj.delete()
         except ProtectedError:
             return render(request, self.confirm_template, self.get_context(request, obj, protect_error=True))
-        return trigger_response(self.refresh_event)
+        return trigger_response(self.refresh_event, toast=f"{label} deleted.")
 
 
 class ToggleActiveView(View):
@@ -173,4 +184,5 @@ class ToggleActiveView(View):
         obj = get_object_or_404(self.model, pk=pk)
         obj.is_active = not obj.is_active
         obj.save(update_fields=["is_active"])
-        return trigger_response(self.refresh_event)
+        verb = "activated" if obj.is_active else "deactivated"
+        return trigger_response(self.refresh_event, toast=f"{obj} {verb}.")

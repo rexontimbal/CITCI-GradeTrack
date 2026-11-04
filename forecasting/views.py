@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -174,8 +175,16 @@ def _class_at_risk_rows(class_offering, level_filter=None):
     if checkpoint is None:
         return []
 
+    # prefetch_related + Prefetch(..., to_attr=) so entry.interventions.first()
+    # below reads from memory instead of issuing one query per AT_RISK/
+    # WATCH row (Phase 8 part A query-count pass).
+    from django.db.models import Prefetch
+
     roster_entries = {
-        e.id: e for e in class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).select_related("student")
+        e.id: e
+        for e in class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE)
+        .select_related("student")
+        .prefetch_related(Prefetch("interventions", queryset=Intervention.objects.order_by("-date", "-created_at")))
     }
     rows = []
     for entry_id, forecast in forecasts.items():
@@ -198,7 +207,9 @@ def _class_at_risk_rows(class_offering, level_filter=None):
                 "probability": round(float(forecast.probability) * 100, 1),
                 "prediction": forecast,
                 "reasons": (forecast.contributions_json or {}).get("reasons", [])[:3],
-                "last_intervention": entry.interventions.first(),
+                # .all() reuses the prefetch_related cache above (already
+                # ordered newest-first); .first() would re-query per row.
+                "last_intervention": next(iter(entry.interventions.all()), None),
             }
         )
     return rows
@@ -229,10 +240,15 @@ def _at_risk_instructor(request):
         rows.extend(_class_at_risk_rows(class_offering, level_filter))
     rows.sort(key=lambda r: r["probability"], reverse=True)
 
+    from django.core.paginator import Paginator
+
+    paginator = Paginator(rows, 25)
+    page = paginator.get_page(request.GET.get("page"))
+
     context = {
         "page_title": "At-Risk Students",
         "classes": classes,
-        "rows": rows,
+        "rows": page,
         "class_filter": class_filter,
         "level_filter": level_filter,
         "show_synthetic_banner": _any_non_historical_active_model(),
@@ -257,6 +273,17 @@ def _at_risk_program_head(request):
     class_filter = request.GET.get("class")
     level_filter = request.GET.get("level")
 
+    # One grouped query for every class's intervention count, instead of a
+    # per-class .count() query in the loop below (Phase 8 part A query-
+    # count pass — this view previously issued 150+ queries for a program
+    # head with ~40 classes).
+    intervention_counts = dict(
+        Intervention.objects.filter(roster_entry__class_offering__in=classes)
+        .values("roster_entry__class_offering_id")
+        .annotate(count=Count("id"))
+        .values_list("roster_entry__class_offering_id", "count")
+    )
+
     rows = []
     by_class = {}
     for class_offering in classes:
@@ -265,7 +292,7 @@ def _at_risk_program_head(request):
             "class_offering": class_offering,
             "at_risk": sum(1 for r in class_rows if r["level"] == "AT_RISK"),
             "watch": sum(1 for r in class_rows if r["level"] == "WATCH"),
-            "interventions": Intervention.objects.filter(roster_entry__class_offering=class_offering).count(),
+            "interventions": intervention_counts.get(class_offering.pk, 0),
         }
         if class_filter and str(class_offering.pk) != class_filter:
             continue
@@ -278,14 +305,17 @@ def _at_risk_program_head(request):
     total_at_risk = sum(c["at_risk"] for c in by_class.values())
     total_watch = sum(c["watch"] for c in by_class.values())
     classes_affected = sum(1 for c in by_class.values() if c["at_risk"] or c["watch"])
-    total_interventions = Intervention.objects.filter(
-        roster_entry__class_offering__in=[c["class_offering"] for c in by_class.values()]
-    ).count()
+    total_interventions = sum(intervention_counts.values())
+
+    from django.core.paginator import Paginator
+
+    paginator = Paginator(rows, 25)
+    page = paginator.get_page(request.GET.get("page"))
 
     context = {
         "page_title": "At-Risk Students",
         "classes": classes,
-        "rows": rows,
+        "rows": page,
         "class_filter": class_filter,
         "level_filter": level_filter,
         "by_class": by_class.values(),

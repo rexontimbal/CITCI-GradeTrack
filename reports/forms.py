@@ -1,3 +1,5 @@
+from django import forms
+
 from core.forms import StyledModelForm
 
 from .models import InstitutionSettings
@@ -20,4 +22,9 @@ class InstitutionSettingsForm(StyledModelForm):
             "registrar_title",
             "show_unofficial_scores_to_students",
             "show_forecasts_to_students",
+            "privacy_notice_text",
+            "data_privacy_officer_contact",
         ]
+        widgets = {
+            "privacy_notice_text": forms.Textarea(attrs={"rows": 8}),
+        }

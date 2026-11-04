@@ -44,25 +44,37 @@ def risk_level(probability, threshold):
 def current_checkpoint_for_class(class_offering):
     """MIDTERM if any EXAM-category item with term <= MIDTERM has a score
     anywhere in the class; else PRELIM if any PRELIM item (any category)
-    has a score; else None ("Not enough data yet")."""
-    from grading.models import ASSESSMENT_TERM_ORDER, AssessmentItem, AssessmentTerm, ComponentCategory, Score
+    has a score; else None ("Not enough data yet").
+
+    Term ordering (Prelim < Midterm < Semi-final < Final) doesn't sort
+    correctly as a plain string comparison in SQL, so the "<=" cutoff is
+    resolved to a list of term values in Python (ASSESSMENT_TERM_ORDER,
+    no query) and passed to a single `term__in=` query — one query per
+    checkpoint tier checked (at most two total), instead of materializing
+    AssessmentItem objects first and querying Score separately (Phase 8
+    part A query-count pass — this function runs once per class on the
+    At-Risk pages, so halving its query count matters there)."""
+    from grading.models import ASSESSMENT_TERM_ORDER, AssessmentTerm, ComponentCategory, Score
 
     midterm_cutoff = ASSESSMENT_TERM_ORDER[AssessmentTerm.MIDTERM]
-    exam_item_ids = [
-        item.id
-        for item in AssessmentItem.objects.filter(class_offering=class_offering, component__category=ComponentCategory.EXAM)
-        if ASSESSMENT_TERM_ORDER[item.term] <= midterm_cutoff
-    ]
-    if exam_item_ids and Score.objects.filter(item_id__in=exam_item_ids, score__isnull=False).exists():
+    terms_upto_midterm = [t for t, order in ASSESSMENT_TERM_ORDER.items() if order <= midterm_cutoff]
+    has_midterm_exam_score = Score.objects.filter(
+        item__class_offering=class_offering,
+        item__component__category=ComponentCategory.EXAM,
+        item__term__in=terms_upto_midterm,
+        score__isnull=False,
+    ).exists()
+    if has_midterm_exam_score:
         return Checkpoint.MIDTERM
 
     prelim_cutoff = ASSESSMENT_TERM_ORDER[AssessmentTerm.PRELIM]
-    prelim_item_ids = [
-        item.id
-        for item in AssessmentItem.objects.filter(class_offering=class_offering)
-        if ASSESSMENT_TERM_ORDER[item.term] <= prelim_cutoff
-    ]
-    if prelim_item_ids and Score.objects.filter(item_id__in=prelim_item_ids, score__isnull=False).exists():
+    terms_upto_prelim = [t for t, order in ASSESSMENT_TERM_ORDER.items() if order <= prelim_cutoff]
+    has_prelim_score = Score.objects.filter(
+        item__class_offering=class_offering,
+        item__term__in=terms_upto_prelim,
+        score__isnull=False,
+    ).exists()
+    if has_prelim_score:
         return Checkpoint.PRELIM
 
     return None

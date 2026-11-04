@@ -145,7 +145,7 @@ def template_set_default(request, pk):
     template = get_object_or_404(GradingTemplate, pk=pk)
     template.is_default = True
     template.save()  # model.save() unsets every other template's is_default
-    return trigger_response("refreshTemplates")
+    return trigger_response("refreshTemplates", toast=f"{template.name} is now the default template.")
 
 
 @role_required(ADMIN)
@@ -185,7 +185,7 @@ class GradingComponentFormView(RoleRequiredMixin, View):
             component = form.save(commit=False)
             component.template = template
             component.save()
-            return trigger_response("refreshComponents")
+            return trigger_response("refreshComponents", toast=f"{component.name} saved.")
         return render(
             request,
             "partials/_entity_form_modal.html",

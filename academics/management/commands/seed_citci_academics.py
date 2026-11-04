@@ -8,6 +8,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import User
+from core.management.guards import add_force_demo_argument, ensure_demo_allowed
 from academics.models import (
     AcademicYear,
     ClassOffering,
@@ -59,7 +60,12 @@ class Command(BaseCommand):
         "docs/source/citci_offerings_2026_2027.json (run import_offerings_docx first). Idempotent."
     )
 
+    def add_arguments(self, parser):
+        add_force_demo_argument(parser)
+
     def handle(self, *args, **options):
+        ensure_demo_allowed(options.get("force_demo"))
+        force_demo = options.get("force_demo")
         json_path = Path(settings.BASE_DIR) / "docs" / "source" / "citci_offerings_2026_2027.json"
         if not json_path.exists():
             raise CommandError(
@@ -78,9 +84,9 @@ class Command(BaseCommand):
         classes = self._seed_classes(classes_data, subjects, sections, instructors, first_sem, second_sem)
         students = self._seed_students(bsed, tcp, eng_major, ss_major, sections)
         self._seed_rosters(students, sections, classes)
-        call_command("seed_grading_demo")
-        call_command("seed_student_portal_demo")
-        call_command("seed_forecasting_demo")
+        call_command("seed_grading_demo", force_demo=force_demo)
+        call_command("seed_student_portal_demo", force_demo=force_demo)
+        call_command("seed_forecasting_demo", force_demo=force_demo)
 
         self.stdout.write(self.style.SUCCESS("\nCITCI academic data ready."))
 

@@ -17,6 +17,7 @@ from core.crud import EntityListView, trigger_response
 from core.htmx import is_htmx
 from core.importing import SpreadsheetImportError
 
+from .audit import log_audit
 from .bulk_import import (
     build_instructor_preview,
     build_student_preview,
@@ -28,7 +29,7 @@ from .bulk_import import (
 from .decorators import role_required
 from .forms import ForcedPasswordChangeForm, ProfileEmailForm, UserForm
 from .mixins import RoleRequiredMixin
-from .models import User
+from .models import AuditLog, User
 from .utils import generate_temp_password
 
 ADMIN = User.Role.ADMIN
@@ -45,6 +46,13 @@ TABS = [
 class LoginView(auth_views.LoginView):
     template_name = "accounts/login.html"
     redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        from reports.models import InstitutionSettings
+
+        context = super().get_context_data(**kwargs)
+        context["institution_settings"] = InstitutionSettings.get_solo()
+        return context
 
     def form_valid(self, form):
         """"Remember me" controls whether the session cookie survives a
@@ -107,17 +115,49 @@ def force_password_change(request):
 
 @login_required
 def privacy_consent(request):
+    from reports.models import InstitutionSettings
+
     if request.user.privacy_consent_at:
         return redirect("dashboard:home")
     if request.method == "POST":
         request.user.privacy_consent_at = timezone.now()
         request.user.save(update_fields=["privacy_consent_at"])
         return redirect("dashboard:home")
-    return render(request, "accounts/privacy_consent.html")
+    return render(
+        request, "accounts/privacy_consent.html", {"institution_settings": InstitutionSettings.get_solo()}
+    )
 
 
 def permission_denied_view(request, exception=None):
     return render(request, "accounts/403.html", status=403)
+
+
+def not_found_view(request, exception=None):
+    """Standalone template (no {% extends base.html %}, no context
+    processors) — `loader.render_to_string` without a `request` renders a
+    plain Context, never touching the auth/sidebar/active_semester context
+    processors that query the DB (Phase 8 part A resilience pass)."""
+    from django.http import HttpResponseNotFound
+    from django.template import loader
+
+    return HttpResponseNotFound(loader.render_to_string("errors/404.html"))
+
+
+def server_error_view(request):
+    """Same reasoning as not_found_view, and additionally: must never
+    itself depend on the database, since this is exactly the view that
+    renders when something (often the DB) has already gone wrong."""
+    from django.http import HttpResponseServerError
+    from django.template import loader
+
+    return HttpResponseServerError(loader.render_to_string("errors/500.html"))
+
+
+def csrf_failure_view(request, reason=""):
+    from django.http import HttpResponseForbidden
+    from django.template import loader
+
+    return HttpResponseForbidden(loader.render_to_string("errors/csrf_failure.html"))
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +230,12 @@ def user_form(request, pk=None):
                 saved_user.must_change_password = True
             saved_user.save()
             form.save_student_profile(saved_user)
+            log_audit(
+                request.user,
+                AuditLog.Action.USER_CREATED if creating else AuditLog.Action.USER_UPDATED,
+                saved_user,
+                role=saved_user.role,
+            )
 
             if temp_password:
                 return render(
@@ -197,7 +243,7 @@ def user_form(request, pk=None):
                     "accounts/_user_password_reveal.html",
                     {"user": saved_user, "temp_password": temp_password, "refresh_event": "refreshUsers"},
                 )
-            return trigger_response("refreshUsers")
+            return trigger_response("refreshUsers", toast=f"{saved_user.full_name} updated.")
         return render(
             request,
             "accounts/_user_form_modal.html",
@@ -250,6 +296,7 @@ def user_reset_password(request, pk):
     user_obj.set_password(temp_password)
     user_obj.must_change_password = True
     user_obj.save(update_fields=["password", "must_change_password"])
+    log_audit(request.user, AuditLog.Action.PASSWORD_RESET, user_obj)
     return render(
         request,
         "accounts/_user_password_reveal.html",
@@ -271,14 +318,21 @@ def user_toggle_active(request, pk):
 
     user_obj.is_active = not user_obj.is_active
     user_obj.save(update_fields=["is_active"])
-    return trigger_response("refreshUsers")
+    log_audit(
+        request.user,
+        AuditLog.Action.USER_REACTIVATED if user_obj.is_active else AuditLog.Action.USER_DEACTIVATED,
+        user_obj,
+    )
+    verb = "reactivated" if user_obj.is_active else "deactivated"
+    return trigger_response("refreshUsers", toast=f"{user_obj.full_name} {verb}.")
 
 
 @role_required(ADMIN)
 def user_unlock(request, pk):
     user_obj = get_object_or_404(User, pk=pk)
     axes_reset(username=user_obj.username)
-    return trigger_response("refreshUsers")
+    log_audit(request.user, AuditLog.Action.ACCOUNT_UNLOCKED, user_obj)
+    return trigger_response("refreshUsers", toast=f"{user_obj.full_name}'s account unlocked.")
 
 
 # ---------------------------------------------------------------------------
@@ -426,4 +480,78 @@ def import_instructors_confirm(request):
     response = HttpResponse(buffer.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="new_instructor_passwords.xlsx"'
     response["X-Import-Summary"] = f"{summary['created']} created, {summary['updated']} updated"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Audit Log (Phase 8 part A) — combines accounts.AuditLog, grading score/
+# component change logs, and approvals grade-sheet transitions/corrections
+# into one filterable, admin-only view. See accounts/audit.py for the
+# normalization logic.
+# ---------------------------------------------------------------------------
+
+
+def _audit_log_filters(request):
+    from django.utils.dateparse import parse_date
+
+    date_from = parse_date(request.GET.get("date_from", "")) if request.GET.get("date_from") else None
+    date_to = parse_date(request.GET.get("date_to", "")) if request.GET.get("date_to") else None
+    source = request.GET.get("source") or None
+    username = request.GET.get("username", "").strip()
+    user = User.objects.filter(username__iexact=username).first() if username else None
+    return date_from, date_to, source, username, user
+
+
+@role_required(ADMIN)
+def audit_log(request):
+    from django.core.paginator import Paginator
+
+    from .audit import SOURCES, collect_audit_rows
+
+    date_from, date_to, source, username, user = _audit_log_filters(request)
+    rows = collect_audit_rows(date_from=date_from, date_to=date_to, user=user, source=source)
+    paginator = Paginator(rows, 50)
+    page = paginator.get_page(request.GET.get("page"))
+    return render(
+        request,
+        "accounts/audit_log.html",
+        {
+            "page": page,
+            "sources": SOURCES,
+            "selected_source": source,
+            "date_from": request.GET.get("date_from", ""),
+            "date_to": request.GET.get("date_to", ""),
+            "username": username,
+            "total_count": len(rows),
+        },
+    )
+
+
+@role_required(ADMIN)
+def audit_log_export(request):
+    from .audit import collect_audit_rows
+
+    date_from, date_to, source, username, user = _audit_log_filters(request)
+    rows = collect_audit_rows(date_from=date_from, date_to=date_to, user=user, source=source)
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Audit Log"
+    sheet.append(["Timestamp", "Source", "Action", "Actor", "Target", "Details"])
+    for row in rows:
+        sheet.append(
+            [
+                timezone.localtime(row["timestamp"]).strftime("%Y-%m-%d %H:%M:%S"),
+                row["source"],
+                row["action"],
+                str(row["actor"]) if row["actor"] else "",
+                str(row["target"]) if row["target"] else "",
+                ", ".join(f"{k}={v}" for k, v in row["details"].items()) if row["details"] else "",
+            ]
+        )
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    response = HttpResponse(buffer.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="audit_log.xlsx"'
     return response

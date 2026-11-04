@@ -103,7 +103,7 @@ class SemesterSetActiveView(RoleRequiredMixin, View):
         semester = get_object_or_404(Semester, pk=pk)
         semester.is_active = True
         semester.save()  # model.save() deactivates every other semester in a transaction
-        return trigger_response("refreshSemesters")
+        return trigger_response("refreshSemesters", toast=f"{semester} is now the active semester.")
 
 
 # ---------------------------------------------------------------------------
@@ -557,7 +557,8 @@ def class_list_add_students_submit(request, pk):
         ClassRosterEntry.objects.get_or_create(
             student_id=student_id, class_offering=class_offering, defaults={"status": ClassRosterEntry.Status.ACTIVE}
         )
-    return trigger_response("refreshRoster")
+    count = len(student_ids)
+    return trigger_response("refreshRoster", toast=f"Added {count} student{'s' if count != 1 else ''} to the class list.")
 
 
 @role_required(ADMIN)
@@ -677,7 +678,7 @@ def class_list_import_confirm(request, pk):
     del request.session[_IMPORT_SESSION_KEY]
     # refreshRoster is picked up both by the Class Lists page's #roster-container
     # and by class_roster.html (read-only roster, reloads itself on this event).
-    return trigger_response("refreshRoster")
+    return trigger_response("refreshRoster", toast="Class list imported.")
 
 
 # ---------------------------------------------------------------------------

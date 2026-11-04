@@ -1,13 +1,17 @@
 {% if messages %}
-<div class="mb-4 space-y-2">
+<div id="django-messages" class="hidden">
     {% for message in messages %}
-    <div class="flex items-center justify-between rounded-lg border px-4 py-3 text-sm
-                {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700
-                {% elif message.tags == 'success' %}border-green-200 bg-green-50 text-green-700
-                {% elif message.tags == 'warning' %}border-amber-200 bg-amber-50 text-amber-800
-                {% else %}border-brand-primary-200 bg-brand-primary-50 text-brand-primary-800{% endif %}">
-        <span>{{ message }}</span>
-    </div>
+    <span data-message="{{ message }}" data-level="{{ message.tags }}"></span>
     {% endfor %}
 </div>
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const LEVELS = { error: "error", success: "success", warning: "warning" };
+        document.querySelectorAll("#django-messages [data-message]").forEach((el) => {
+            window.dispatchEvent(new CustomEvent("toast", {
+                detail: { message: el.dataset.message, level: LEVELS[el.dataset.level] || "info" },
+            }));
+        });
+    });
+</script>
 {% endif %}

@@ -1,0 +1,34 @@
+; systemd unit for CITCI GradeTrack on Ubuntu Server (Gunicorn + Nginx target).
+;
+; Install:
+;   sudo cp deploy/gunicorn.service /etc/systemd/system/citci-gradetrack.service
+;   sudo systemctl daemon-reload
+;   sudo systemctl enable --now citci-gradetrack
+;
+; Adjust User/Group/WorkingDirectory/the venv path below to match your
+; install location if it's not /opt/citci-gradetrack. See docs/DEPLOYMENT.md.
+
+[Unit]
+Description=CITCI GradeTrack (Gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=notify
+User=citci
+Group=citci
+WorkingDirectory=/opt/citci-gradetrack
+Environment=DJANGO_SETTINGS_MODULE=config.settings.prod
+EnvironmentFile=/opt/citci-gradetrack/.env
+ExecStart=/opt/citci-gradetrack/venv/bin/gunicorn \
+    --workers 3 \
+    --bind unix:/run/citci-gradetrack/gunicorn.sock \
+    --access-logfile /opt/citci-gradetrack/logs/gunicorn-access.log \
+    --error-logfile /opt/citci-gradetrack/logs/gunicorn-error.log \
+    config.wsgi:application
+RuntimeDirectory=citci-gradetrack
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

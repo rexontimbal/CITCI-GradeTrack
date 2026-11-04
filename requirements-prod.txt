@@ -1,0 +1,19 @@
+# Production-only extras — not needed for local development (manage.py
+# runserver doesn't use any of these). See docs/DEPLOYMENT.md.
+-r requirements.txt
+
+# Ubuntu/Linux target: WSGI server run as a systemd service behind Nginx
+# (deploy/gunicorn.service). Gunicorn relies on os.fork() and does not run
+# on Windows — don't try to use it there, see waitress below instead.
+gunicorn==23.0.0
+
+# Windows target: WSGI server run as an NSSM service (no Nginx in front).
+# Works fine on Linux too if you'd rather avoid Gunicorn for some reason,
+# but Gunicorn + Nginx is the documented/tested Linux path.
+waitress==3.0.2
+
+# Static-file fallback for the Windows target (no Nginx serving static/
+# directly there) — set USE_WHITENOISE=True in .env to enable; see
+# config/settings/prod.py. Not needed on the Nginx target (Nginx serves
+# static/media itself, see deploy/nginx.conf).
+whitenoise==6.12.0

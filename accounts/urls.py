@@ -25,4 +25,7 @@ urlpatterns = [
     path("users/import/instructors/template/", views.import_instructors_template, name="import_instructors_template"),
     path("users/import/instructors/", views.import_instructors, name="import_instructors"),
     path("users/import/instructors/confirm/", views.import_instructors_confirm, name="import_instructors_confirm"),
+
+    path("audit-log/", views.audit_log, name="audit_log"),
+    path("audit-log/export.xlsx", views.audit_log_export, name="audit_log_export"),
 ]

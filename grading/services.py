@@ -21,7 +21,51 @@ from django.db.models import Prefetch
 
 from academics.models import ClassRosterEntry
 
-from .models import AssessmentItem, ClassGradingScheme, Score, ScoreChangeLog, SchemeComponentChangeLog
+from .models import (
+    AssessmentItem,
+    ClassGradingScheme,
+    ComponentCategory,
+    GradingComponent,
+    GradingTemplate,
+    Score,
+    ScoreChangeLog,
+    SchemeComponentChangeLog,
+)
+
+# (component name, category, weight, is_locked) — CITCI's real class record
+# (grading-system.xlsx). Only Examination's weight is school-locked; the
+# other four are the suggested starting point an instructor can freely
+# rename/reweight for their own class (see CLAUDE.md section 4).
+DEFAULT_TEMPLATE_COMPONENTS = [
+    ("Attendance", ComponentCategory.ATTENDANCE, 5, False),
+    ("Quizzes", ComponentCategory.QUIZ, 30, False),
+    ("Recitation", ComponentCategory.RECITATION, 15, False),
+    ("Project", ComponentCategory.PROJECT, 10, False),
+    ("Examination", ComponentCategory.EXAM, 40, True),
+]
+
+
+def ensure_default_grading_template():
+    """Creates (or updates) the "CITCI Default" GradingTemplate + its five
+    components — used both by the demo seeder (seed_grading_demo, which
+    also needs per-item max-score lists for fake scores) and by
+    setup_production (which needs the template but none of the fake data)."""
+    template, _ = GradingTemplate.objects.update_or_create(
+        name="CITCI Default",
+        defaults={
+            "description": "Attendance 5%, Quizzes 30%, Recitation 15%, Project 10%, Examination 40% "
+            "— CITCI's official class record weights.",
+            "is_default": True,
+            "is_active": True,
+        },
+    )
+    for order, (name, category, weight, is_locked) in enumerate(DEFAULT_TEMPLATE_COMPONENTS, start=1):
+        GradingComponent.objects.update_or_create(
+            template=template,
+            name=name,
+            defaults={"category": category, "weight": weight, "is_locked": is_locked, "order": order},
+        )
+    return template
 
 PASSING_THRESHOLD = Decimal("3.00")
 

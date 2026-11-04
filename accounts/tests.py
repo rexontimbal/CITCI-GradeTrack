@@ -286,3 +286,144 @@ class SearchableSelectSearchTests(TestCase):
         response = self.client.get(reverse("academics:instructor_search"), {"q": "Garibay"})
         self.assertContains(response, "Garibay")
         self.assertNotContains(response, "Santos")
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 part A — Audit Log
+# ---------------------------------------------------------------------------
+
+
+class AuditLogTests(TestCase):
+    """Every account-management action writes one AuditLog row (CLAUDE.md
+    Phase 8 part A)."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "audit_admin")
+        self.client.force_login(self.admin)
+        self.target = make_user(User.Role.STUDENT, "audit_target")
+
+    def test_user_toggle_active_is_logged(self):
+        from .models import AuditLog
+
+        self.client.post(reverse("accounts:user_toggle_active", args=[self.target.pk]))
+        entry = AuditLog.objects.filter(target_user=self.target, action=AuditLog.Action.USER_DEACTIVATED).first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, self.admin)
+
+    def test_user_reset_password_is_logged(self):
+        from .models import AuditLog
+
+        self.client.post(reverse("accounts:user_reset_password", args=[self.target.pk]))
+        self.assertTrue(
+            AuditLog.objects.filter(target_user=self.target, action=AuditLog.Action.PASSWORD_RESET).exists()
+        )
+
+    def test_user_unlock_is_logged(self):
+        from .models import AuditLog
+
+        self.client.post(reverse("accounts:user_unlock", args=[self.target.pk]))
+        self.assertTrue(
+            AuditLog.objects.filter(target_user=self.target, action=AuditLog.Action.ACCOUNT_UNLOCKED).exists()
+        )
+
+    def test_failed_login_lockout_is_logged_with_no_actor(self):
+        from .models import AuditLog
+
+        self.client.logout()
+        for _ in range(5):
+            self.client.post(reverse("accounts:login"), {"username": "audit_target", "password": "wrong"})
+        entry = AuditLog.objects.filter(action=AuditLog.Action.ACCOUNT_LOCKED_OUT).first()
+        self.assertIsNotNone(entry)
+        self.assertIsNone(entry.actor)
+
+
+class AuditLogViewAccessTests(TestCase):
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "audit_view_admin")
+        self.instructor = make_user(User.Role.INSTRUCTOR, "audit_view_instructor")
+
+    def test_admin_can_view_audit_log(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("accounts:audit_log"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_non_admin_cannot_view_audit_log(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("accounts:audit_log"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_audit_log_combines_multiple_sources(self):
+        """A score change and an account change both show up in one list."""
+        from grading.models import Score, ScoreChangeLog
+        from .models import AuditLog
+
+        target = make_user(User.Role.STUDENT, "audit_combo_target")
+        AuditLog.objects.create(actor=self.admin, action=AuditLog.Action.USER_UPDATED, target_user=target)
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("accounts:audit_log"))
+        self.assertContains(response, "User updated")
+
+
+class ErrorPageTests(TestCase):
+    """404/500/CSRF-failure views render standalone, brand-matching pages
+    (CLAUDE.md Phase 8 part A — 500 in particular must never depend on the
+    database or context processors)."""
+
+    def test_404_view_renders_without_request_context(self):
+        from .views import not_found_view
+
+        response = not_found_view(RequestFactory().get("/nope/"))
+        self.assertEqual(response.status_code, 404)
+        self.assertIn(b"Page not found", response.content)
+
+    def test_500_view_renders_without_request_context(self):
+        from .views import server_error_view
+
+        response = server_error_view(RequestFactory().get("/boom/"))
+        self.assertEqual(response.status_code, 500)
+        self.assertIn(b"Something went wrong", response.content)
+
+    def test_csrf_failure_view_renders(self):
+        from .views import csrf_failure_view
+
+        response = csrf_failure_view(RequestFactory().post("/"), reason="CSRF cookie missing.")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn(b"session expired", response.content.lower())
+
+
+class SetupProductionCommandTests(TestCase):
+    def test_creates_first_admin_noninteractively(self):
+        from django.core.management import call_command
+
+        call_command("setup_production", username="firstadmin", email="a@b.com", password="S3curePass!23")
+        user = User.objects.get(username="firstadmin")
+        self.assertTrue(user.is_superuser)
+        self.assertEqual(user.role, User.Role.ADMIN)
+
+    def test_skips_admin_creation_when_one_already_exists(self):
+        from django.core.management import call_command
+
+        make_user(User.Role.ADMIN, "existing_admin")
+        # No username/email/password given — would prompt interactively if
+        # it tried to create one, which would hang/fail the test; it must
+        # not reach that code path at all.
+        call_command("setup_production")
+        self.assertEqual(User.objects.filter(role=User.Role.ADMIN).count(), 1)
+
+    def test_creates_institution_settings_and_default_template(self):
+        from django.core.management import call_command
+
+        from grading.models import GradingTemplate
+        from reports.models import InstitutionSettings
+
+        call_command("setup_production", username="firstadmin2", email="", password="S3curePass!23")
+        self.assertTrue(InstitutionSettings.objects.filter(pk=1).exists())
+        self.assertTrue(GradingTemplate.objects.filter(name="CITCI Default").exists())
+
+    def test_creates_no_demo_data(self):
+        from django.core.management import call_command
+
+        call_command("setup_production", username="firstadmin3", email="", password="S3curePass!23")
+        self.assertFalse(User.objects.filter(role=User.Role.STUDENT).exists())
+        self.assertFalse(User.objects.filter(username__startswith="student").exists())

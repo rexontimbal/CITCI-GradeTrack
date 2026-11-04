@@ -10,6 +10,7 @@ import random
 from django.core.management.base import BaseCommand
 
 from academics.models import ClassOffering, ClassRosterEntry
+from core.management.guards import add_force_demo_argument, ensure_demo_allowed
 from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, ComponentCategory, GradingComponent, GradingTemplate
 from grading.services import save_score
 
@@ -36,7 +37,11 @@ _STATUS_RANK = {"DRAFT": 0, "SUBMITTED": 1, "RETURNED": 1, "APPROVED": 2, "RELEA
 class Command(BaseCommand):
     help = "Seeds the default grading template and demo assessment items/scores (Phase 4). Idempotent."
 
+    def add_arguments(self, parser):
+        add_force_demo_argument(parser)
+
     def handle(self, *args, **options):
+        ensure_demo_allowed(options.get("force_demo"))
         template = self._seed_default_template()
 
         # Any two classes that have both an assigned instructor and an

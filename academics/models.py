@@ -250,3 +250,31 @@ class ClassRosterEntry(TimeStampedModel):
 
     def __str__(self):
         return f"{self.student.full_name} – {self.class_offering}"
+
+
+class TeachingAssignmentLog(TimeStampedModel):
+    """One row per instructor assignment/reassignment on a class — the
+    per-domain change log the Audit Log page combines in (same pattern as
+    grading.ScoreChangeLog), plus the source for a class's own small
+    "Assignment history" list. Teaching loads are normally a Program
+    Head's call (CITCI confirmed practice); `is_admin_override` marks a
+    change made by an admin instead, through the admin Classes page."""
+
+    class_offering = models.ForeignKey(ClassOffering, on_delete=models.CASCADE, related_name="assignment_logs")
+    old_instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    new_instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    is_admin_override = models.BooleanField(default=False)
+    reason = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        old = self.old_instructor.full_name if self.old_instructor else "Unassigned"
+        new = self.new_instructor.full_name if self.new_instructor else "Unassigned"
+        return f"{self.class_offering}: {old} → {new}"

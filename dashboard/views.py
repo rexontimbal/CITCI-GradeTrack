@@ -49,7 +49,11 @@ def _program_head_dashboard(request):
         if active
         else ClassOffering.objects.none()
     )
-    context = {"at_risk_count": count_at_risk_watch(classes)["at_risk"]}
+    context = {
+        "at_risk_count": count_at_risk_watch(classes)["at_risk"],
+        "unassigned_count": classes.filter(instructor__isnull=True).count() if active else 0,
+        "unassigned_classes_url": f"{reverse('academics:program_head_classes')}?unassigned=1",
+    }
     return render(request, "dashboard/program_head_dashboard.html", context)
 
 

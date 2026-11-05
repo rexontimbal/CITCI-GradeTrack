@@ -1,5 +1,5 @@
 {% load sidebar_icons %}
-<div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+<{% if link %}a href="{{ link }}"{% else %}div{% endif %} class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm{% if link %} block hover:border-brand-accent-400{% endif %}">
     <div class="flex items-center gap-3">
         <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-accent-100 text-brand-accent-900">
             {% sidebar_icon icon "w-5 h-5" %}
@@ -9,4 +9,4 @@
             <p class="text-xl font-bold text-gray-900">{{ value }}</p>
         </div>
     </div>
-</div>
+</{% if link %}a{% else %}div{% endif %}>

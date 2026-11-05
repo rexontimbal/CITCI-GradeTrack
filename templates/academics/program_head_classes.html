@@ -5,34 +5,74 @@
 
 {% if not active_semester_set %}
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
-{% elif classes %}
-<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-    <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-            <tr>
-                <th class="px-4 py-3">Class</th>
-                <th class="px-4 py-3">Instructor</th>
-                <th class="px-4 py-3">Students</th>
-                <th class="px-4 py-3">Grading</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-            {% for class_offering in classes %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3">
-                    <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
-                </td>
-                <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ class_offering.roster_size }}</td>
-                <td class="px-4 py-3">
-                    <a href="{% url 'grading:class_grading' class_offering.pk %}" class="text-brand-primary-700 hover:underline">View</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+{% else %}
+
+{% if unassigned_count %}
+<div class="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <span>{{ unassigned_count }} class{{ unassigned_count|pluralize:"es" }} still need{{ unassigned_count|pluralize:",s" }} an instructor.</span>
+    {% if not unassigned_filter %}
+    <a href="?unassigned=1" class="font-medium underline">Show unassigned only</a>
+    {% else %}
+    <a href="?" class="font-medium underline">Show all classes</a>
+    {% endif %}
 </div>
+{% endif %}
+
+{% if classes %}
+<form method="post" action="{% url 'academics:class_bulk_assign_instructor' %}">
+    {% csrf_token %}
+    <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div class="min-w-[220px]">
+            <label class="mb-1 block text-xs font-medium text-gray-700">Bulk assign selected classes to</label>
+            {{ bulk_form.instructor }}
+        </div>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Assign to selected
+        </button>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <tr>
+                    <th class="px-4 py-3"><input type="checkbox" onclick="document.querySelectorAll('.class-checkbox').forEach(c => c.checked = this.checked)"></th>
+                    <th class="px-4 py-3">Class</th>
+                    <th class="px-4 py-3">Instructor</th>
+                    <th class="px-4 py-3">Students</th>
+                    <th class="px-4 py-3">Grading</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for class_offering in classes %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox"></td>
+                    <td class="px-4 py-3">
+                        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
+                    </td>
+                    <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ class_offering.roster_size }}</td>
+                    <td class="px-4 py-3">
+                        <a href="{% url 'grading:class_grading' class_offering.pk %}" class="text-brand-primary-700 hover:underline">View</a>
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <button type="button" hx-get="{% url 'academics:class_assign_instructor' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                            {% if class_offering.instructor %}Change{% else %}Assign{% endif %} Instructor
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</form>
 {% else %}
 {% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="No classes under your program for the active semester." %}
 {% endif %}
+{% endif %}
+
+<script>
+    document.body.addEventListener("refreshClasses", () => window.location.reload());
+</script>
 {% endblock %}

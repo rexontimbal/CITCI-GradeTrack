@@ -37,6 +37,7 @@ def collect_audit_rows(date_from=None, date_to=None, user=None, source=None):
     instance — matches actor OR target/affected party), source (one of the
     SOURCES keys below). Pure function — no view/HTTP concerns; the view
     handles pagination."""
+    from academics.models import TeachingAssignmentLog
     from approvals.models import GradeCorrection, GradeSheetTransition
     from grading.models import ScoreChangeLog, SchemeComponentChangeLog
 
@@ -140,6 +141,29 @@ def collect_audit_rows(date_from=None, date_to=None, user=None, source=None):
             )
         )
 
+    assignment_qs = TeachingAssignmentLog.objects.select_related(
+        "old_instructor", "new_instructor", "changed_by", "class_offering__subject"
+    )
+    if user is not None:
+        assignment_qs = assignment_qs.filter(models_q_user(user, ["changed_by", "old_instructor", "new_instructor"]))
+    for entry in assignment_qs:
+        rows.append(
+            _row(
+                entry.created_at,
+                "teaching_assignment",
+                "Instructor assigned (admin override)" if entry.is_admin_override else "Instructor assigned",
+                entry.changed_by,
+                entry.new_instructor,
+                {
+                    "class": str(entry.class_offering),
+                    "old_instructor": entry.old_instructor.full_name if entry.old_instructor else None,
+                    "new_instructor": entry.new_instructor.full_name if entry.new_instructor else None,
+                    "is_admin_override": entry.is_admin_override,
+                    "reason": entry.reason,
+                },
+            )
+        )
+
     if source:
         rows = [r for r in rows if r["source"] == source]
     if date_from:
@@ -166,4 +190,5 @@ SOURCES = [
     ("grading_component", "Grading component changes"),
     ("grade_sheet", "Grade sheet transitions"),
     ("grade_correction", "Grade corrections"),
+    ("teaching_assignment", "Teaching assignments"),
 ]

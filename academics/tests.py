@@ -423,3 +423,268 @@ class SeedCitciAcademicsIdempotencyTests(TestCase):
         # Specifically guard against the known "garibay2" duplicate-username bug.
         garibay_usernames = User.objects.filter(last_name="Mr. Garibay").values_list("username", flat=True)
         self.assertLessEqual(len(garibay_usernames), 1)
+
+
+class TeachingAssignmentTestBase(TestCase):
+    """Program heads assign teaching loads; admin can too, as a logged
+    override. Shared fixture: two programs (each with a program head and
+    an instructor), one unassigned class under program A."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+
+        self.program_a = Program.objects.create(code="BSIT", name="BS Information Technology")
+        self.program_b = Program.objects.create(code="BSED", name="BS Education")
+        self.section_a = Section.objects.create(program=self.program_a, academic_year=self.ay, year_level=1, name="A")
+        self.section_b = Section.objects.create(program=self.program_b, academic_year=self.ay, year_level=1, name="A")
+
+        self.head_a = make_user(User.Role.PROGRAM_HEAD, "ta_head_a")
+        self.head_b = make_user(User.Role.PROGRAM_HEAD, "ta_head_b")
+        self.program_a.program_head = self.head_a
+        self.program_a.save()
+        self.program_b.program_head = self.head_b
+        self.program_b.save()
+
+        self.instructor1 = make_user(User.Role.INSTRUCTOR, "ta_inst1")
+        self.instructor2 = make_user(User.Role.INSTRUCTOR, "ta_inst2")
+        self.admin = make_user(User.Role.ADMIN, "ta_admin", is_staff=True, is_superuser=True)
+
+        self.subject = Subject.objects.create(code="PEd 205", title="Physical Education", units=Decimal("2.0"), term=Term.FIRST)
+        self.class_offering = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        self.class_offering.sections.set([self.section_a])
+
+    def make_submitted_sheet(self, class_offering):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        return GradeSheet.objects.create(class_offering=class_offering, status=GradeSheetStatus.SUBMITTED)
+
+
+class UnassignedClassHandlingTests(TeachingAssignmentTestBase):
+    """An unassigned class must never break a page it can legitimately
+    appear on."""
+
+    def test_unassigned_class_does_not_appear_in_any_instructors_my_classes(self):
+        self.client.force_login(self.instructor1)
+        response = self.client.get(reverse("academics:my_classes"))
+        self.assertNotContains(response, "PEd 205")
+
+    def test_program_head_classes_page_renders_unassigned_class_gracefully(self):
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:program_head_classes"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Unassigned")
+
+    def test_class_roster_renders_for_an_unassigned_class(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 200)
+
+
+class AssignInstructorPermissionTests(TeachingAssignmentTestBase):
+    def test_program_head_can_assign_within_their_own_program(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        self.assertEqual(response.status_code, 204)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+
+    def test_program_head_of_a_different_program_gets_403(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_instructor_role_gets_403(self):
+        self.client.force_login(self.instructor1)
+        response = self.client.get(reverse("academics:class_assign_instructor", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_assigning_a_class_that_does_not_exist_404s(self):
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:class_assign_instructor", args=[999999]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_can_assign_any_class_as_an_override(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        self.assertEqual(response.status_code, 204)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+        log = self.class_offering.assignment_logs.get()
+        self.assertTrue(log.is_admin_override)
+
+
+class AssignInstructorBlockedAfterSubmissionTests(TeachingAssignmentTestBase):
+    def test_blocked_once_grade_sheet_is_submitted(self):
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+        self.make_submitted_sheet(self.class_offering)
+
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor2.pk},
+        )
+        # Re-rendered with a form error, not a 204 success.
+        self.assertEqual(response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+
+    def test_allowed_while_draft(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+        GradeSheet.objects.create(class_offering=self.class_offering, status=GradeSheetStatus.DRAFT)
+
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor2.pk},
+        )
+        self.assertEqual(response.status_code, 204)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor2.id)
+
+
+class AssignInstructorNotificationAndLogTests(TeachingAssignmentTestBase):
+    def test_new_and_previous_instructor_are_both_notified(self):
+        from dashboard.models import Notification
+
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor2.pk},
+        )
+
+        self.assertTrue(Notification.objects.filter(recipient=self.instructor2, title="New teaching assignment").exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.instructor1, title="Teaching assignment changed").exists())
+
+    def test_assignment_is_logged_with_changed_by_and_no_override_flag_for_program_head(self):
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        log = self.class_offering.assignment_logs.get()
+        self.assertEqual(log.changed_by, self.head_a)
+        self.assertFalse(log.is_admin_override)
+        self.assertIsNone(log.old_instructor)
+        self.assertEqual(log.new_instructor, self.instructor1)
+
+    def test_no_op_assignment_is_not_logged(self):
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        self.assertEqual(self.class_offering.assignment_logs.count(), 0)
+
+    def test_admin_classes_edit_form_logs_as_override(self):
+        """The admin's existing Classes CRUD edit form changes the same
+        instructor field — it must go through the same logging path."""
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:class_edit", args=[self.class_offering.pk]),
+            {
+                "subject": self.subject.pk,
+                "sections": [self.section_a.pk],
+                "semester": self.semester.pk,
+                "instructor": self.instructor1.pk,
+                "schedule": "",
+                "room": "",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 204)
+        log = self.class_offering.assignment_logs.get()
+        self.assertTrue(log.is_admin_override)
+        self.assertEqual(log.new_instructor, self.instructor1)
+
+
+class BulkAssignInstructorTests(TeachingAssignmentTestBase):
+    def setUp(self):
+        super().setUp()
+        self.other_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        self.other_class.sections.set([self.section_a])
+
+    def test_program_head_bulk_assigns_only_classes_in_their_program(self):
+        foreign_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        foreign_class.sections.set([self.section_b])
+
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:class_bulk_assign_instructor"),
+            {"class_ids": [self.class_offering.pk, self.other_class.pk, foreign_class.pk], "instructor": self.instructor1.pk},
+        )
+        self.class_offering.refresh_from_db()
+        self.other_class.refresh_from_db()
+        foreign_class.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+        self.assertEqual(self.other_class.instructor_id, self.instructor1.id)
+        self.assertIsNone(foreign_class.instructor_id)  # not under head_a's program — silently skipped
+
+
+class TeachingLoadsPageTests(TeachingAssignmentTestBase):
+    def setUp(self):
+        super().setUp()
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+
+        self.second_subject = Subject.objects.create(code="IT205", title="Databases", units=Decimal("3.0"), term=Term.FIRST)
+        self.second_class = ClassOffering.objects.create(subject=self.second_subject, semester=self.semester, instructor=self.instructor1)
+        self.second_class.sections.set([self.section_a])
+
+        self.student = make_user(User.Role.STUDENT, "ta_student")
+        ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
+
+    def test_program_head_sees_totals_across_shared_classes(self):
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:teaching_loads"))
+        self.assertEqual(response.status_code, 200)
+        rows = {row["instructor"].pk: row for row in response.context["rows"]}
+        self.assertEqual(len(rows[self.instructor1.pk]["classes"]), 2)
+        self.assertEqual(rows[self.instructor1.pk]["total_units"], Decimal("5.0"))  # 2.0 + 3.0
+        self.assertEqual(rows[self.instructor1.pk]["total_students"], 1)
+
+    def test_admin_can_filter_by_program(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("academics:teaching_loads"), {"program": self.program_b.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["rows"], [])
+
+    def test_export_returns_an_xlsx_file(self):
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:teaching_loads_export"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+
+
+class TeachingAssignmentAuditLogTests(TeachingAssignmentTestBase):
+    def test_assignment_appears_in_the_combined_audit_log(self):
+        from accounts.audit import collect_audit_rows
+
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]),
+            {"instructor": self.instructor1.pk},
+        )
+        rows = collect_audit_rows(source="teaching_assignment")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["actor"], self.head_a)
+        self.assertFalse(rows[0]["details"]["is_admin_override"])

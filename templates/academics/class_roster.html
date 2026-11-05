@@ -68,4 +68,24 @@
 {% else %}
 {% include "partials/_empty_state.html" with icon="users" title="No students yet" description="Students will appear here once they're on this class's list." %}
 {% endif %}
+
+{% if assignment_logs %}
+<details class="mt-6 rounded-xl border border-gray-200 bg-white">
+    <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-gray-700">Assignment history</summary>
+    <div class="divide-y divide-gray-100 px-4 pb-3">
+        {% for log in assignment_logs %}
+        <div class="py-2 text-sm">
+            <p class="text-gray-900">
+                {{ log.old_instructor.full_name|default:"Unassigned" }} → {{ log.new_instructor.full_name|default:"Unassigned" }}
+                {% if log.is_admin_override %}<span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Admin override</span>{% endif %}
+            </p>
+            <p class="text-xs text-gray-500">
+                {{ log.created_at|date:"M d, Y H:i" }} by {{ log.changed_by.full_name|default:"System" }}
+                {% if log.reason %} — {{ log.reason }}{% endif %}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
 {% endblock %}

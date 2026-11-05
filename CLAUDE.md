@@ -67,6 +67,14 @@
 > Windows+Waitress+NSSM target live under `deploy/` and `docs/DEPLOYMENT.md`. See the Phase 8 part A
 > bullet under "Build Phases" for the full list, the measured query-count improvements, and the
 > judgment calls made along the way.
+>
+> **2026-11-05:** **Teaching load assignment (built), out of phase order — a standalone follow-up
+> task, not part of Phase 8 part B.** Confirmed CITCI practice: Admin assigns each program's
+> Program Head (unchanged); the Program Head then assigns which instructor teaches each class in
+> their program — not Admin, except as a logged "admin override." See the new section 3a for the
+> full rule set (unassigned classes, the Teaching Loads page, notifications, audit logging, the
+> submitted-sheet lock) and `academics.TeachingAssignmentLog`/`academics/services.py` for what was
+> actually built. Phase 8 part B (coverage/perf/UAT/docs) remains the next task after this one.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -155,10 +163,45 @@ username not IP); sessions expire after 30 minutes of inactivity or on browser c
 
 | Role | Can do |
 |---|---|
-| **admin** (Registrar/System Admin) | Manage users (CRUD, bulk import, activate/deactivate, reset password); manage programs, academic terms, subjects, class offerings (sections); assign instructors; manage class lists (import from the Registrar); configure grading templates and transmutation table; lock/unlock terms; import historical data; train/activate ML model versions and view model metrics; view audit logs; system-wide reports |
-| **program_head** | View department dashboard (grade distribution, at-risk counts per class/subject); view at-risk list with contributing factors; approve or return submitted grade sheets; release approved grades; export reports |
+| **admin** (Registrar/System Admin) | Manage users (CRUD, bulk import, activate/deactivate, reset password); manage programs, academic terms, subjects, class offerings (sections); assign Program Heads (Chairpersons) per program; manage class lists (import from the Registrar); configure grading templates and transmutation table; lock/unlock terms; import historical data; train/activate ML model versions and view model metrics; view audit logs; system-wide reports |
+| **program_head** | View department dashboard (grade distribution, at-risk counts per class/subject); **assign/change which instructor teaches each class in their program (teaching loads) — this is the Program Head's call, not Admin's, confirmed CITCI practice** (see section 3a); view at-risk list with contributing factors; approve or return submitted grade sheets; release approved grades; export reports |
 | **instructor** | View assigned classes only; adjust grading component weights for own class (within template rules); create assessments; encode scores (inline table + Excel import using downloadable template); see auto-computed grades live; submit grade sheet; export PDF/Excel grade sheet; view class at-risk list with factors; add intervention notes per student |
 | **student** | View own class-list subjects, running grades per component, period grades, released final grades; term GWA + cumulative GWA; progress charts; own forecast shown as **"Needs Attention" / "On Track"** (never the words "at-risk") with plain-language contributing factors and generic tips; notifications |
+
+### 3a. Teaching load assignment (built)
+
+**Admin assigns Program Heads; Program Heads assign teaching loads; an admin override is always
+audited.** Admin picks each program's Program Head (Admin → Programs — unchanged); a class
+(`academics.ClassOffering`) can exist with **no instructor** ("Unassigned") — every page that can
+show a class (My Classes, approvals, forecasting, reports) handles this gracefully, it just never
+appears on an instructor's own list. From there, assigning who actually teaches a class is the
+Program Head's job for classes whose sections belong to a program they head (a class shared across
+programs can be assigned by any of those programs' heads) — `academics:program_head_classes` is now
+a teaching-load manager: an "Assign/Change Instructor" action per class (the existing searchable
+instructor picker, active INSTRUCTOR users only), an "Unassigned only" filter, a banner counting
+unassigned classes, and a bulk "select several → assign one instructor" action
+(`academics:class_bulk_assign_instructor`). Admin keeps the ability to set/change it too — through
+the same Classes CRUD edit form (`academics:class_edit`) — as a logged **admin override**: the
+instructor field's help text warns "Teaching loads are normally assigned by the Program Head", and
+`ClassFormView.post()` routes an instructor-field change through the same
+`academics.services.assign_instructor`/`log_and_notify_instructor_change` path as the Program Head
+flow, rather than a bare `form.save()`, so both paths behave identically.
+
+**Rules** (`academics/services.py`): changing a class's instructor is blocked once its grade sheet
+is SUBMITTED-or-later (`check_instructor_change_allowed`, reusing
+`approvals.services.is_class_editable` — allowed in DRAFT/RETURNED or when no sheet exists yet);
+a no-op reassignment (same instructor) is never logged or notified. Every real change notifies the
+new instructor ("You've been assigned PEd 205 – BSED-ENG 3, BSED-SS 3") and the previous one if any
+("PEd 205 was reassigned") via `dashboard.services.notify`, and writes an
+`academics.TeachingAssignmentLog` row (class, old → new instructor, changed_by, `is_admin_override`,
+optional reason, timestamp) — combined into the admin Audit Log page (`accounts/audit.py`'s new
+`"teaching_assignment"` source) and shown as a small "Assignment history" list on the class's roster
+page. **Teaching Loads** (`academics:teaching_loads`, Program Head sidebar under Academics / Admin
+sidebar under Academic Setup; Program Head scoped to their own program(s), Admin all with a program
+filter): per instructor in the active semester — classes, total units, student count — plus a
+separately-listed "Unassigned classes" section (never silently dropped) and an instructor filter;
+Excel export. The Program Head dashboard's placeholder "Avg. Pass Rate" stat card was replaced with
+a real "Unassigned Classes" count linking to the filtered Classes page.
 
 Enforce access with middleware + Django Policies (view-level `role_required`/`RoleRequiredMixin`
 today; move to per-object permission checks once there's per-object data to protect). Instructors
@@ -357,6 +400,12 @@ not cascade-delete. The hierarchy is **Program → Major (optional) → Section*
   date, never deletes the row. Built/managed via `academics/roster_import.py` (the "Import class
   list" .xlsx/.csv flow — matches by `id_number`, creates a new STUDENT user if none exists) and the
   Class Lists page's manual add-entire-section / add-students / mark-dropped / restore actions.
+- `academics.TeachingAssignmentLog` (built, teaching-load assignment follow-up, section 3a) — one
+  row per instructor assignment/reassignment: class_offering FK (CASCADE), old_instructor/
+  new_instructor FK User (SET_NULL, nullable — None means "was/now Unassigned"), changed_by FK User
+  (SET_NULL), is_admin_override (bool), reason (optional text). Combined into the admin Audit Log
+  page (`accounts/audit.py`'s `"teaching_assignment"` source) and shown as a class's own
+  "Assignment history" (`academics:class_roster`).
 
 The active semester is available in every template as `active_semester` via
 `academics.context_processors.active_semester` (registered in `TEMPLATES.OPTIONS.context_processors`).

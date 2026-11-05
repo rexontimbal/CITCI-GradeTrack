@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block page_title %}Teaching Loads{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Teaching Loads" subtitle="Per-instructor load for the active semester." %}
+
+{% if not active_semester_set %}
+{% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
+{% else %}
+
+<form method="get" class="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-3">
+    {% if request.user.is_admin_role %}
+    <div>
+        <label class="mb-1 block text-xs font-medium text-gray-700">Program</label>
+        <select name="program" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()">
+            <option value="">All programs</option>
+            {% for program in programs %}
+            <option value="{{ program.pk }}" {% if program_filter == program.pk|stringformat:"s" %}selected{% endif %}>{{ program.code }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    <div>
+        <label class="mb-1 block text-xs font-medium text-gray-700">Instructor</label>
+        <select name="instructor" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()">
+            <option value="">All instructors</option>
+            {% for instructor in instructors %}
+            <option value="{{ instructor.pk }}" {% if instructor_filter == instructor.pk|stringformat:"s" %}selected{% endif %}>{{ instructor.full_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <a href="{% url 'academics:teaching_loads_export' %}?{{ request.GET.urlencode }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Export Excel
+    </a>
+</form>
+
+{% if rows %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">Instructor</th>
+                <th class="px-4 py-3">Classes</th>
+                <th class="px-4 py-3">Total Units</th>
+                <th class="px-4 py-3">Total Students</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ row.instructor.full_name }}</td>
+                <td class="px-4 py-3 text-gray-700">
+                    {% for class_offering in row.classes %}
+                    <div>{{ class_offering }}</div>
+                    {% endfor %}
+                </td>
+                <td class="px-4 py-3 text-gray-700">{{ row.total_units }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ row.total_students }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="chalkboard" title="No teaching loads yet" description="No instructor has a class in the active semester yet." %}
+{% endif %}
+
+{% if unassigned %}
+<div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+    <p class="mb-2 text-sm font-semibold text-amber-800">Unassigned classes ({{ unassigned|length }})</p>
+    <ul class="list-inside list-disc text-sm text-amber-800">
+        {% for class_offering in unassigned %}
+        <li><a href="{% url 'academics:class_roster' class_offering.pk %}" class="underline">{{ class_offering }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

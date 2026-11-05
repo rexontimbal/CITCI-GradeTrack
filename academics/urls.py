@@ -55,6 +55,12 @@ urlpatterns = [
     path("my-classes/", views.my_classes, name="my_classes"),
     path("program-head/classes/", views.program_head_classes, name="program_head_classes"),
 
+    # Teaching assignment (Program Head; Admin as a logged override)
+    path("classes/<int:pk>/assign-instructor/", views.class_assign_instructor, name="class_assign_instructor"),
+    path("classes/bulk-assign-instructor/", views.class_bulk_assign_instructor, name="class_bulk_assign_instructor"),
+    path("teaching-loads/", views.teaching_loads, name="teaching_loads"),
+    path("teaching-loads/export.xlsx", views.teaching_loads_export, name="teaching_loads_export"),
+
     # Class Lists (admin) — CITCI GradeTrack does not handle enrollment;
     # this only manages each class's official roster for grading.
     path("class-lists/", views.class_lists_home, name="class_lists"),

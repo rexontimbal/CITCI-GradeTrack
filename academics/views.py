@@ -2,7 +2,7 @@ import io
 from datetime import date
 
 import openpyxl
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -15,7 +15,17 @@ from accounts.models import User
 from core.crud import EntityDeleteView, EntityFormView, EntityListView, ToggleActiveView, trigger_response
 from core.htmx import is_htmx
 
-from .forms import AcademicYearForm, ClassOfferingForm, MajorForm, ProgramForm, SectionForm, SemesterForm, SubjectForm
+from .forms import (
+    AcademicYearForm,
+    BulkAssignInstructorForm,
+    ClassOfferingForm,
+    MajorForm,
+    ProgramForm,
+    SectionForm,
+    SemesterForm,
+    SubjectForm,
+    TeachingAssignmentForm,
+)
 from .models import (
     AcademicYear,
     ClassOffering,
@@ -27,6 +37,7 @@ from .models import (
     Subject,
 )
 from .roster_import import RosterImportError, build_preview, commit_import, parse_roster_file
+from .services import assign_instructor, log_and_notify_instructor_change, teaching_load_rows
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
@@ -352,12 +363,48 @@ class ClassListView(RoleRequiredMixin, EntityListView):
 
 
 class ClassFormView(RoleRequiredMixin, EntityFormView):
+    """Admin's existing Classes CRUD form — the instructor field on it is
+    an "admin override" of what's normally the Program Head's call (see
+    academics:program_head_classes / academics:teaching_loads). A change
+    to that one field goes through the same check/log/notify path as the
+    dedicated assign-instructor flow, instead of just `form.save()`, so
+    both paths behave identically (blocked once the sheet is submitted,
+    logged, notified)."""
+
     allowed_roles = (ADMIN,)
     model = ClassOffering
     form_class = ClassOfferingForm
     refresh_event = "refreshClasses"
     modal_title_create = "Add Class"
     modal_title_edit = "Edit Class"
+
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        old_instructor = obj.instructor if obj else None
+        form = self.form_class(request.POST, instance=obj)
+        if not form.is_valid():
+            return render(request, self.form_template, self.get_context(request, form, obj))
+
+        new_instructor = form.cleaned_data.get("instructor")
+        instructor_changed = obj is not None and (
+            (old_instructor.id if old_instructor else None) != (new_instructor.id if new_instructor else None)
+        )
+        if instructor_changed:
+            try:
+                from .services import check_instructor_change_allowed
+
+                check_instructor_change_allowed(obj)
+            except ValidationError as exc:
+                form.add_error(None, exc.messages[0])
+                return render(request, self.form_template, self.get_context(request, form, obj))
+
+        form.save()
+
+        if instructor_changed:
+            log_and_notify_instructor_change(obj, old_instructor, new_instructor, request.user, is_admin_override=True)
+
+        verb = "updated" if obj else "created"
+        return trigger_response(self.refresh_event, toast=f"Class {verb}.")
 
 
 class ClassDeleteView(RoleRequiredMixin, EntityDeleteView):
@@ -405,6 +452,7 @@ def _get_class_offering_for_viewer(request, pk):
 def class_roster(request, pk):
     class_offering = _get_class_offering_for_viewer(request, pk)
     roster_entries = class_offering.roster_entries.select_related("student", "student__student_profile__section")
+    assignment_logs = class_offering.assignment_logs.select_related("old_instructor", "new_instructor", "changed_by")[:10]
     return render(
         request,
         "academics/class_roster.html",
@@ -413,6 +461,7 @@ def class_roster(request, pk):
             "class_offering": class_offering,
             "roster_entries": roster_entries,
             "can_manage": _can_manage_roster(request.user, class_offering),
+            "assignment_logs": assignment_logs,
         },
     )
 
@@ -444,27 +493,199 @@ def my_classes(request):
     )
 
 
+def _program_head_class_queryset(user, active):
+    """Classes under a program this user heads, for the active semester —
+    shared by the teaching-load Classes page and its unassigned count."""
+    if active is None:
+        return ClassOffering.objects.none()
+    return (
+        ClassOffering.objects.filter(sections__program__program_head=user, semester=active)
+        .select_related("subject", "instructor")
+        .prefetch_related("sections")
+        .annotate(
+            roster_size=Count(
+                "roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True
+            )
+        )
+        .distinct()
+    )
+
+
 @role_required(PROGRAM_HEAD)
 def program_head_classes(request):
+    """Teaching-load manager for a Program Head's own program(s): assign/
+    change an instructor per class (academics:class_assign_instructor,
+    opened in the shared modal), an "Unassigned only" filter, and a bulk
+    "select several -> assign one instructor" action."""
     active = Semester.objects.filter(is_active=True).first()
-    qs = ClassOffering.objects.none()
-    if active:
-        qs = (
-            ClassOffering.objects.filter(sections__program__program_head=request.user, semester=active)
-            .select_related("subject", "instructor")
-            .prefetch_related("sections")
-            .annotate(
-                roster_size=Count(
-                    "roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True
-                )
-            )
-            .distinct()
-        )
+    qs = _program_head_class_queryset(request.user, active)
+    unassigned_count = qs.filter(instructor__isnull=True).count() if active else 0
+
+    if request.GET.get("unassigned") == "1":
+        qs = qs.filter(instructor__isnull=True)
+
     return render(
         request,
         "academics/program_head_classes.html",
-        {"page_title": "Classes", "classes": qs, "active_semester_set": bool(active)},
+        {
+            "page_title": "Classes",
+            "classes": qs,
+            "active_semester_set": bool(active),
+            "unassigned_count": unassigned_count,
+            "unassigned_filter": request.GET.get("unassigned") == "1",
+            "bulk_form": BulkAssignInstructorForm(),
+        },
     )
+
+
+# ---------------------------------------------------------------------------
+# Teaching assignment — Program Head assigns/changes an instructor per
+# class; Admin can too, as a logged "admin override" (see ClassFormView
+# above for the admin Classes CRUD form's own path to the same logging).
+# ---------------------------------------------------------------------------
+
+
+def _can_assign_instructor(user, class_offering):
+    if user.is_admin_role:
+        return True
+    return user.is_program_head and class_offering.sections.filter(program__program_head_id=user.id).exists()
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def class_assign_instructor(request, pk):
+    class_offering = get_object_or_404(
+        ClassOffering.objects.select_related("instructor", "subject").prefetch_related("sections__program"), pk=pk
+    )
+    if not _can_assign_instructor(request.user, class_offering):
+        raise PermissionDenied("This class is not under your program.")
+    is_admin_override = request.user.is_admin_role
+
+    if request.method != "POST":
+        form = TeachingAssignmentForm(initial={"instructor": class_offering.instructor_id})
+        return render(
+            request,
+            "academics/_assign_instructor_modal.html",
+            {"class_offering": class_offering, "form": form, "is_admin_override": is_admin_override},
+        )
+
+    form = TeachingAssignmentForm(request.POST)
+    if form.is_valid():
+        try:
+            assign_instructor(
+                class_offering,
+                form.cleaned_data["instructor"],
+                request.user,
+                is_admin_override=is_admin_override,
+                reason=form.cleaned_data.get("reason", ""),
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc.messages[0])
+
+    if form.errors:
+        return render(
+            request,
+            "academics/_assign_instructor_modal.html",
+            {"class_offering": class_offering, "form": form, "is_admin_override": is_admin_override},
+        )
+
+    return trigger_response("refreshClasses", toast=f"Instructor updated for {class_offering}.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def class_bulk_assign_instructor(request):
+    """A plain (non-HTMX) form POST — checkboxes in a table don't need
+    HTMX's modal/toast machinery, just messages + a redirect back."""
+    from django.contrib import messages as django_messages
+    from django.shortcuts import redirect
+
+    redirect_to = "academics:classes" if request.user.is_admin_role else "academics:program_head_classes"
+    if request.method != "POST":
+        raise PermissionDenied
+
+    form = BulkAssignInstructorForm(request.POST)
+    if not form.is_valid():
+        error_text = "; ".join(" ".join(errs) for errs in form.errors.values())
+        django_messages.error(request, error_text or "Could not assign.")
+        return redirect(redirect_to)
+
+    class_ids = form.cleaned_data["class_ids"]
+    instructor = form.cleaned_data["instructor"]
+    is_admin_override = request.user.is_admin_role
+
+    classes = ClassOffering.objects.filter(pk__in=class_ids)
+    if not is_admin_override:
+        classes = classes.filter(sections__program__program_head=request.user).distinct()
+
+    assigned, blocked = 0, 0
+    for class_offering in classes:
+        try:
+            result = assign_instructor(class_offering, instructor, request.user, is_admin_override=is_admin_override)
+            if result is not None:
+                assigned += 1
+        except ValidationError:
+            blocked += 1
+
+    text = f"Assigned {instructor.full_name} to {assigned} class{'es' if assigned != 1 else ''}."
+    if blocked:
+        text += f" {blocked} already-submitted class{'es were' if blocked != 1 else ' was'} skipped."
+    django_messages.success(request, text)
+    return redirect(redirect_to)
+
+
+# ---------------------------------------------------------------------------
+# Teaching Loads — per-instructor summary for the active semester (Program
+# Head: their own program(s); Admin: all, with a program filter).
+# ---------------------------------------------------------------------------
+
+
+def _scope_programs_for_teaching_loads(request):
+    if request.user.is_admin_role:
+        program_id = request.GET.get("program")
+        qs = Program.objects.all()
+        return qs.filter(pk=program_id) if program_id else qs
+    return Program.objects.filter(program_head=request.user)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def teaching_loads(request):
+    active = Semester.objects.filter(is_active=True).first()
+    programs = _scope_programs_for_teaching_loads(request)
+    instructor_id = request.GET.get("instructor")
+    rows, unassigned = teaching_load_rows(active, programs, instructor_id=instructor_id)
+
+    context = {
+        "page_title": "Teaching Loads",
+        "active_semester_set": bool(active),
+        "rows": rows,
+        "unassigned": unassigned,
+        "programs": Program.objects.all() if request.user.is_admin_role else programs,
+        "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
+        "program_filter": request.GET.get("program", ""),
+        "instructor_filter": instructor_id or "",
+    }
+    return render(request, "academics/teaching_loads.html", context)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def teaching_loads_export(request):
+    from reports.excel import workbook_response
+
+    active = Semester.objects.filter(is_active=True).first()
+    programs = _scope_programs_for_teaching_loads(request)
+    instructor_id = request.GET.get("instructor")
+    rows, unassigned = teaching_load_rows(active, programs, instructor_id=instructor_id)
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Teaching Loads"
+    sheet.append(["Instructor", "Classes", "Total Units", "Total Students"])
+    for row in rows:
+        sheet.append([row["instructor"].full_name, len(row["classes"]), float(row["total_units"]), row["total_students"]])
+    sheet.append([])
+    sheet.append(["Unassigned classes"])
+    for class_offering in unassigned:
+        sheet.append([str(class_offering)])
+    return workbook_response(workbook, f"TeachingLoads_{active}.xlsx" if active else "TeachingLoads.xlsx")
 
 
 # ---------------------------------------------------------------------------

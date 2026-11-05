@@ -25,6 +25,7 @@ MENUS = {
                 ("academics:subjects", "Subjects", "book"),
                 ("academics:classes", "Classes", "chalkboard"),
                 ("academics:class_lists", "Class Lists", "clipboard"),
+                ("academics:teaching_loads", "Teaching Loads", "chart"),
             ],
         },
         {
@@ -63,6 +64,7 @@ MENUS = {
             "label": "Academics",
             "items": [
                 ("academics:program_head_classes", "Classes", "chalkboard"),
+                ("academics:teaching_loads", "Teaching Loads", "chart"),
                 ("approvals:index", "Grade Approvals", "check-circle"),
                 ("forecasting:at_risk", "At-Risk Students", "alert"),
             ],

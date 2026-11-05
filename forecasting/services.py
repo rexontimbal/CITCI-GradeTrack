@@ -41,43 +41,64 @@ def risk_level(probability, threshold):
     return "ON_TRACK"
 
 
-def current_checkpoint_for_class(class_offering):
-    """MIDTERM if any EXAM-category item with term <= MIDTERM has a score
-    anywhere in the class; else PRELIM if any PRELIM item (any category)
-    has a score; else None ("Not enough data yet").
-
-    Term ordering (Prelim < Midterm < Semi-final < Final) doesn't sort
-    correctly as a plain string comparison in SQL, so the "<=" cutoff is
-    resolved to a list of term values in Python (ASSESSMENT_TERM_ORDER,
-    no query) and passed to a single `term__in=` query — one query per
-    checkpoint tier checked (at most two total), instead of materializing
-    AssessmentItem objects first and querying Score separately (Phase 8
-    part A query-count pass — this function runs once per class on the
-    At-Risk pages, so halving its query count matters there)."""
+def _checkpoints_for_classes(class_offerings):
+    """{class_offering_id: checkpoint-or-None} for MANY classes in exactly
+    2 queries total (one per tier), instead of up to 2 queries PER class —
+    the batch primitive behind current_checkpoint_for_class (1 class),
+    count_at_risk_watch, and get_display_forecasts_for_classes (Phase 8
+    part B dashboard query-count pass — count_at_risk_watch calling the
+    single-class version in a loop was the Program Head dashboard's
+    biggest N+1, ~3 queries x every class in the program)."""
     from grading.models import ASSESSMENT_TERM_ORDER, AssessmentTerm, ComponentCategory, Score
+
+    class_offerings = list(class_offerings)
+    if not class_offerings:
+        return {}
 
     midterm_cutoff = ASSESSMENT_TERM_ORDER[AssessmentTerm.MIDTERM]
     terms_upto_midterm = [t for t, order in ASSESSMENT_TERM_ORDER.items() if order <= midterm_cutoff]
-    has_midterm_exam_score = Score.objects.filter(
-        item__class_offering=class_offering,
-        item__component__category=ComponentCategory.EXAM,
-        item__term__in=terms_upto_midterm,
-        score__isnull=False,
-    ).exists()
-    if has_midterm_exam_score:
-        return Checkpoint.MIDTERM
-
     prelim_cutoff = ASSESSMENT_TERM_ORDER[AssessmentTerm.PRELIM]
     terms_upto_prelim = [t for t, order in ASSESSMENT_TERM_ORDER.items() if order <= prelim_cutoff]
-    has_prelim_score = Score.objects.filter(
-        item__class_offering=class_offering,
-        item__term__in=terms_upto_prelim,
-        score__isnull=False,
-    ).exists()
-    if has_prelim_score:
-        return Checkpoint.PRELIM
 
-    return None
+    midterm_class_ids = set(
+        Score.objects.filter(
+            item__class_offering__in=class_offerings,
+            item__component__category=ComponentCategory.EXAM,
+            item__term__in=terms_upto_midterm,
+            score__isnull=False,
+        )
+        .values_list("item__class_offering_id", flat=True)
+        .distinct()
+    )
+    prelim_class_ids = set(
+        Score.objects.filter(
+            item__class_offering__in=class_offerings,
+            item__term__in=terms_upto_prelim,
+            score__isnull=False,
+        )
+        .values_list("item__class_offering_id", flat=True)
+        .distinct()
+    )
+
+    checkpoints = {}
+    for co in class_offerings:
+        if co.pk in midterm_class_ids:
+            checkpoints[co.pk] = Checkpoint.MIDTERM
+        elif co.pk in prelim_class_ids:
+            checkpoints[co.pk] = Checkpoint.PRELIM
+        else:
+            checkpoints[co.pk] = None
+    return checkpoints
+
+
+def current_checkpoint_for_class(class_offering):
+    """MIDTERM if any EXAM-category item with term <= MIDTERM has a score
+    anywhere in the class; else PRELIM if any PRELIM item (any category)
+    has a score; else None ("Not enough data yet"). Single-class
+    convenience wrapper around _checkpoints_for_classes — callers looping
+    over many classes should call that directly instead (see
+    count_at_risk_watch/get_display_forecasts_for_classes)."""
+    return _checkpoints_for_classes([class_offering]).get(class_offering.pk)
 
 
 def show_forecasts_to_students():
@@ -161,6 +182,97 @@ def get_display_forecasts_for_class(class_offering):
         return None, {}
 
 
+def get_display_forecasts_for_classes(class_offerings):
+    """Batch version of get_display_forecasts_for_class across MANY classes
+    at once — the At-Risk pages (instructor and program head) used to call
+    the single-class version once per class, which meant every one of its
+    internal queries (checkpoint determination, roster fetch, prediction
+    fetch, editability check) repeated per class — ~6-7 queries x N classes
+    (Phase 8 part A left this at 118 queries for a program head with many
+    classes; this pass batches every one of those steps into a handful of
+    queries total). Returns {class_offering_id: (checkpoint-or-None,
+    {roster_entry_id: forecast}, {roster_entry_id: ClassRosterEntry})} —
+    the third element lets callers build display rows (student name,
+    interventions) with no further queries."""
+    from django.db.models import Prefetch
+
+    from approvals.models import GradeSheet, GradeSheetPeriod, GradeSheetStatus
+
+    from .models import Intervention
+
+    class_offerings = list(class_offerings)
+    if not class_offerings:
+        return {}
+
+    checkpoints = _checkpoints_for_classes(class_offerings)
+    active_class_ids = [co.pk for co in class_offerings if checkpoints[co.pk] is not None]
+    if not active_class_ids:
+        return {co.pk: (None, {}, {}) for co in class_offerings}
+
+    # Roster + interventions for every active class in one query each,
+    # instead of once per class (and the old code fetched the roster
+    # twice per class — once here, once in the view's row-builder).
+    roster_entries = list(
+        ClassRosterEntry.objects.filter(class_offering_id__in=active_class_ids, status=ClassRosterEntry.Status.ACTIVE)
+        .select_related("student")
+        .prefetch_related(Prefetch("interventions", queryset=Intervention.objects.order_by("-date", "-created_at")))
+    )
+    entries_by_class = {}
+    entries_by_id_by_class = {}
+    for entry in roster_entries:
+        entries_by_class.setdefault(entry.class_offering_id, []).append(entry)
+        entries_by_id_by_class.setdefault(entry.class_offering_id, {})[entry.id] = entry
+
+    # All stored predictions for all these roster entries in one query
+    # (both checkpoints — the table is small per student), instead of one
+    # query per class.
+    all_entry_ids = [e.id for e in roster_entries]
+    predictions_by_entry = {}
+    for p in Prediction.objects.filter(roster_entry_id__in=all_entry_ids).select_related("model_version"):
+        predictions_by_entry.setdefault(p.roster_entry_id, {})[p.checkpoint] = p
+
+    # Editability for every active class in one query, instead of one
+    # GradeSheet query per class (approvals.services.is_class_editable).
+    sheet_status = dict(
+        GradeSheet.objects.filter(class_offering_id__in=active_class_ids, period=GradeSheetPeriod.FINAL).values_list(
+            "class_offering_id", "status"
+        )
+    )
+    editable_class_ids = {
+        class_id
+        for class_id in active_class_ids
+        if sheet_status.get(class_id) is None
+        or sheet_status.get(class_id) in (GradeSheetStatus.DRAFT, GradeSheetStatus.RETURNED)
+    }
+
+    results = {}
+    for co in class_offerings:
+        checkpoint = checkpoints[co.pk]
+        if checkpoint is None:
+            results[co.pk] = (None, {}, {})
+            continue
+        editable = co.pk in editable_class_ids
+        forecasts = {}
+        for entry in entries_by_class.get(co.pk, []):
+            prediction = predictions_by_entry.get(entry.id, {}).get(checkpoint)
+            if prediction is not None:
+                forecasts[entry.id] = prediction
+                continue
+            if not editable:
+                forecasts[entry.id] = NOT_ENOUGH_DATA
+                continue
+            try:
+                from .ml.predict import predict_and_store
+
+                result = predict_and_store(entry, checkpoint)
+                forecasts[entry.id] = NOT_ENOUGH_DATA if result == "insufficient_data" else result
+            except Exception:
+                logger.exception("Forecast backfill failed for roster_entry=%s", entry.pk)
+                forecasts[entry.id] = UNAVAILABLE
+        results[co.pk] = (checkpoint, forecasts, entries_by_id_by_class.get(co.pk, {}))
+    return results
+
+
 STUDENT_STUDY_TIPS = [
     "Review your notes a little each day instead of cramming before an exam.",
     "Ask your instructor a specific question about what's unclear to you.",
@@ -205,15 +317,18 @@ def student_forecast_card(roster_entry):
         return None
 
     forecast = get_display_forecast(roster_entry)
+    return _forecast_card_from(forecast, roster_entry.class_offering.subject.code)
+
+
+def _forecast_card_from(forecast, subject_code):
+    """The display-building half of student_forecast_card, factored out so
+    the batch version below shares it instead of re-deriving the dict
+    shape."""
     if isinstance(forecast, str):
         return None
-
     level = risk_level(forecast.probability, forecast.model_version.threshold)
-    subject_code = roster_entry.class_offering.subject.code
-
     if level == "ON_TRACK":
         return {"level": level, "message": f"You're on track in {subject_code}. Keep it up!", "factors": [], "tips": []}
-
     return {
         "level": level,
         "message": f"{subject_code} needs your attention.",
@@ -222,27 +337,72 @@ def student_forecast_card(roster_entry):
     }
 
 
+def student_forecast_cards_batch(roster_entries):
+    """Batch version of student_forecast_card for the student dashboard
+    (one student, several classes) — calls show_forecasts_to_students()
+    once and get_display_forecasts_for_classes once, instead of the
+    single-entry version's full checkpoint/prediction/editability query
+    set PER roster entry (Phase 8 part B dashboard query-count pass — this
+    was ~4-6 queries x every subject on the student dashboard). Returns
+    {roster_entry_id: card-or-None}."""
+    roster_entries = list(roster_entries)
+    if not roster_entries or not show_forecasts_to_students():
+        return {e.id: None for e in roster_entries}
+
+    class_offerings = {e.class_offering_id: e.class_offering for e in roster_entries}
+    bulk = get_display_forecasts_for_classes(class_offerings.values())
+
+    cards = {}
+    for entry in roster_entries:
+        _checkpoint, forecasts, _entries = bulk.get(entry.class_offering_id, (None, {}, {}))
+        forecast = forecasts.get(entry.id)
+        cards[entry.id] = (
+            _forecast_card_from(forecast, entry.class_offering.subject.code) if forecast is not None else None
+        )
+    return cards
+
+
 def count_at_risk_watch(classes):
     """Cheap, read-only count for dashboard stat cards — never backfills
     missing predictions (that would make a dashboard load as slow as a
     full recompute sweep); just counts whatever's already stored for each
-    class's current checkpoint. Returns {"at_risk": n, "watch": m}."""
+    class's current checkpoint. Returns {"at_risk": n, "watch": m}.
+
+    Batched (Phase 8 part B dashboard query-count pass): checkpoints for
+    every class are resolved in 2 queries total via _checkpoints_for_classes
+    (not current_checkpoint_for_class in a loop), and every class's
+    predictions are fetched in a single query grouped by checkpoint —
+    instead of ~3 queries PER class, which was the Program Head dashboard's
+    biggest single contributor (101 queries measured before this fix)."""
+    from django.db.models import Q
+
+    classes = list(classes)
     counts = {"at_risk": 0, "watch": 0}
-    for class_offering in classes:
-        checkpoint = current_checkpoint_for_class(class_offering)
-        if checkpoint is None:
-            continue
-        predictions = Prediction.objects.filter(
-            roster_entry__class_offering=class_offering,
-            roster_entry__status=ClassRosterEntry.Status.ACTIVE,
-            checkpoint=checkpoint,
-        ).select_related("model_version")
-        for prediction in predictions:
-            level = risk_level(prediction.probability, prediction.model_version.threshold)
-            if level == "AT_RISK":
-                counts["at_risk"] += 1
-            elif level == "WATCH":
-                counts["watch"] += 1
+    if not classes:
+        return counts
+
+    checkpoints = _checkpoints_for_classes(classes)
+    by_checkpoint = {}
+    for co in classes:
+        checkpoint = checkpoints.get(co.pk)
+        if checkpoint is not None:
+            by_checkpoint.setdefault(checkpoint, []).append(co.pk)
+    if not by_checkpoint:
+        return counts
+
+    query = Q()
+    for checkpoint, class_ids in by_checkpoint.items():
+        query |= Q(roster_entry__class_offering_id__in=class_ids, checkpoint=checkpoint)
+
+    predictions = Prediction.objects.filter(
+        query, roster_entry__status=ClassRosterEntry.Status.ACTIVE
+    ).select_related("model_version")
+    for prediction in predictions:
+        level = risk_level(prediction.probability, prediction.model_version.threshold)
+        if level == "AT_RISK":
+            counts["at_risk"] += 1
+        elif level == "WATCH":
+            counts["watch"] += 1
     return counts
 
 

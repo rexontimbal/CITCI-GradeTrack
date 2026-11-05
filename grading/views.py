@@ -679,7 +679,7 @@ def my_grades(request):
     from academics.models import Semester
     from approvals.services import compute_gwa
 
-    from .services import released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+    from .services import compute_students_batch, released_entries_for, show_unofficial_scores_to_students, subject_status_chip
 
     student = request.user
     show_unofficial = show_unofficial_scores_to_students()
@@ -698,13 +698,23 @@ def my_grades(request):
     gwa = None
     total_units = Decimal("0")
     if semester:
-        roster_entries = (
+        # Batched (Phase 8 part B query-count pass) — released_entry and the
+        # unofficial running grade were each one query PER subject.
+        roster_entries = list(
             ClassRosterEntry.objects.filter(student=student, class_offering__semester=semester)
             .select_related("class_offering__subject", "class_offering__instructor")
             .order_by("class_offering__subject__code")
         )
+        released_by_entry = released_entries_for(roster_entries)
+        needs_unofficial = [
+            e
+            for e in roster_entries
+            if show_unofficial and released_by_entry.get(e.id) is None and e.status == ClassRosterEntry.Status.ACTIVE
+        ]
+        unofficial_by_entry = compute_students_batch(needs_unofficial) if needs_unofficial else {}
+
         for entry in roster_entries:
-            released_entry = released_entry_for(entry)
+            released_entry = released_by_entry.get(entry.id)
             status_label, status_key = subject_status_chip(entry, released_entry)
             row = {
                 "roster_entry": entry,
@@ -714,8 +724,8 @@ def my_grades(request):
                 "status_key": status_key,
                 "unofficial_grade": None,
             }
-            if released_entry is None and show_unofficial and entry.status == ClassRosterEntry.Status.ACTIVE:
-                row["unofficial_grade"] = compute_student(entry).running_grade
+            if entry.id in unofficial_by_entry:
+                row["unofficial_grade"] = unofficial_by_entry[entry.id].running_grade
             rows.append(row)
             total_units += entry.class_offering.subject.units
 
@@ -773,6 +783,16 @@ def subject_detail(request, pk):
     if not can_view_detail:
         return render(request, "grading/subject_detail.html", context)
 
+    # Fetched once and threaded through compute_student/
+    # running_grade_progression below (Phase 8 part B query-count pass —
+    # each used to independently re-fetch the same scheme/components/items/
+    # scores for this one roster entry).
+    components = get_scheme_components(class_offering)
+    item_ids = [item.id for c in components for item in c.items.all()]
+    scores_by_item = {
+        s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
+    }
+
     if is_released:
         components_display = [
             {
@@ -787,7 +807,7 @@ def subject_detail(request, pk):
         final_grade = released_entry.final_grade
         remarks_display = released_entry.get_remarks_display()
     else:
-        result = compute_student(roster_entry)
+        result = compute_student(roster_entry, components=components)
         components_display = [
             {
                 "name": b.component.name,
@@ -805,11 +825,6 @@ def subject_detail(request, pk):
     # (informational only; for a released class these are frozen anyway
     # since editing locks at submission, so it never drifts from what the
     # official snapshot was taken from).
-    components = get_scheme_components(class_offering)
-    item_ids = [item.id for c in components for item in c.items.all()]
-    scores_by_item = {
-        s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
-    }
     items_by_term = {term: [] for term, _ in AssessmentTerm.choices}
     for component in components:
         for item in component.items.all():
@@ -831,7 +846,7 @@ def subject_detail(request, pk):
             if avg is not None:
                 component_averages.append({"name": component.name, "average": avg})
 
-    progression = running_grade_progression(roster_entry)
+    progression = running_grade_progression(roster_entry, components=components, scores_by_item=scores_by_item)
 
     from forecasting.services import student_forecast_card
 
@@ -860,7 +875,7 @@ def my_progress(request):
     from approvals.models import GradeSheetEntry, GradeSheetStatus
     from approvals.services import compute_gwa
 
-    from .services import released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+    from .services import compute_students_batch, released_entries_for, show_unofficial_scores_to_students, subject_status_chip
 
     student = request.user
     show_unofficial = show_unofficial_scores_to_students()
@@ -888,16 +903,28 @@ def my_progress(request):
     active_semester = semesters.filter(is_active=True).first()
     current_subjects = []
     if active_semester:
-        roster_entries = ClassRosterEntry.objects.filter(
-            student=student, class_offering__semester=active_semester
-        ).select_related("class_offering__subject")
+        # Batched (Phase 8 part B query-count pass) — see my_grades/
+        # dashboard for the same released_entry/compute_student N+1.
+        roster_entries = list(
+            ClassRosterEntry.objects.filter(student=student, class_offering__semester=active_semester).select_related(
+                "class_offering__subject"
+            )
+        )
+        released_by_entry = released_entries_for(roster_entries)
+        needs_unofficial = [
+            e
+            for e in roster_entries
+            if show_unofficial and released_by_entry.get(e.id) is None and e.status == ClassRosterEntry.Status.ACTIVE
+        ]
+        unofficial_by_entry = compute_students_batch(needs_unofficial) if needs_unofficial else {}
+
         for entry in roster_entries:
-            released_entry = released_entry_for(entry)
+            released_entry = released_by_entry.get(entry.id)
             status_label, status_key = subject_status_chip(entry, released_entry)
             if released_entry is not None:
                 grade = released_entry.final_grade
-            elif show_unofficial and entry.status == ClassRosterEntry.Status.ACTIVE:
-                grade = compute_student(entry).running_grade
+            elif entry.id in unofficial_by_entry:
+                grade = unofficial_by_entry[entry.id].running_grade
             else:
                 grade = None
             current_subjects.append(

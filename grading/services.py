@@ -341,10 +341,16 @@ def get_scheme_components(class_offering):
     return _get_scheme_components(class_offering)
 
 
-def compute_student(roster_entry) -> StudentGradeResult:
+def compute_student(roster_entry, components=None) -> StudentGradeResult:
     """Full breakdown + running/final grade for one student. Not the
-    efficient path for a whole class — see compute_class for that."""
-    components = _get_scheme_components(roster_entry.class_offering)
+    efficient path for a whole class — see compute_class for that.
+
+    `components` lets a caller that already fetched the scheme (e.g.
+    subject_detail, which also needs it for running_grade_progression and
+    the item-by-term list) pass it in instead of this function re-querying
+    the same scheme/components/items — see get_scheme_components."""
+    if components is None:
+        components = _get_scheme_components(roster_entry.class_offering)
     item_ids = [item.id for c in components for item in c.items.all()]
     encoded_item_ids = _encoded_item_ids(item_ids)
     scores_by_item = {
@@ -400,6 +406,77 @@ def released_entry_for(roster_entry):
     )
 
 
+def released_entries_for(roster_entries):
+    """Batch version of released_entry_for for MANY roster entries (the
+    student dashboard / My Grades list) — one query total instead of one
+    per entry. Returns {roster_entry_id: GradeSheetEntry-or-None}."""
+    from approvals.models import GradeSheetEntry, GradeSheetStatus
+
+    roster_entries = list(roster_entries)
+    if not roster_entries:
+        return {}
+    entries = GradeSheetEntry.objects.filter(
+        roster_entry__in=roster_entries, sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
+    ).select_related("sheet")
+    by_entry = {e.roster_entry_id: e for e in entries}
+    return {entry.id: by_entry.get(entry.id) for entry in roster_entries}
+
+
+def compute_students_batch(roster_entries):
+    """Batch version of compute_student for roster entries spanning MANY
+    different classes (the student dashboard / My Grades, as opposed to
+    compute_class's "many students, one class") — a handful of queries
+    total regardless of how many classes are involved, instead of
+    compute_student's own ~3 queries PER entry (Phase 8 part B dashboard
+    query-count pass). Returns {roster_entry_id: StudentGradeResult}."""
+    from django.db.models import prefetch_related_objects
+
+    from .models import SchemeComponent
+
+    roster_entries = list(roster_entries)
+    if not roster_entries:
+        return {}
+
+    class_ids = {e.class_offering_id for e in roster_entries}
+    schemes = {s.class_offering_id: s for s in ClassGradingScheme.objects.filter(class_offering_id__in=class_ids)}
+
+    # A class with no scheme row yet is rare (one is normally created the
+    # first time anyone opens its grading page) — fall back to the
+    # single-entry path for just those rather than special-casing it below.
+    results = {}
+    batchable_entries = []
+    for entry in roster_entries:
+        if entry.class_offering_id in schemes:
+            batchable_entries.append(entry)
+        else:
+            results[entry.id] = compute_student(entry)
+    if not batchable_entries:
+        return results
+
+    scheme_ids = [s.id for s in schemes.values()]
+    components = list(SchemeComponent.objects.filter(scheme_id__in=scheme_ids).order_by("order", "id"))
+    prefetch_related_objects(components, Prefetch("items", queryset=AssessmentItem.objects.order_by("order", "id")))
+    components_by_scheme = {}
+    for component in components:
+        components_by_scheme.setdefault(component.scheme_id, []).append(component)
+
+    all_item_ids = [item.id for component in components for item in component.items.all()]
+    encoded_item_ids = _encoded_item_ids(all_item_ids)
+
+    entry_ids = [e.id for e in batchable_entries]
+    scores_by_entry = {}
+    for score in Score.objects.filter(roster_entry_id__in=entry_ids, item_id__in=all_item_ids):
+        scores_by_entry.setdefault(score.roster_entry_id, {})[score.item_id] = score.score
+
+    for entry in batchable_entries:
+        scheme = schemes[entry.class_offering_id]
+        components_for_entry = components_by_scheme.get(scheme.id, [])
+        scores_by_item = scores_by_entry.get(entry.id, {})
+        breakdowns, missing_items = _build_breakdown(components_for_entry, scores_by_item, encoded_item_ids)
+        results[entry.id] = StudentGradeResult(roster_entry=entry, components=breakdowns, missing_items=missing_items)
+    return results
+
+
 def subject_status_chip(roster_entry, released_entry):
     """(label, css-class-key) — the small status chip shown on the student
     dashboard's subject cards and the My Grades table."""
@@ -414,20 +491,26 @@ def subject_status_chip(roster_entry, released_entry):
     return "In progress", "in_progress"
 
 
-def running_grade_progression(roster_entry):
+def running_grade_progression(roster_entry, components=None, scores_by_item=None):
     """The running grade "as of" each grading period (Prelim → Final) —
     same semantics as StudentGradeResult.running_grade (only components
     with at least one scored item count, re-normalized), but windowed to
     items whose term is at or before the cutoff. Used by the student
     portal's subject-detail progression chart. Returns a list of
-    (term_value, term_label, grade-or-None) in Prelim..Final order."""
+    (term_value, term_label, grade-or-None) in Prelim..Final order.
+
+    `components`/`scores_by_item` let a caller that already fetched the
+    scheme and scores (subject_detail) pass them in instead of this
+    function re-querying the same data — see get_scheme_components."""
     from .models import AssessmentTerm, ASSESSMENT_TERM_ORDER
 
-    components = _get_scheme_components(roster_entry.class_offering)
-    item_ids = [item.id for c in components for item in c.items.all()]
-    scores_by_item = {
-        s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
-    }
+    if components is None:
+        components = _get_scheme_components(roster_entry.class_offering)
+    if scores_by_item is None:
+        item_ids = [item.id for c in components for item in c.items.all()]
+        scores_by_item = {
+            s.item_id: s.score for s in Score.objects.filter(roster_entry=roster_entry, item_id__in=item_ids)
+        }
 
     progression = []
     for term, label in AssessmentTerm.choices:

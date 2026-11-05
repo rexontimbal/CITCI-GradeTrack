@@ -71,32 +71,44 @@ def _instructor_dashboard(request):
 
 
 def _student_dashboard(request):
+    from django.db.models import Count, Q
+
     from approvals.services import compute_gwa
-    from grading.models import AssessmentItem, Score
-    from grading.services import compute_student, released_entry_for, show_unofficial_scores_to_students, subject_status_chip
+    from grading.services import compute_students_batch, released_entries_for, show_unofficial_scores_to_students, subject_status_chip
 
     student = request.user
     active = _active_semester()
     show_unofficial = show_unofficial_scores_to_students()
 
-    roster_entries = (
+    # Batched (Phase 8 part B dashboard query-count pass): released_entry,
+    # total/encoded item counts, the unofficial running grade, and the
+    # forecast card were each computed PER subject — ~10-12 queries x every
+    # subject (111 queries measured before this pass for a ~9-subject
+    # student). Every one of those is now one query total for the whole
+    # page instead of one per subject.
+    roster_entries = list(
         ClassRosterEntry.objects.filter(student=student, class_offering__semester=active)
         .exclude(status=ClassRosterEntry.Status.DROPPED)
         .select_related("class_offering__subject", "class_offering__instructor")
+        .annotate(
+            total_items=Count("class_offering__assessment_items", distinct=True),
+            encoded_items=Count("scores", filter=Q(scores__score__isnull=False), distinct=True),
+        )
         .order_by("class_offering__subject__code")
         if active
-        else ClassRosterEntry.objects.none()
+        else []
     )
+
+    released_by_entry = released_entries_for(roster_entries)
+    needs_unofficial = [e for e in roster_entries if show_unofficial and released_by_entry.get(e.id) is None]
+    unofficial_by_entry = compute_students_batch(needs_unofficial) if needs_unofficial else {}
 
     cards = []
     warnings_count = 0 if show_unofficial else None
     for entry in roster_entries:
-        released_entry = released_entry_for(entry)
+        released_entry = released_by_entry.get(entry.id)
         status_label, status_key = subject_status_chip(entry, released_entry)
-
-        total_items = AssessmentItem.objects.filter(class_offering=entry.class_offering).count()
-        encoded_items = Score.objects.filter(roster_entry=entry, score__isnull=False).count()
-        progress_pct = int(encoded_items / total_items * 100) if total_items else 0
+        progress_pct = int(entry.encoded_items / entry.total_items * 100) if entry.total_items else 0
 
         card = {
             "entry": entry,
@@ -112,7 +124,7 @@ def _student_dashboard(request):
             card["final_grade"] = released_entry.final_grade
             card["remarks"] = released_entry.get_remarks_display()
         elif show_unofficial:
-            running_grade = compute_student(entry).running_grade
+            running_grade = unofficial_by_entry[entry.id].running_grade
             card["unofficial_grade"] = running_grade
             if running_grade is not None and running_grade > 3:
                 warnings_count += 1
@@ -122,16 +134,17 @@ def _student_dashboard(request):
     released_display = f"{gwa['released_count']}/{gwa['total_count']}" if gwa else "0/0"
     notifications = request.user.notifications.all()[:5]
 
-    from forecasting.services import student_forecast_card
+    from forecasting.services import student_forecast_cards_batch
 
     forecast_priority = {"AT_RISK": 0, "WATCH": 1, "ON_TRACK": 2}
-    forecast_cards = [card for card in (student_forecast_card(e) for e in roster_entries) if card is not None]
+    forecast_by_entry = student_forecast_cards_batch(roster_entries)
+    forecast_cards = [card for card in forecast_by_entry.values() if card is not None]
     forecast_cards.sort(key=lambda c: forecast_priority[c["level"]])
     forecast = forecast_cards[0] if forecast_cards else None
 
     context = {
         "cards": cards,
-        "subjects_count": roster_entries.count(),
+        "subjects_count": len(roster_entries),
         "gwa": gwa,
         "released_display": released_display,
         "warnings_count": warnings_count,

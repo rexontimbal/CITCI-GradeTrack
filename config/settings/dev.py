@@ -22,17 +22,21 @@ STORAGES = {
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 
-# django-debug-toolbar — dev only (requirements-dev.txt). Guarded with a
+# django-debug-toolbar — dev only (requirements-dev.txt), and now opt-in
+# (DEBUG_TOOLBAR=1) rather than always-on: its per-request SQL/template
+# panels add real overhead to every page load, which skews the query-count/
+# latency numbers in docs/PERFORMANCE.md if left on by habit. Guarded with a
 # try/except so `manage.py` still works in a fresh dev checkout before
 # `pip install -r requirements-dev.txt` has been run.
-try:
-    import debug_toolbar  # noqa: F401
-except ImportError:
-    pass
-else:
-    INSTALLED_APPS = [*INSTALLED_APPS, "debug_toolbar"]
-    MIDDLEWARE = ["debug_toolbar.middleware.DebugToolbarMiddleware", *MIDDLEWARE]
-    INTERNAL_IPS = ["127.0.0.1"]
+if env.bool("DEBUG_TOOLBAR", default=False):
+    try:
+        import debug_toolbar  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        INSTALLED_APPS = [*INSTALLED_APPS, "debug_toolbar"]
+        MIDDLEWARE = ["debug_toolbar.middleware.DebugToolbarMiddleware", *MIDDLEWARE]
+        INTERNAL_IPS = ["127.0.0.1"]
 
 # Console-only logging in dev — rotating file handlers are a prod concern
 # (see prod.py).

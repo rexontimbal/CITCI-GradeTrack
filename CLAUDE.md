@@ -75,6 +75,18 @@
 > full rule set (unassigned classes, the Teaching Loads page, notifications, audit logging, the
 > submitted-sheet lock) and `academics.TeachingAssignmentLog`/`academics/services.py` for what was
 > actually built. Phase 8 part B (coverage/perf/UAT/docs) remains the next task after this one.
+>
+> **2026-11-05 (later the same day):** **Debug-toolbar opt-in + dashboard/student-portal
+> query-count pass (done), ahead of the rest of Phase 8 part B.** `django-debug-toolbar` is now
+> gated behind `DEBUG_TOOLBAR=1` (was always-on in dev when installed) since its panels were
+> skewing the very query-count/latency numbers this pass measured. Re-measured after the teaching-
+> load changes above (which touched the Program Head dashboard): Program Head dashboard 101→13
+> queries, student dashboard 111→32, My Grades 53→23, My Progress 61→31, subject detail ~29→24-25
+> — see the new "Query-count pass, Phase 8 part B" bullet under section 9 for the specific fixes
+> (new batch primitives in `forecasting.services`/`grading.services`/`approvals.services`) and
+> `dashboard.tests.DashboardQueryCountTests` for the regression guard. The rest of Phase 8 part B
+> (coverage ≥80%, At-Risk query reduction, accessibility audit, load/perf tooling, UAT
+> questionnaires, diagrams, manuals, `CHANGES_FROM_PROPOSAL.md`, demo script) is still the next task.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -1076,7 +1088,36 @@ sheet has none) for reliable re-import matching.
   (25/page; the Excel export still exports every row, unpaginated, by design). Admin academic-setup
   CRUD pages were already paginated (`core.crud.EntityListView`, 20/page) — untouched.
   `django-debug-toolbar` wired in `config/settings/dev.py` only (guarded by `try/except ImportError`
-  so a fresh checkout without `requirements-dev.txt` installed still runs), never loads in prod.
+  so a fresh checkout without `requirements-dev.txt` installed still runs; **opt-in** via
+  `DEBUG_TOOLBAR=1` as of the Phase 8 part B pass below — always-on skewed the query-count/latency
+  numbers this file documents), never loads in prod.
+
+  **Query-count pass, Phase 8 part B** (dashboards and the student portal; same
+  `CaptureQueriesContext` method, measured against the real demo accounts with `DEBUG_TOOLBAR`
+  off). Program Head dashboard 101 → **13** queries (31 ms) — `forecasting.services.
+  count_at_risk_watch` was calling `current_checkpoint_for_class` in a per-class loop (~3 queries x
+  every class); rewritten around a new shared `_checkpoints_for_classes` batch primitive (2 queries
+  total for however many classes) plus one grouped `Prediction` query instead of one per class —
+  `get_display_forecasts_for_classes` (the At-Risk pages) was refactored onto the same primitive, no
+  behavior change. Student dashboard 111 → **32** queries (78 ms) — `released_entry_for`,
+  `compute_student`, and `student_forecast_card` were each called once PER subject in a loop;
+  `grading.services` gained batch siblings `released_entries_for`/`compute_students_batch` and
+  `forecasting.services` gained `student_forecast_cards_batch`, all built on the same "resolve for
+  every row in a handful of queries total" shape as the Phase 8 part A fixes above (`compute_student`/
+  `running_grade_progression` also gained an optional pre-fetched-`components` parameter so a caller
+  that already has the scheme, like `subject_detail`, doesn't make it re-query); `approvals.services.
+  compute_gwa`'s own per-roster-entry `GradeSheetEntry.objects....first()` loop was replaced with one
+  call to the new batch helper too. My Grades 53 → **23** (53 ms), My Progress 61 → **31** (67 ms),
+  Subject detail ~29 → **24-25** (50 ms, after also deduplicating three separate scheme/component/
+  score fetches down to one, threaded through `compute_student`/`running_grade_progression`).
+  Instructor dashboard was already cheap (9 queries) and untouched. All times are well under the
+  200/400 ms interactive-page intuition **and** this phase's own ≤20-query targets wherever the
+  underlying page's legitimate per-request chrome (session/auth/sidebar/student-profile lookups —
+  present on every authenticated page, not specific to these views) left room to reach it; the
+  Program Head dashboard and instructor dashboard do, the student-facing pages land in the
+  low-to-mid-20s/30s once that fixed chrome is counted — see `dashboard.tests.
+  DashboardQueryCountTests` for the regression guard (asserts each page stays flat as subject/class
+  count grows, not a specific number).
 - Deployable on an institution-controlled server (on-prem or institution-managed VPS) — **built,
   Phase 8 part A**: `docs/DEPLOYMENT.md` (two targets — Ubuntu/Gunicorn/Nginx primary,
   Windows/Waitress/NSSM alternative — first-time setup, updating, backups/restore, log locations,

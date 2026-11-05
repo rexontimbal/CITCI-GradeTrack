@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from academics.models import ClassRosterEntry
 from dashboard.services import notify, notify_many
-from grading.services import compute_class
+from grading.services import compute_class, released_entries_for
 
 from .models import GradeCorrection, GradeSheet, GradeSheetEntry, GradeSheetPeriod, GradeSheetStatus, GradeSheetTransition
 
@@ -280,18 +280,22 @@ def compute_gwa(student, semester):
 
     gwa = (total_weighted / total_units).quantize(Decimal("0.01")) if total_units else None
 
-    active_roster_entries = ClassRosterEntry.objects.filter(
-        student=student, class_offering__semester=semester
-    ).exclude(status=ClassRosterEntry.Status.DROPPED)
+    active_roster_entries = list(
+        ClassRosterEntry.objects.filter(student=student, class_offering__semester=semester).exclude(
+            status=ClassRosterEntry.Status.DROPPED
+        )
+    )
+
+    # Batched (Phase 8 part B dashboard query-count pass) — this used to
+    # run one GradeSheetEntry query PER roster entry; now it's one query
+    # total for however many subjects the student has this semester.
+    released_by_entry = released_entries_for(active_roster_entries)
 
     is_complete = True
     released_count = 0
-    total_count = 0
+    total_count = len(active_roster_entries)
     for roster_entry in active_roster_entries:
-        total_count += 1
-        released_entry = GradeSheetEntry.objects.filter(
-            roster_entry=roster_entry, sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
-        ).first()
+        released_entry = released_by_entry.get(roster_entry.id)
         if released_entry is not None:
             released_count += 1
         if released_entry is None or released_entry.remarks == GradeSheetEntry.Remarks.INC:

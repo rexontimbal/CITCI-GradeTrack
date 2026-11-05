@@ -18,6 +18,10 @@ db.sqlite3
 .django_tailwind_cli/tailwindcss*
 .django_tailwind_cli/*.exe
 
+# Test coverage artifacts (regenerate with `coverage run manage.py test` — see docs/TEST_REPORT.md)
+.coverage
+htmlcov/
+
 # Editors / OS
 .vscode/
 .idea/

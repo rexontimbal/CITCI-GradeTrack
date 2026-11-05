@@ -1,0 +1,31 @@
+[run]
+source =
+    academics
+    accounts
+    approvals
+    core
+    dashboard
+    forecasting
+    grading
+    reports
+omit =
+    */migrations/*
+    */tests.py
+    */management/commands/seed_*
+    */management/commands/generate_synthetic_data.py
+    */apps.py
+    manage.py
+    config/*
+    venv/*
+    */__init__.py
+
+[report]
+precision = 1
+skip_empty = True
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    def __repr__
+
+[html]
+directory = htmlcov

@@ -275,7 +275,9 @@ class PredictTests(GradingTestBase):
 
 from django.urls import reverse
 
+from academics.models import Subject
 from approvals.services import submit_grade_sheet
+from grading.models import AssessmentItem, Score
 from reports.models import InstitutionSettings
 
 from .models import Intervention
@@ -574,3 +576,135 @@ class InterventionPrivacyTests(ForecastingPart2TestBase):
         self.client.force_login(self.program_head)
         response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
         self.assertContains(response, "Confidential note.")
+
+
+class AtRiskQueryCountTests(ForecastingPart2TestBase):
+    """Phase 8 part B query-count pass. Before this pass, the Program Head
+    At-Risk page issued ~6-7 queries PER class (current_checkpoint_for_class,
+    the roster fetched twice, the Prediction lookup, is_class_editable, the
+    Intervention prefetch) PLUS a separate N+1 in ClassOffering.__str__()/
+    Section.__str__() (each template render of a class walked
+    `sections.all()` then each section's `.program`/`.major` with no
+    prefetch) — 118 queries measured against real seeded demo data in the
+    Phase 8 part A pass; 103 queries measured against this test's 6-class
+    fixture before either fix. After batching the per-class forecast/
+    roster/prediction/editability/intervention queries into
+    `get_display_forecasts_for_classes` (forecasting/services.py) and
+    adding `sections__program`/`sections__major` to `_program_head_classes`'
+    prefetch (forecasting/views.py) — the same fix already applied to Admin
+    Grade Sheets in Phase 8 part A, not carried over here — this fixture
+    measures 21 queries, flat regardless of class count."""
+
+    def setUp(self):
+        super().setUp()
+        from grading.models import ClassGradingScheme
+
+        self.extra_classes = []
+        for i in range(5):
+            subject = Subject.objects.create(
+                code=f"QC10{i}", title=f"Query Count Subject {i}", units=Decimal("3.0"), term=self.semester.term
+            )
+            class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
+            class_offering.sections.set([self.section])
+            ClassGradingScheme.get_or_create_default(class_offering)
+            scheme_components = {sc.name: sc for sc in class_offering.grading_scheme.components.all()}
+
+            student = make_user(User.Role.STUDENT, f"qc_student_{i}", id_number=f"2026-90{i:02d}")
+            entry = ClassRosterEntry.objects.create(student=student, class_offering=class_offering)
+
+            item = AssessmentItem.objects.create(
+                class_offering=class_offering,
+                component=scheme_components["Examination"],
+                title="Midterm Exam",
+                max_score=20,
+                term=AssessmentTerm.MIDTERM,
+                order=0,
+            )
+            Score.objects.update_or_create(roster_entry=entry, item=item, defaults={"score": 18 - i})
+
+            recompute_and_notify([entry])
+            Intervention.objects.create(
+                roster_entry=entry, created_by=self.instructor, date="2026-11-04", type="CONSULTATION", notes="Checked in."
+            )
+
+            if i % 2 == 0:
+                submit_grade_sheet(class_offering, self.instructor)
+
+            self.extra_classes.append(class_offering)
+
+    def test_program_head_at_risk_page_query_count_stays_flat(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_login(self.program_head)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse("forecasting:at_risk"))
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(
+            len(queries),
+            25,
+            f"Program Head At-Risk page issued {len(queries)} queries for {len(self.extra_classes) + 1} "
+            "classes — expected this to stay roughly flat (<=25), not grow per class.",
+        )
+
+
+class RunForecastsCommandTests(ForecastingPart2TestBase):
+    """`run_forecasts` is the schedulable primitive (Windows Task Scheduler/
+    cron) behind the "after score save" and "Recompute" triggers — it had
+    no test coverage at all before this pass."""
+
+    def test_recomputes_predictions_and_sends_program_head_digest(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from dashboard.models import Notification
+
+        from .models import Prediction
+
+        self.score_exam_item(value=1, max_score=20)  # weak score -> likely AT_RISK
+        out = StringIO()
+        call_command("run_forecasts", stdout=out)
+
+        self.assertTrue(Prediction.objects.filter(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM).exists())
+        self.assertIn("Forecasts refreshed", out.getvalue())
+
+        prediction = Prediction.objects.get(roster_entry=self.roster_entry, checkpoint=Checkpoint.MIDTERM)
+        if risk_level(prediction.probability, prediction.model_version.threshold) == "AT_RISK":
+            self.assertTrue(Notification.objects.filter(recipient=self.program_head, title="Daily at-risk summary").exists())
+
+    def test_running_twice_does_not_double_the_digest(self):
+        from django.core.management import call_command
+
+        from dashboard.models import Notification
+
+        self.score_exam_item(value=1, max_score=20)
+        call_command("run_forecasts")
+        first_count = Notification.objects.filter(recipient=self.program_head, title="Daily at-risk summary").count()
+        call_command("run_forecasts")
+        second_count = Notification.objects.filter(recipient=self.program_head, title="Daily at-risk summary").count()
+        self.assertEqual(first_count, second_count)
+
+
+class TrainForecastModelCommandTests(TestCase):
+    def test_trains_an_inactive_version_from_synthetic_data(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from .models import MlModelVersion
+
+        out = StringIO()
+        call_command("train_forecast_model", checkpoint="midterm", source="synthetic", stdout=out)
+
+        version = MlModelVersion.objects.filter(checkpoint=Checkpoint.MIDTERM, training_source=TrainingSource.SYNTHETIC).latest(
+            "trained_at"
+        )
+        self.assertFalse(version.is_active)
+        self.assertIn("Trained", out.getvalue())
+
+    def test_refuses_historical_only_below_minimums_with_a_command_error(self):
+        from django.core.management import CommandError, call_command
+
+        with self.assertRaises(CommandError):
+            call_command("train_forecast_model", checkpoint="prelim", source="historical")

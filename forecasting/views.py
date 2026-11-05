@@ -15,7 +15,13 @@ from .forms import InterventionForm
 from .historical_import import build_import_preview, commit_import, export_released_data_to_historical
 from .ml.train import train_model
 from .models import Checkpoint, HistoricalImportBatch, Intervention, MlModelVersion, Prediction, TrainingSource
-from .services import current_checkpoint_for_class, get_display_forecasts_for_class, recompute_and_notify, risk_level
+from .services import (
+    current_checkpoint_for_class,
+    get_display_forecasts_for_class,
+    get_display_forecasts_for_classes,
+    recompute_and_notify,
+    risk_level,
+)
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
@@ -168,24 +174,16 @@ def _any_non_historical_active_model():
     return MlModelVersion.objects.filter(is_active=True).exclude(training_source=TrainingSource.HISTORICAL).exists()
 
 
-def _class_at_risk_rows(class_offering, level_filter=None):
+def _build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries, level_filter=None):
     """[{entry, class_offering, checkpoint, level, probability, prediction,
-    reasons, last_intervention}, ...] for AT_RISK/WATCH students only."""
-    checkpoint, forecasts = get_display_forecasts_for_class(class_offering)
+    reasons, last_intervention}, ...] for AT_RISK/WATCH students only.
+
+    Takes already-fetched data (from get_display_forecasts_for_classes) and
+    issues no queries of its own — entry.interventions.all() below reads
+    the prefetch cache that call already populated (Phase 8 part A/B
+    query-count passes)."""
     if checkpoint is None:
         return []
-
-    # prefetch_related + Prefetch(..., to_attr=) so entry.interventions.first()
-    # below reads from memory instead of issuing one query per AT_RISK/
-    # WATCH row (Phase 8 part A query-count pass).
-    from django.db.models import Prefetch
-
-    roster_entries = {
-        e.id: e
-        for e in class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE)
-        .select_related("student")
-        .prefetch_related(Prefetch("interventions", queryset=Intervention.objects.order_by("-date", "-created_at")))
-    }
     rows = []
     for entry_id, forecast in forecasts.items():
         if not isinstance(forecast, Prediction):
@@ -224,8 +222,10 @@ def at_risk(request):
 
 def _at_risk_instructor(request):
     active_semester = Semester.objects.filter(is_active=True).first()
-    classes = (
-        ClassOffering.objects.filter(instructor=request.user, semester=active_semester).select_related("subject")
+    classes = list(
+        ClassOffering.objects.filter(instructor=request.user, semester=active_semester)
+        .select_related("subject")
+        .prefetch_related("sections__program", "sections__major")
         if active_semester
         else ClassOffering.objects.none()
     )
@@ -233,11 +233,13 @@ def _at_risk_instructor(request):
     class_filter = request.GET.get("class")
     level_filter = request.GET.get("level")
 
+    bulk = get_display_forecasts_for_classes(classes)
     rows = []
     for class_offering in classes:
         if class_filter and str(class_offering.pk) != class_filter:
             continue
-        rows.extend(_class_at_risk_rows(class_offering, level_filter))
+        checkpoint, forecasts, roster_entries = bulk.get(class_offering.pk, (None, {}, {}))
+        rows.extend(_build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries, level_filter))
     rows.sort(key=lambda r: r["probability"], reverse=True)
 
     from django.core.paginator import Paginator
@@ -259,9 +261,17 @@ def _at_risk_instructor(request):
 def _program_head_classes(user, active_semester):
     if active_semester is None:
         return ClassOffering.objects.none()
+    # prefetch sections__program/major so every ClassOffering.__str__()/
+    # Section.__str__() call in the template (one per row, one per
+    # by-class summary row, one per filter dropdown option) reads from
+    # memory instead of re-querying Section/Program per call (Phase 8
+    # part B query-count pass — this alone was ~84 of the 103 queries
+    # measured before the fix, same N+1 already fixed on Admin Grade
+    # Sheets in Phase 8 part A but not carried over to this page).
     return (
         ClassOffering.objects.filter(sections__program__program_head=user, semester=active_semester)
         .select_related("subject", "instructor")
+        .prefetch_related("sections__program", "sections__major")
         .distinct()
     )
 
@@ -284,10 +294,12 @@ def _at_risk_program_head(request):
         .values_list("roster_entry__class_offering_id", "count")
     )
 
+    bulk = get_display_forecasts_for_classes(classes)
     rows = []
     by_class = {}
     for class_offering in classes:
-        class_rows = _class_at_risk_rows(class_offering)
+        checkpoint, forecasts, roster_entries = bulk.get(class_offering.pk, (None, {}, {}))
+        class_rows = _build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries)
         by_class[class_offering.pk] = {
             "class_offering": class_offering,
             "at_risk": sum(1 for r in class_rows if r["level"] == "AT_RISK"),
@@ -343,8 +355,10 @@ def at_risk_export(request):
     ws = wb.active
     ws.title = "At-Risk Students"
     ws.append(["Student", "ID Number", "Class", "Instructor", "Checkpoint", "Risk Level", "Probability %"])
+    bulk = get_display_forecasts_for_classes(classes)
     for class_offering in classes:
-        for row in _class_at_risk_rows(class_offering):
+        checkpoint, forecasts, roster_entries = bulk.get(class_offering.pk, (None, {}, {}))
+        for row in _build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries):
             ws.append(
                 [
                     row["entry"].student.full_name,

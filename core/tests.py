@@ -60,6 +60,52 @@ class DemoSeederGuardTests(TestCase):
         self.assertTrue(User.objects.filter(username="admin").exists())
 
 
+class SeedLoadTestCommandTests(TestCase):
+    """seed_load_test builds a large synthetic dataset for load/performance
+    testing (tools/perf_check.py) — refuses under prod settings like every
+    other seed_* command, and otherwise produces the documented counts."""
+
+    @override_settings(SETTINGS_MODULE="config.settings.prod")
+    def test_refuses_under_prod_settings_module(self):
+        with self.assertRaises(CommandError):
+            call_command("seed_load_test")
+
+    def test_seeds_the_documented_counts(self):
+        from academics.models import ClassOffering, ClassRosterEntry, Semester
+        from accounts.models import User
+        from approvals.models import GradeSheet, GradeSheetStatus
+        from grading.models import Score
+
+        call_command("seed_load_test")
+
+        self.assertEqual(User.objects.filter(role=User.Role.PROGRAM_HEAD, username__startswith="load_").count(), 2)
+        self.assertEqual(User.objects.filter(role=User.Role.INSTRUCTOR, username__startswith="load_").count(), 15)
+        self.assertEqual(User.objects.filter(role=User.Role.STUDENT, username__startswith="load_").count(), 450)
+        self.assertTrue(User.objects.filter(username="load_admin", role=User.Role.ADMIN).exists())
+
+        self.assertEqual(Semester.objects.filter(is_active=True).count(), 1)
+        self.assertGreater(ClassOffering.objects.count(), 0)
+        self.assertGreater(ClassRosterEntry.objects.count(), 0)
+        self.assertGreater(Score.objects.count(), 0)
+        self.assertTrue(GradeSheet.objects.filter(status=GradeSheetStatus.RELEASED).exists())
+
+        # The deliberately oversized class spans every section in its semester
+        # — strictly bigger than any single-section class in the same semester.
+        big_class = ClassOffering.objects.filter(schedule="LOAD-BIG").first()
+        self.assertIsNotNone(big_class)
+        single_section_class = (
+            ClassOffering.objects.filter(semester=big_class.semester).exclude(schedule="LOAD-BIG").first()
+        )
+        self.assertGreater(big_class.roster_count, single_section_class.roster_count)
+
+    def test_running_twice_does_not_duplicate_accounts(self):
+        from accounts.models import User
+
+        call_command("seed_load_test")
+        call_command("seed_load_test")
+        self.assertEqual(User.objects.filter(role=User.Role.STUDENT, username__startswith="load_").count(), 450)
+
+
 class BackupDbCommandTests(TestCase):
     """pg_dump/pg_restore are mocked — these tests never touch a real
     PostgreSQL binary, only the command's own file/argument-building logic."""

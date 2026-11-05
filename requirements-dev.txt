@@ -9,3 +9,15 @@ python-docx==1.2.0
 # it in with a try/except so a fresh checkout without this installed still
 # runs; never loads under config.settings.prod.
 django-debug-toolbar==5.1.0
+
+# Phase 8 part B — testing, evaluation & documentation (CLAUDE.md).
+coverage==7.17.1
+playwright==1.64.1
+scipy==1.18.1
+requests==2.34.2  # tools/perf_check.py drives a running server over real HTTP
+
+# After installing playwright, also run once:
+#   python -m playwright install chromium
+# (downloads the browser binary tools/accessibility_audit.py and
+# tools/capture_manual_screenshots.py drive — not needed to run the app
+# itself, only these dev-time scripts.)

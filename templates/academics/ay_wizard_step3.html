@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block page_title %}New Academic Year Wizard{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="New Academic Year Wizard" subtitle="Step 3 of 4 — review student promotions, exclude anyone who shouldn't move (irregular, shifted, LOA)." %}
+<div class="max-w-4xl rounded-xl border border-gray-200 bg-white p-5">
+    {% include "academics/_ay_wizard_steps.html" %}
+
+    <form method="post" class="space-y-4">
+        {% csrf_token %}
+        <div class="max-h-[28rem] overflow-y-auto rounded-lg border border-gray-200">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="sticky top-0 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <tr>
+                        <th class="px-3 py-2">Exclude</th>
+                        <th class="px-3 py-2">Student</th>
+                        <th class="px-3 py-2">Current Section</th>
+                        <th class="px-3 py-2">Outcome</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for row in rows %}
+                    <tr>
+                        <td class="px-3 py-2"><input type="checkbox" name="exclude" value="{{ row.profile_id }}"></td>
+                        <td class="px-3 py-2 text-gray-700">{{ row.student.full_name }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ row.current_section }}</td>
+                        <td class="px-3 py-2">
+                            {% if row.unresolved %}
+                            <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">No matching section — will be skipped</span>
+                            {% elif row.will_complete %}
+                            <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Mark Completed</span>
+                            {% else %}
+                            <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Promote</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="px-3 py-4 text-center text-gray-600">No active students found in the source academic year.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="flex justify-between">
+            <a href="{% url 'academics:ay_wizard_step2' %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Back</a>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Continue
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

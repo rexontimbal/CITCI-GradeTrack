@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block page_title %}New Academic Year Wizard{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="New Academic Year Wizard" subtitle="Step 2 of 4 — section structure to recreate for the new year." %}
+<div class="max-w-2xl rounded-xl border border-gray-200 bg-white p-5">
+    {% include "academics/_ay_wizard_steps.html" %}
+
+    <p class="mb-4 text-sm text-gray-600">
+        These {{ sections|length }} section(s) from <strong>{{ source_academic_year }}</strong> will be recreated
+        as-is (same program/major/year level) for A.Y. {{ start_year }}–{{ start_year|add:1 }}. Year-level
+        promotion happens per-student in the next step, not here.
+    </p>
+    <div class="mb-4 max-h-72 overflow-y-auto rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <tbody class="divide-y divide-gray-100">
+                {% for s in sections %}
+                <tr><td class="px-3 py-2 text-gray-700">{{ s.label }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <form method="post" class="flex justify-between">
+        <a href="{% url 'academics:ay_wizard_step1' %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Back</a>
+        {% csrf_token %}
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Continue
+        </button>
+    </form>
+</div>
+{% endblock %}

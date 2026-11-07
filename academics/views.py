@@ -5,7 +5,7 @@ import openpyxl
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 
@@ -34,8 +34,10 @@ from .models import (
     Program,
     Section,
     Semester,
+    StudentProfile,
     Subject,
 )
+from .ay_wizard import step1_preview, step2_preview_sections, step3_preview_promotions, step4_commit
 from .offerings_import import (
     SpreadsheetImportError,
     build_offerings_preview,
@@ -771,6 +773,7 @@ def class_list_add_students_form(request, pk):
     available_students = (
         User.objects.filter(role=User.Role.STUDENT)
         .exclude(id__in=already_listed_ids)
+        .exclude(student_profile__status=StudentProfile.Status.COMPLETED)
         .order_by("last_name", "first_name")
     )
     query = request.GET.get("q", "").strip()
@@ -1095,6 +1098,141 @@ def offerings_copy_previous_confirm(request):
         "refreshClasses",
         toast=f"Copied {counts['created']} class(es)." + (f" {counts['skipped']} skipped (no matching section)." if counts["skipped"] else ""),
     )
+
+
+# ---------------------------------------------------------------------------
+# New Academic Year wizard (ADMIN only) — 4 plain-page steps, session-backed
+# like the import flows above. Only step 4's POST writes to the database,
+# in one transaction. Past semesters' grades/sections are never touched.
+# ---------------------------------------------------------------------------
+
+_AY_WIZARD_SESSION_KEY = "ay_wizard"
+_AY_WIZARD_STEPS = [(1, "New Year"), (2, "Sections"), (3, "Promote Students"), (4, "Summary")]
+
+
+@role_required(ADMIN)
+def ay_wizard_step1(request):
+    academic_years = AcademicYear.objects.all()
+    if request.method != "POST":
+        request.session.pop(_AY_WIZARD_SESSION_KEY, None)
+        return render(request, "academics/ay_wizard_step1.html", {"academic_years": academic_years, "active": 1, "steps": _AY_WIZARD_STEPS})
+
+    try:
+        start_year = int(request.POST.get("start_year", ""))
+    except ValueError:
+        return render(
+            request,
+            "academics/ay_wizard_step1.html",
+            {"academic_years": academic_years, "error": "Enter a valid starting year.", "active": 1, "steps": _AY_WIZARD_STEPS},
+        )
+
+    term_values = request.POST.getlist("terms")
+    if not term_values:
+        return render(
+            request,
+            "academics/ay_wizard_step1.html",
+            {"academic_years": academic_years, "error": "Select at least one semester to create.", "active": 1, "steps": _AY_WIZARD_STEPS},
+        )
+
+    preview = step1_preview(start_year)
+    if preview["already_exists"]:
+        return render(
+            request,
+            "academics/ay_wizard_step1.html",
+            {"academic_years": academic_years, "error": f"A.Y. {start_year}–{start_year + 1} already exists.", "active": 1, "steps": _AY_WIZARD_STEPS},
+        )
+
+    source_id = request.POST.get("source_academic_year")
+    source_academic_year = get_object_or_404(AcademicYear, pk=source_id) if source_id else academic_years.first()
+    if source_academic_year is None:
+        return render(
+            request,
+            "academics/ay_wizard_step1.html",
+            {"academic_years": academic_years, "error": "No existing academic year to copy the section structure from.", "active": 1, "steps": _AY_WIZARD_STEPS},
+        )
+
+    request.session[_AY_WIZARD_SESSION_KEY] = {
+        "start_year": start_year,
+        "term_values": term_values,
+        "source_academic_year_id": source_academic_year.pk,
+    }
+    return redirect("academics:ay_wizard_step2")
+
+
+@role_required(ADMIN)
+def ay_wizard_step2(request):
+    stashed = request.session.get(_AY_WIZARD_SESSION_KEY)
+    if not stashed:
+        return redirect("academics:ay_wizard_step1")
+    source_academic_year = get_object_or_404(AcademicYear, pk=stashed["source_academic_year_id"])
+    sections = step2_preview_sections(source_academic_year)
+
+    if request.method == "POST":
+        stashed["sections"] = sections
+        request.session[_AY_WIZARD_SESSION_KEY] = stashed
+        return redirect("academics:ay_wizard_step3")
+
+    return render(
+        request,
+        "academics/ay_wizard_step2.html",
+        {
+            "start_year": stashed["start_year"],
+            "source_academic_year": source_academic_year,
+            "sections": sections,
+            "active": 2,
+            "steps": _AY_WIZARD_STEPS,
+        },
+    )
+
+
+@role_required(ADMIN)
+def ay_wizard_step3(request):
+    stashed = request.session.get(_AY_WIZARD_SESSION_KEY)
+    if not stashed or "sections" not in stashed:
+        return redirect("academics:ay_wizard_step1")
+    source_academic_year = get_object_or_404(AcademicYear, pk=stashed["source_academic_year_id"])
+    rows = step3_preview_promotions(source_academic_year, stashed["sections"])
+
+    if request.method == "POST":
+        excluded_ids = sorted({int(pid) for pid in request.POST.getlist("exclude")})
+        stashed["excluded_profile_ids"] = excluded_ids
+        request.session[_AY_WIZARD_SESSION_KEY] = stashed
+        return redirect("academics:ay_wizard_step4")
+
+    return render(
+        request,
+        "academics/ay_wizard_step3.html",
+        {"start_year": stashed["start_year"], "rows": rows, "active": 3, "steps": _AY_WIZARD_STEPS},
+    )
+
+
+@role_required(ADMIN)
+def ay_wizard_step4(request):
+    stashed = request.session.get(_AY_WIZARD_SESSION_KEY)
+    if not stashed or "sections" not in stashed:
+        return redirect("academics:ay_wizard_step1")
+    source_academic_year = get_object_or_404(AcademicYear, pk=stashed["source_academic_year_id"])
+    rows = step3_preview_promotions(source_academic_year, stashed["sections"])
+    excluded_ids = set(stashed.get("excluded_profile_ids", []))
+    for row in rows:
+        row["excluded"] = row["profile_id"] in excluded_ids
+
+    if request.method == "POST":
+        result = step4_commit(stashed["start_year"], stashed["term_values"], stashed["sections"], rows, request.user)
+        del request.session[_AY_WIZARD_SESSION_KEY]
+        return render(request, "academics/ay_wizard_done.html", result)
+
+    context = {
+        "start_year": stashed["start_year"],
+        "sections": stashed["sections"],
+        "promote_count": sum(1 for r in rows if not r["excluded"] and not r["will_complete"] and not r["unresolved"]),
+        "complete_count": sum(1 for r in rows if not r["excluded"] and r["will_complete"]),
+        "excluded_count": sum(1 for r in rows if r["excluded"]),
+        "unresolved_count": sum(1 for r in rows if not r["excluded"] and r["unresolved"]),
+        "active": 4,
+        "steps": _AY_WIZARD_STEPS,
+    }
+    return render(request, "academics/ay_wizard_step4.html", context)
 
 
 # ---------------------------------------------------------------------------

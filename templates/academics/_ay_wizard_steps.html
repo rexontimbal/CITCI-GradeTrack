@@ -1,0 +1,13 @@
+{% comment %}4-step progress indicator, included by each ay_wizard_step*.html with `active` set to 1-4.{% endcomment %}
+<ol class="mb-6 flex items-center gap-2 text-sm">
+    {% for n, label in steps %}
+    <li class="flex items-center gap-2 {% if not forloop.last %}flex-1{% endif %}">
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold
+            {% if n == active %}bg-brand-accent-600 text-brand-primary-900{% elif n < active %}bg-brand-primary-600 text-white{% else %}bg-gray-200 text-gray-600{% endif %}">
+            {{ n }}
+        </span>
+        <span class="text-xs font-medium {% if n == active %}text-gray-900{% else %}text-gray-600{% endif %}">{{ label }}</span>
+        {% if not forloop.last %}<span class="h-px flex-1 bg-gray-200"></span>{% endif %}
+    </li>
+    {% endfor %}
+</ol>

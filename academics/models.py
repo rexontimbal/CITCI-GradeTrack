@@ -157,6 +157,10 @@ class Subject(TimeStampedModel):
 
 
 class StudentProfile(TimeStampedModel):
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        COMPLETED = "COMPLETED", "Completed"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -172,6 +176,14 @@ class StudentProfile(TimeStampedModel):
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
     section = models.ForeignKey(
         Section, on_delete=models.SET_NULL, null=True, blank=True, related_name="student_profiles"
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        help_text="Set to Completed by the New Academic Year wizard for 4th-years/TCP finishers — "
+        "the account stays loginable (historical grades remain visible), they just drop out of "
+        "'currently enrolled' counts and pickers.",
     )
 
     def __str__(self):

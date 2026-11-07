@@ -88,6 +88,12 @@ urlpatterns = [
     path("offerings/copy/", views.offerings_copy_previous, name="offerings_copy_previous"),
     path("offerings/copy/confirm/", views.offerings_copy_previous_confirm, name="offerings_copy_previous_confirm"),
 
+    # New Academic Year wizard (admin)
+    path("ay-wizard/step1/", views.ay_wizard_step1, name="ay_wizard_step1"),
+    path("ay-wizard/step2/", views.ay_wizard_step2, name="ay_wizard_step2"),
+    path("ay-wizard/step3/", views.ay_wizard_step3, name="ay_wizard_step3"),
+    path("ay-wizard/step4/", views.ay_wizard_step4, name="ay_wizard_step4"),
+
     # Searchable-select endpoints
     path("search/instructors/", views.instructor_search, name="instructor_search"),
     path("search/classes/", views.class_search, name="class_search"),

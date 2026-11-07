@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block page_title %}New Academic Year Wizard{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="New Academic Year Wizard" subtitle="Done." %}
+<div class="max-w-xl rounded-xl border border-green-200 bg-green-50 p-5 text-sm text-green-800">
+    <p class="font-semibold">{{ academic_year }} created.</p>
+    <p class="mt-2">{{ sections_created }} section(s) created, {{ promoted }} student(s) promoted,
+        {{ completed }} marked Completed, {{ excluded }} excluded.</p>
+</div>
+<div class="mt-4">
+    <a href="{% url 'academics:terms' %}" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        Back to Academic Years &amp; Semesters
+    </a>
+</div>
+{% endblock %}

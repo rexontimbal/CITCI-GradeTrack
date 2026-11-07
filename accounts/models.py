@@ -86,6 +86,7 @@ class AuditLog(TimeStampedModel):
         PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
         ACCOUNT_UNLOCKED = "ACCOUNT_UNLOCKED", "Account unlocked (admin)"
         ACCOUNT_LOCKED_OUT = "ACCOUNT_LOCKED_OUT", "Account locked out (too many failed logins)"
+        ACADEMIC_YEAR_WIZARD_RUN = "ACADEMIC_YEAR_WIZARD_RUN", "New Academic Year wizard run"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

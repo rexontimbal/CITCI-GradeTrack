@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block page_title %}New Academic Year Wizard{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="New Academic Year Wizard" subtitle="Step 4 of 4 — confirm. Nothing has been created yet." %}
+<div class="max-w-xl rounded-xl border border-gray-200 bg-white p-5">
+    {% include "academics/_ay_wizard_steps.html" %}
+
+    <div class="mb-5 grid grid-cols-2 gap-2 text-sm">
+        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-700"><strong>A.Y. {{ start_year }}–{{ start_year|add:1 }}</strong></div>
+        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-700"><strong>{{ sections|length }}</strong> sections to create</div>
+        <div class="rounded-lg bg-green-50 px-3 py-2 text-green-800"><strong>{{ promote_count }}</strong> students promoted</div>
+        <div class="rounded-lg bg-blue-50 px-3 py-2 text-blue-800"><strong>{{ complete_count }}</strong> marked Completed</div>
+        <div class="rounded-lg bg-gray-100 px-3 py-2 text-gray-600"><strong>{{ excluded_count }}</strong> excluded</div>
+        {% if unresolved_count %}
+        <div class="rounded-lg bg-red-50 px-3 py-2 text-red-700"><strong>{{ unresolved_count }}</strong> skipped (no matching section)</div>
+        {% endif %}
+    </div>
+    <p class="mb-4 text-sm text-gray-600">
+        Past semesters' grades and sections are never touched. This writes one Audit Log entry.
+    </p>
+    <form method="post" class="flex justify-between">
+        <a href="{% url 'academics:ay_wizard_step3' %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Back</a>
+        {% csrf_token %}
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Confirm &amp; Create
+        </button>
+    </form>
+</div>
+{% endblock %}

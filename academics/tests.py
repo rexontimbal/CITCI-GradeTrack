@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
@@ -784,16 +784,38 @@ class OfferingsImportTests(TestCase):
         self.assertIsNone(new_class.instructor)
         self.assertIn(self.section, new_class.sections.all())
 
+    def test_non_admin_gets_403_on_every_new_url(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "not_admin_offerings")
+        self.client.force_login(instructor)
+        for url_name in (
+            "academics:offerings_import",
+            "academics:offerings_import_template",
+            "academics:offerings_copy_previous",
+        ):
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 403, url_name)
+
+
+class OfferingsImportAtomicityTests(TransactionTestCase):
+    """Uses TransactionTestCase (real commits, not TestCase's savepoints) —
+    under TestCase's nested-savepoint setup, Postgres defers this FK check
+    past the inner transaction.atomic() block's own exit, which would make
+    this test assert something that didn't actually happen yet."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="")
+
     def test_commit_is_one_atomic_transaction(self):
         from django.db import IntegrityError
 
         from .offerings_import import commit_offerings_import
 
         # A class dict with a bogus instructor id forces an IntegrityError
-        # (checked immediately by the FK constraint on ClassOffering.create,
-        # unlike the M2M-through-table FK which Postgres defers to the
-        # surrounding transaction's end under this test runner) mid-loop; a
-        # prior valid row in the same call must not be left committed.
+        # mid-loop; a prior valid row in the same call must not be left
+        # committed.
         classes = [
             {
                 "code": "ENG107", "description": "Valid Row", "units": "3", "room": "", "schedule": "",
@@ -809,17 +831,6 @@ class OfferingsImportTests(TestCase):
         with self.assertRaises(IntegrityError):
             commit_offerings_import(classes, self.semester)
         self.assertFalse(Subject.objects.filter(code="ENG107").exists())
-
-    def test_non_admin_gets_403_on_every_new_url(self):
-        instructor = make_user(User.Role.INSTRUCTOR, "not_admin_offerings")
-        self.client.force_login(instructor)
-        for url_name in (
-            "academics:offerings_import",
-            "academics:offerings_import_template",
-            "academics:offerings_copy_previous",
-        ):
-            response = self.client.get(reverse(url_name))
-            self.assertEqual(response.status_code, 403, url_name)
 
 
 class CopyClassesPreviousSemesterTests(TestCase):
@@ -890,3 +901,168 @@ class CopyClassesPreviousSemesterTests(TestCase):
         self.old_class.refresh_from_db()
         self.assertEqual(self.old_class.instructor, self.instructor)
         self.assertIn(self.old_section, self.old_class.sections.all())
+
+
+class AYWizardTestBase(TestCase):
+    def setUp(self):
+        self.ay_2026 = AcademicYear.objects.create(start_year=2026)
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.tcp = Program.objects.create(code="TCP", name="Teacher Certificate Program")
+        self.sec1 = Section.objects.create(program=self.program, academic_year=self.ay_2026, year_level=1, name="")
+        self.sec2 = Section.objects.create(program=self.program, academic_year=self.ay_2026, year_level=2, name="")
+        self.sec4 = Section.objects.create(program=self.program, academic_year=self.ay_2026, year_level=4, name="")
+        self.sec_tcp = Section.objects.create(program=self.tcp, academic_year=self.ay_2026, year_level=None, name="")
+        self.admin = make_user(User.Role.ADMIN, "wizard_admin")
+
+    def _make_student(self, username, section):
+        student = make_user(User.Role.STUDENT, username, id_number=username)
+        StudentProfile.objects.filter(user=student).update(
+            program=section.program, section=section, year_level=section.year_level
+        )
+        return student
+
+
+class AYWizardStepTests(AYWizardTestBase):
+    def test_step1_preview_flags_already_existing_year(self):
+        from .ay_wizard import step1_preview
+
+        preview = step1_preview(2026)
+        self.assertTrue(preview["already_exists"])
+        preview = step1_preview(2027)
+        self.assertFalse(preview["already_exists"])
+        self.assertEqual(preview["end_year"], 2028)
+
+    def test_step2_preview_sections_lists_every_source_section(self):
+        from .ay_wizard import step2_preview_sections
+
+        sections = step2_preview_sections(self.ay_2026)
+        self.assertEqual(len(sections), 4)
+
+    def test_step3_promotes_year1_to_year2(self):
+        from .ay_wizard import step2_preview_sections, step3_preview_promotions
+
+        student = self._make_student("promo1", self.sec1)
+        new_sections = step2_preview_sections(self.ay_2026)  # same keys reused for the "new" year in this test
+        rows = step3_preview_promotions(self.ay_2026, new_sections)
+        row = next(r for r in rows if r["student"] == student)
+        self.assertFalse(row["will_complete"])
+        self.assertEqual(row["target_key"], (self.program.id, None, 2, ""))
+
+    def test_step3_marks_4th_year_and_tcp_as_completed(self):
+        from .ay_wizard import step2_preview_sections, step3_preview_promotions
+
+        year4_student = self._make_student("promo4", self.sec4)
+        tcp_student = self._make_student("promotcp", self.sec_tcp)
+        new_sections = step2_preview_sections(self.ay_2026)
+        rows = step3_preview_promotions(self.ay_2026, new_sections)
+
+        row4 = next(r for r in rows if r["student"] == year4_student)
+        row_tcp = next(r for r in rows if r["student"] == tcp_student)
+        self.assertTrue(row4["will_complete"])
+        self.assertTrue(row_tcp["will_complete"])
+
+    def test_step3_flags_unresolved_when_no_matching_target_section(self):
+        from .ay_wizard import step3_preview_promotions
+
+        self._make_student("nomatch", self.sec1)
+        rows = step3_preview_promotions(self.ay_2026, [])  # no sections for the "new" year
+        row = rows[0]
+        self.assertTrue(row["unresolved"])
+
+
+class AYWizardExclusionTests(AYWizardTestBase):
+    def test_excluded_student_is_untouched_by_commit(self):
+        from .ay_wizard import step2_preview_sections, step3_preview_promotions, step4_commit
+
+        student = self._make_student("excl1", self.sec1)
+        new_sections = step2_preview_sections(self.ay_2026)
+        rows = step3_preview_promotions(self.ay_2026, new_sections)
+        for row in rows:
+            row["excluded"] = True
+
+        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin)
+
+        student.student_profile.refresh_from_db()
+        self.assertEqual(student.student_profile.section, self.sec1)
+        self.assertEqual(student.student_profile.status, StudentProfile.Status.ACTIVE)
+
+
+class AYWizardTransactionTests(TransactionTestCase):
+    """Uses TransactionTestCase (real commits) — see
+    OfferingsImportAtomicityTests for why TestCase's nested savepoints
+    aren't sufficient to observe this synchronously."""
+
+    def setUp(self):
+        self.ay_2026 = AcademicYear.objects.create(start_year=2026)
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.admin = make_user(User.Role.ADMIN, "wizard_tx_admin")
+
+    def test_forced_failure_leaves_zero_new_rows(self):
+        from django.db import IntegrityError
+
+        from .ay_wizard import step4_commit
+
+        # The second section dict references a nonexistent program, forcing
+        # an IntegrityError after the AcademicYear/Semester rows and the
+        # first Section already exist inside this same call. The whole
+        # call must still roll back.
+        sections_to_create = [
+            {"program_id": self.program.id, "major_id": None, "year_level": 1, "name": "", "label": "valid"},
+            {"program_id": 999999, "major_id": None, "year_level": 1, "name": "", "label": "bad"},
+        ]
+        with self.assertRaises(IntegrityError):
+            step4_commit(2027, ["FIRST"], sections_to_create, [], self.admin)
+        self.assertFalse(AcademicYear.objects.filter(start_year=2027).exists())
+        self.assertEqual(Section.objects.filter(academic_year__start_year=2027).count(), 0)
+
+
+class AYWizardAuditLogTests(AYWizardTestBase):
+    def test_exactly_one_audit_log_row_with_correct_counts(self):
+        from accounts.models import AuditLog
+
+        from .ay_wizard import step2_preview_sections, step3_preview_promotions, step4_commit
+
+        self._make_student("audit1", self.sec1)
+        self._make_student("audit2", self.sec4)
+        new_sections = step2_preview_sections(self.ay_2026)
+        rows = step3_preview_promotions(self.ay_2026, new_sections)
+
+        step4_commit(2027, ["FIRST", "SECOND"], new_sections, rows, self.admin)
+
+        logs = AuditLog.objects.filter(action=AuditLog.Action.ACADEMIC_YEAR_WIZARD_RUN)
+        self.assertEqual(logs.count(), 1)
+        self.assertEqual(logs.first().details["promoted"], 1)
+        self.assertEqual(logs.first().details["completed"], 1)
+
+
+class AYWizardPastDataUntouchedTests(AYWizardTestBase):
+    def test_prior_semester_sections_and_classes_untouched(self):
+        from .ay_wizard import step2_preview_sections, step3_preview_promotions, step4_commit
+
+        semester = Semester.objects.create(academic_year=self.ay_2026, term=Term.FIRST)
+        subject = Subject.objects.create(code="X101", title="X", units=Decimal("3.0"), term=Term.FIRST)
+        class_offering = ClassOffering.objects.create(subject=subject, semester=semester)
+        class_offering.sections.set([self.sec1])
+        self._make_student("keep1", self.sec1)
+
+        new_sections = step2_preview_sections(self.ay_2026)
+        rows = step3_preview_promotions(self.ay_2026, new_sections)
+        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin)
+
+        class_offering.refresh_from_db()
+        self.assertIn(self.sec1, class_offering.sections.all())
+        self.assertEqual(Section.objects.filter(academic_year=self.ay_2026).count(), 4)
+
+
+class AYWizardPermissionTests(AYWizardTestBase):
+    def test_non_admin_gets_403_on_every_step_url(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "not_admin_wizard")
+        self.client.force_login(instructor)
+        for url_name in (
+            "academics:ay_wizard_step1",
+            "academics:ay_wizard_step2",
+            "academics:ay_wizard_step3",
+            "academics:ay_wizard_step4",
+        ):
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 403, url_name)

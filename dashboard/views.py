@@ -2,7 +2,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
+from academics.models import ClassOffering, ClassRosterEntry, Program, Semester, StudentProfile
 from accounts.decorators import role_required
 from accounts.models import User
 
@@ -31,7 +31,9 @@ def _admin_dashboard(request):
     active = _active_semester()
     classes = ClassOffering.objects.filter(semester=active) if active else ClassOffering.objects.none()
     context = {
-        "total_students": User.objects.filter(role=User.Role.STUDENT, is_active=True).count(),
+        "total_students": User.objects.filter(role=User.Role.STUDENT, is_active=True)
+        .exclude(student_profile__status=StudentProfile.Status.COMPLETED)
+        .count(),
         "total_instructors": User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True).count(),
         "active_classes": classes.count(),
         "total_programs": Program.objects.count(),

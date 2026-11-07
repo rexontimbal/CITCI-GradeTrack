@@ -4,6 +4,12 @@
 {% block content %}
 {% include "partials/_page_header.html" with title="Academic Years & Semesters" subtitle="Only one semester can be active at a time — it drives the default view everywhere else." %}
 
+<div class="mb-6">
+    <a href="{% url 'academics:ay_wizard_step1' %}" class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        {% sidebar_icon "calendar" "w-4 h-4" %} New Academic Year Wizard
+    </a>
+</div>
+
 <div class="mb-8">
     <div class="mb-3 flex items-center justify-between">
         <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-600">Academic Years</h3>

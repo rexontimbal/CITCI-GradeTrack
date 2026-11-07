@@ -472,6 +472,10 @@ hostname, turning on HTTPS, and a post-install checklist. Configs/scripts live u
 (`gunicorn.service`, `nginx.conf`, `.env.prod.example`, `scripts/deploy.sh`, `waitress_serve.py`).
 `requirements-prod.txt` adds gunicorn/waitress/whitenoise on top of `requirements.txt`.
 
+**Django Admin**: superuser-only (`config/admin.py`'s `SuperuserOnlyAdminSite`) and not linked from
+any sidebar — use the app's own pages for day-to-day work. Set `DJANGO_ADMIN_URL` in `.env` to move
+it off the default `/admin/` path in production (see `deploy/.env.prod.example`).
+
 **First run in production**: `python manage.py setup_production` — creates the first admin account
 (interactive prompts, or `--username`/`--email`/`--password` for scripted use), the
 `InstitutionSettings` singleton, and the CITCI Default grading template. Creates **no** demo data.

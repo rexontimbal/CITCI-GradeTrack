@@ -109,6 +109,53 @@
 > `docs/DEFENSE_DEMO_SCRIPT.md`. See `README.md`'s "Documentation" section for the full index and
 > how to regenerate each generated doc. No further phases are planned — future work is whatever the
 > defense panel or continued CITCI use surfaces.
+>
+> **2026-11-07 (post-completion enhancements, 6 items from a system-flow review):** The project
+> above was complete; this follow-up work (not a numbered phase) addressed 6 gaps the review
+> surfaced, each its own commit:
+> 1. **Admin: Import Class Offerings + Copy classes from previous semester** — a new
+>    `academics/offerings_import.py` (xlsx or the existing Registrar `.docx` format through the
+>    same preview, reusing `import_offerings_docx.py`'s parse/normalize helpers) with a preview
+>    step (new subjects / new classes / shared classes / unknown instructors — never auto-created
+>    or merged) before confirming; "Copy classes from previous semester" on the Classes page always
+>    leaves the copy's instructor Unassigned.
+> 2. **Admin: New Academic Year wizard** (`academics/ay_wizard.py`) — 4 plain-page steps (new A.Y.
+>    + semesters → recreate the section structure → review/exclude student promotions → confirm,
+>    one transaction) reachable from Academic Years & Semesters. Added `StudentProfile.status`
+>    (ACTIVE/COMPLETED) — 4th-years and no-year-level students (TCP) are marked Completed rather
+>    than deleted; the account stays loginable, it just drops out of "currently enrolled"
+>    counts/pickers. Writes one summarizing `accounts.AuditLog` row per run.
+> 3. **INC completion workflow** — a new `approvals.IncCompletion` model (PENDING/APPROVED/
+>    REJECTED): the instructor files "Complete INC" on a RELEASED/LOCKED+INC entry; the owning
+>    Program Head approves (reusing `approvals.services.correct_grade` verbatim — same
+>    `GradeCorrection`/timeline/notifications as an admin correction) or rejects (remarks required)
+>    from a new "INC Completions" tab on Grade Approvals. "Completed INC" is never a stored flag —
+>    it's derived at display time from an approved `IncCompletion` row, the same philosophy as
+>    `risk_level`. A configurable window (`InstitutionSettings.inc_completion_window_days`, default
+>    365) blocks filing past it ("INC lapsed — contact Registrar") with no automatic grade change.
+> 4. **Grade submission deadline** — `academics.Semester.submission_deadline`; submitting after it
+>    still succeeds but snapshots `approvals.GradeSheet.is_late=True` at submission time (never
+>    retroactively recomputed); Grade Approvals/Grade Sheets/the Submission Status report all gained
+>    a late filter + counts. New standalone `send_reminders` management command (deliberately
+>    separate from forecasting's `run_forecasts`) notifies instructors starting 3 days before the
+>    deadline, de-duplicated via `GradeSheet.reminder_sent_at`.
+> 5. **Instructor to-do dashboard** — replaced the instructor dashboard's count-only placeholders
+>    with a real to-do list (missing scores, returned sheets, not-yet-submitted sheets with a
+>    countdown, at-risk students with no intervention logged, pending INC completions), backed by
+>    new batched service helpers following the codebase's established "resolve for every class in a
+>    handful of queries" shape — including a new `forecasting.services.at_risk_without_intervention`
+>    (no prior function filtered by absence of an `Intervention`).
+> 6. **Django Admin hardened** — removed from the sidebar for every role; `config/admin.py`'s
+>    `SuperuserOnlyAdminSite` (every app's `admin.py` now registers against it, not the default
+>    site) enforces superuser-only access server-side; `DJANGO_ADMIN_URL` moves it off the default
+>    path in production. Day-to-day work must use the app's own pages — see `docs/DEPLOYMENT.md`.
+>
+> All 6 are additive — no existing behavior changed except Django Admin's access being made
+> explicit (item 6) and `StudentProfile.status`/`is_late`/`is_overdue` fields now excluding
+> completed students and flagging late sheets where they weren't tracked before. See section 3
+> (roles), section 5 (INC completion), section 6 (new fields/models), and section 8 (new screens)
+> below, now updated to describe this state; `docs/CHANGES_FROM_PROPOSAL.md` records these as
+> post-proposal enhancements, not deviations from the original proposal.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -392,6 +439,30 @@ logged to `approvals.GradeSheetTransition` (shown as a timeline on the review pa
 
 **Not built this pass (Phase 4 part 2):** PDF/Excel grade-sheet exports.
 
+**INC completion (post-completion enhancement, built — section 10):** on a RELEASED/LOCKED sheet,
+for an entry with remarks INC, the instructor files "Complete INC" (`approvals.services.
+file_inc_completion` — new final grade, date complied, notes), creating an `approvals.IncCompletion`
+row (PENDING). The owning Program Head approves (`decide_inc_completion(..., approve=True)`, which
+calls `correct_grade` verbatim — the same `GradeCorrection`/timeline/notifications as an admin
+correction) or rejects (remarks required) from a new "INC Completions" tab on Grade Approvals.
+"Completed INC" is never a stored flag on `GradeSheetEntry` (its `remarks` stays DB-constrained to
+PASSED/FAILED/INC/DROPPED) — it's derived at display time from `entry.inc_completions.filter(
+status=APPROVED).exists()`. A configurable window (`InstitutionSettings.inc_completion_window_days`,
+default 365 days after `released_at`) blocks filing past it with "INC lapsed — contact Registrar"
+and makes no automatic grade change. `compute_gwa` needs no extra recompute step — it's a pure
+read-time computation, so the next call already reflects an approved completion's corrected grade.
+
+**Grade submission deadline (post-completion enhancement, built — section 10):**
+`academics.Semester.submission_deadline` (optional, admin-set per semester). Submitting after it
+still succeeds but `approvals.services.submit_grade_sheet` snapshots `GradeSheet.is_late=True` at
+submission time (never retroactively recomputed if the deadline later changes — a resubmit after
+RETURNED recomputes fresh against the then-current deadline). Grade Approvals, Grade Sheets, and
+the Submission Status report all gained a "late" filter + counts
+(`approvals.services.late_or_unsubmitted_counts`). A standalone `send_reminders` management command
+(deliberately separate from forecasting's `run_forecasts` — different domain) notifies instructors
+with an unsubmitted sheet starting 3 days before the deadline, de-duplicated via a new
+`GradeSheet.reminder_sent_at` field (set once, never cleared — a deadline doesn't recur).
+
 ---
 
 ## 6. Database Schema
@@ -559,6 +630,20 @@ record needed neither — see section 4):
   the admin Audit Log page — see section 9.
 
 Produce `docs/ERD.md` as a Mermaid `erDiagram` that matches the final migrations exactly, once these exist.
+
+**Built (post-completion enhancements, section 10):**
+- `academics.StudentProfile.status` (`Status`: ACTIVE/COMPLETED, default ACTIVE) — set to COMPLETED
+  by the New Academic Year wizard for 4th-years/TCP finishers (never deleted); "active student"
+  counts/pickers (admin dashboard total, class-list "Add Students") exclude COMPLETED.
+- `academics.Semester.submission_deadline` (nullable DateTimeField).
+- `approvals.GradeSheet.is_late` (bool, default False, snapshotted at submission) and
+  `reminder_sent_at` (nullable DateTimeField, de-dup for `send_reminders`).
+- `approvals.IncCompletion` — entry FK (CASCADE to `GradeSheetEntry`), filed_by FK User (SET_NULL),
+  new_grade, new_remarks (PASSED/FAILED only), date_complied, remarks_text, status
+  (`IncCompletionStatus`: PENDING/APPROVED/REJECTED), decided_by FK User (SET_NULL), decided_at,
+  decision_remarks (required on rejection).
+- `reports.InstitutionSettings.inc_completion_window_days` (PositiveIntegerField, default 365).
+- `accounts.AuditLog.Action` gained `ACADEMIC_YEAR_WIZARD_RUN` (one row per wizard run, counts only).
 
 ---
 
@@ -992,6 +1077,17 @@ released yet → a diagonal "UNOFFICIAL — status" watermark. The Class Record 
 (`reports/excel.py`) mirrors `grading-system.xlsx`'s columns but adds an ID Number column (the real
 sheet has none) for reliable re-import matching.
 
+**Post-completion enhancements (built, section 10):** **Admin** — "Import Class Offerings"
+(`academics:offerings_import`, Academic Setup) and "Copy from Previous Semester" (button on
+Classes); a 4-step "New Academic Year Wizard" (button on Academic Years & Semesters) for AY/
+semester/section creation and student promotion. **Instructor** — "INC to Complete"
+(`approvals:inc_completions_list`); the dashboard is now a to-do list (section 10, item 5) instead
+of count-only placeholders; the class grading page header shows a deadline countdown chip while
+still DRAFT. **Program Head** — an "INC Completions" tab on Grade Approvals; a "late"/"not yet
+submitted" filter + counts on Grade Approvals and the Submission Status report. **Admin (Grade
+Sheets)** — the same late filter + counts. Django Admin no longer appears in any sidebar (section
+10, item 6).
+
 ---
 
 ## 9. Non-Functional Requirements
@@ -1410,6 +1506,15 @@ until the previous one passes its tests.
     deviation from the approved proposal, cited section-by-section), `docs/DEFENSE_DEMO_SCRIPT.md`,
     and the pre-existing `docs/DEPLOYMENT.md`. See `README.md`'s "Documentation" section for the
     full index.
+- **Post-completion enhancements (not a numbered phase, done):** 6 items from a system-flow
+  review, each its own commit — (1) Admin: Import Class Offerings + copy classes from a previous
+  semester, (2) Admin: New Academic Year wizard with student promotion, (3) INC completion workflow
+  (instructor files → Program Head approves/rejects, reusing `correct_grade`), (4) a per-semester
+  grade submission deadline + late flag + `send_reminders`, (5) the instructor to-do dashboard, (6)
+  Django Admin hidden from every sidebar and hardened to superuser-only with a configurable prod
+  URL. See the dated note at the top of this file for the full list and the judgment calls made
+  along the way (new `StudentProfile.status`/`IncCompletion`/deadline fields, all confirmed with
+  the user before building).
 
 ---
 
@@ -1443,6 +1548,10 @@ until the previous one passes its tests.
   shared modal, and `PROTECT`-vs-"Deactivate instead" handling.
 - `static/js/htmx-csrf.js` attaches the CSRF header to every HTMX request already — don't add
   `{% csrf_token %}` workarounds to bare `hx-post`/`hx-delete` buttons, they don't need one.
+- Django Admin is superuser-only (`config/admin.py`'s `SuperuserOnlyAdminSite`, not the sidebar) —
+  a new model registration must use `@admin.register(Model, site=site)` with `site` imported from
+  `config.admin`, never the bare `@admin.register(Model)` decorator (which binds to the default,
+  unrestricted `django.contrib.admin.site`).
 - When a server response needs to both close the shared modal and update page content outside it in
   one round trip, use `response["HX-Trigger"] = "modal-success"` on a normal (200) render — htmx
   processes `HX-Trigger` on any status, not just 204 — and give the two elements matching

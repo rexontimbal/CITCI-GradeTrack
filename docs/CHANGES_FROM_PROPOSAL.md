@@ -228,3 +228,35 @@ synthetic numbers and presenting them as real results).
 
 **Revise:** §3.9.1 (add a sentence on the training-source governance rule and the historical-import
 masking approach).
+
+---
+
+## 11. Post-completion enhancements (additions, not deviations — the proposal never mentioned these)
+
+Unlike sections 1–10 above, nothing here changes or contradicts a specific proposal section — these
+are 6 operational gaps a system-flow review surfaced *after* the system described by the proposal
+was already complete (CLAUDE.md's 2026-11-07 dated note), each a standalone follow-up commit:
+
+1. **Admin: Import Class Offerings + copy classes from a previous semester** — a spreadsheet-driven
+   bulk way to set up a semester's classes (plus the existing Registrar `.docx` format through the
+   same preview), instead of only the one-off `import_offerings_docx`/`seed_citci_academics`
+   management-command pair.
+2. **Admin: New Academic Year wizard** — a guided UI for what previously required direct database
+   work: creating the next academic year/semesters, recreating the section structure, and promoting
+   every active student to the next year level (or marking 4th-years/TCP finishers Completed).
+3. **INC completion workflow** — lets an instructor resolve an INC grade through a proper
+   instructor-files/Program-Head-approves flow (reusing the existing grade-correction mechanism)
+   instead of requiring an ad-hoc admin correction every time.
+4. **Grade submission deadline + late flag + reminders** — the proposal's grade-sheet workflow
+   (§3.x, see section 5 above) had no notion of a deadline at all; this adds one per semester, a
+   frozen late/on-time flag per sheet, and an automated reminder.
+5. **Instructor to-do dashboard** — replaces the instructor dashboard's original count-only stat
+   cards (two of which had shown a placeholder "—" since Phase 1) with an actionable list.
+6. **Django Admin hardened** — tightened from "any `is_staff` account" to explicitly superuser-only,
+   removed from every sidebar, and given a configurable production URL — closing a gap where the
+   built-in admin bypassed the app's own validation and audit-log writes.
+
+**Revise:** None of §1–§3.13 strictly require a revision for these — they're implementation detail
+below the proposal's level of abstraction. If the final paper documents the system's full feature
+set (e.g. an updated screen inventory or use-case diagram), these 6 items should be added there as
+features delivered, not as corrections to anything previously stated.

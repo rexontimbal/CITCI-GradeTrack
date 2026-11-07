@@ -427,3 +427,83 @@ class SetupProductionCommandTests(TestCase):
         call_command("setup_production", username="firstadmin3", email="", password="S3curePass!23")
         self.assertFalse(User.objects.filter(role=User.Role.STUDENT).exists())
         self.assertFalse(User.objects.filter(username__startswith="student").exists())
+
+
+class DjangoAdminSidebarTests(TestCase):
+    """Django Admin is a superuser-only emergency tool — the sidebar never
+    links to it, for any role."""
+
+    def test_admin_role_sidebar_has_no_django_admin_link(self):
+        admin_user = make_user(User.Role.ADMIN, "sidebar_admin")
+        self.client.force_login(admin_user)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertNotContains(response, "Django Admin")
+        self.assertNotContains(response, 'href="/admin/')
+
+
+class AdminSiteAccessTests(TestCase):
+    def _superuser(self, username):
+        user = make_user(User.Role.ADMIN, username)
+        user.is_staff = True
+        user.is_superuser = True
+        user.save(update_fields=["is_staff", "is_superuser"])
+        return user
+
+    def test_real_superuser_can_reach_admin(self):
+        self.client.force_login(self._superuser("real_superuser"))
+        response = self.client.get(reverse("admin:index"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_role_non_superuser_is_denied(self):
+        """A regular ADMIN-role account created through the Users page —
+        UserForm.save() never sets is_staff — can't reach Django Admin
+        even though they're an ADMIN-role user."""
+        admin_user = make_user(User.Role.ADMIN, "non_super_admin")
+        self.client.force_login(admin_user)
+        response = self.client.get(reverse("admin:index"))
+        self.assertNotEqual(response.status_code, 200)
+
+    def test_instructor_is_denied(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "admin_deny_instructor")
+        self.client.force_login(instructor)
+        response = self.client.get(reverse("admin:index"))
+        self.assertNotEqual(response.status_code, 200)
+
+    def test_student_is_denied(self):
+        student = make_user(User.Role.STUDENT, "admin_deny_student")
+        self.client.force_login(student)
+        response = self.client.get(reverse("admin:index"))
+        self.assertNotEqual(response.status_code, 200)
+
+
+class AdminUrlEnvOverrideTests(TestCase):
+    """config/urls.py reads settings.ADMIN_URL (falling back to "admin/")
+    — exercised directly at the module level (reloaded under an overridden
+    setting) rather than through the live test-client URL resolver, since
+    the resolver's urlpatterns are already built from the test run's real
+    settings module (config.settings.dev) before any single test runs."""
+
+    def test_admin_url_setting_moves_the_admin_path(self):
+        import importlib
+
+        from django.test import override_settings
+
+        import config.urls as urls_module
+
+        try:
+            with override_settings(ADMIN_URL="secret-admin/"):
+                importlib.reload(urls_module)
+                patterns = [str(p.pattern) for p in urls_module.urlpatterns]
+                self.assertIn("secret-admin/", patterns)
+                self.assertNotIn("admin/", patterns)
+        finally:
+            importlib.reload(urls_module)  # restore for every test after this one
+
+    def test_default_admin_url_is_admin_when_unset(self):
+        import importlib
+
+        import config.urls as urls_module
+
+        importlib.reload(urls_module)
+        patterns = [str(p.pattern) for p in urls_module.urlpatterns]
+        self.assertIn("admin/", patterns)

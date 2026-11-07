@@ -275,7 +275,20 @@ venv/bin/python -c "from django.core.management.utils import get_random_secret_k
 Put the new value in `.env`, restart the service. There's no in-place "dual key" support in this
 project — a rotation is a hard cutover.
 
-## 8. Post-install checklist
+## 8. Django Admin
+
+Django Admin is **superuser-only** (`config/admin.py`'s `SuperuserOnlyAdminSite`) and is not linked
+from the sidebar for any role — day-to-day work (users, academic setup, grade sheets, settings)
+should go through the app's own pages, which validate input and write to the Audit Log and the
+per-domain change-log tables; Django Admin bypasses all of that. Treat it as an emergency/data-
+repair tool only, reachable by a real superuser account (`manage.py createsuperuser` or
+`setup_production`'s bootstrap admin — note a regular ADMIN-role account created through the Users
+page is a superuser only if you've explicitly made one `is_superuser`).
+
+Set `DJANGO_ADMIN_URL` in `.env` to move it off the default `/admin/` path (must end with a trailing
+slash) — see `deploy/.env.prod.example`.
+
+## 9. Post-install checklist
 
 - [ ] `manage.py check --deploy` run under `config.settings.prod` with the real `.env` and no
       unexpected warnings (see `config.settings.prod`'s docstring for the intentional ones —

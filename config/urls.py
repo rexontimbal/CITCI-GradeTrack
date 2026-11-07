@@ -1,15 +1,20 @@
 from django.conf import settings
 from django.conf.urls.static import static
-from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from config.admin import site as admin_site
 from core.views import healthz
+
+# Superuser-only, at a non-default path in production via DJANGO_ADMIN_URL
+# (config/settings/prod.py) — day-to-day work uses the app's own pages
+# (validations + audit log), not Django Admin. See CLAUDE.md section 11.
+_ADMIN_URL = getattr(settings, "ADMIN_URL", "admin/")
 
 urlpatterns = [
     path("", RedirectView.as_view(url="/dashboard/", permanent=False)),
     path("healthz", healthz, name="healthz"),
-    path("admin/", admin.site.urls),
+    path(_ADMIN_URL, admin_site.urls),
     path("accounts/", include("accounts.urls")),
     path("dashboard/", include("dashboard.urls")),
     path("academics/", include("academics.urls")),

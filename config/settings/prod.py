@@ -45,6 +45,12 @@ if not ALLOWED_HOSTS:
 # actual HTTPS front end would make the site unreachable (redirect loop).
 ENABLE_HTTPS = env.bool("ENABLE_HTTPS", default=False)
 
+# --- Django Admin path ---------------------------------------------------
+# Superuser-only (config/admin.py); moved off the default /admin/ path in
+# production so it isn't the first thing a port-scan finds. Dev/base keep
+# the default "admin/" (config/urls.py falls back to it if unset).
+ADMIN_URL = env("DJANGO_ADMIN_URL", default="admin/")
+
 SESSION_COOKIE_SECURE = ENABLE_HTTPS
 CSRF_COOKIE_SECURE = ENABLE_HTTPS
 SECURE_SSL_REDIRECT = ENABLE_HTTPS

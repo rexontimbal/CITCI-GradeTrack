@@ -1,0 +1,28 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">INC Completion — {{ completion.entry.roster_entry.student.full_name }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{% url 'approvals:inc_completion_decide' completion.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+        <p>{{ completion.entry.sheet.class_offering }}</p>
+        <p class="mt-1">New grade: <strong>{{ completion.new_grade }} — {{ completion.get_new_remarks_display }}</strong></p>
+        <p class="mt-1">Date complied: {{ completion.date_complied }}</p>
+        {% if completion.remarks_text %}<p class="mt-1">Notes: {{ completion.remarks_text }}</p>{% endif %}
+    </div>
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div>
+        <label for="{{ form.decision_remarks.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.decision_remarks.label }}</label>
+        {{ form.decision_remarks }}
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="submit" name="decision" value="reject" class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Reject</button>
+        <button type="submit" name="decision" value="approve" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">Approve</button>
+    </div>
+</form>

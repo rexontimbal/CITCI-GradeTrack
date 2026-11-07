@@ -9,6 +9,7 @@ mirroring grading/views.py's `_can_edit`/`_get_class_offering_for_grading`
 pattern — these functions only enforce *status* transitions.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -19,7 +20,16 @@ from academics.models import ClassRosterEntry
 from dashboard.services import notify, notify_many
 from grading.services import compute_class, released_entries_for
 
-from .models import GradeCorrection, GradeSheet, GradeSheetEntry, GradeSheetPeriod, GradeSheetStatus, GradeSheetTransition
+from .models import (
+    GradeCorrection,
+    GradeSheet,
+    GradeSheetEntry,
+    GradeSheetPeriod,
+    GradeSheetStatus,
+    GradeSheetTransition,
+    IncCompletion,
+    IncCompletionStatus,
+)
 
 
 def is_class_editable(class_offering, period=GradeSheetPeriod.FINAL):
@@ -254,6 +264,148 @@ def correct_grade(entry, user, new_grade, new_remarks, reason):
         link=f"/grading/my-grades/{entry.roster_entry_id}/",
     )
     return entry
+
+
+# ---------------------------------------------------------------------------
+# INC completion — instructor files, Program Head approves/rejects.
+# Approval reuses correct_grade() verbatim (see its docstring on IncCompletion
+# in models.py). compute_gwa() is a pure read-time computation (see below) —
+# nothing needs to explicitly "recompute" GWA after an approval, the very
+# next call already reflects the corrected final_grade/remarks.
+# ---------------------------------------------------------------------------
+
+
+def can_file_inc_completion(entry):
+    """Returns (bool, reason). `reason` is set whenever the bool is False
+    — including the lapsed-window case, whose exact wording is reused
+    verbatim everywhere this is surfaced (the Class Record INC badge, the
+    "INC to complete" list), so there's one source of that copy."""
+    from reports.models import InstitutionSettings
+
+    if entry.remarks != GradeSheetEntry.Remarks.INC:
+        return False, "This entry isn't marked INC."
+    if entry.sheet.status not in (GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED):
+        return False, "INC completion is only available once the grade sheet is released."
+    if entry.inc_completions.filter(status__in=[IncCompletionStatus.PENDING, IncCompletionStatus.APPROVED]).exists():
+        return False, "An INC completion is already filed for this entry."
+
+    window_days = InstitutionSettings.get_solo().inc_completion_window_days
+    deadline = entry.sheet.released_at + timedelta(days=window_days) if entry.sheet.released_at else None
+    if deadline and timezone.now() > deadline:
+        return False, "INC lapsed — contact Registrar."
+    return True, ""
+
+
+def file_inc_completion(entry, user, new_grade, new_remarks, date_complied, remarks_text=""):
+    allowed, reason = can_file_inc_completion(entry)
+    if not allowed:
+        raise ValidationError(reason)
+    if new_remarks not in (GradeSheetEntry.Remarks.PASSED, GradeSheetEntry.Remarks.FAILED):
+        raise ValidationError("An INC completion must resolve to Passed or Failed.")
+
+    completion = IncCompletion.objects.create(
+        entry=entry,
+        filed_by=user,
+        new_grade=new_grade,
+        new_remarks=new_remarks,
+        date_complied=date_complied,
+        remarks_text=remarks_text,
+    )
+    notify_many(
+        _program_heads_for(entry.sheet.class_offering),
+        "INC completion filed",
+        f"{entry.roster_entry.student.full_name}'s INC in {entry.sheet.class_offering} is ready for review.",
+        link="/approvals/?status=INC_COMPLETIONS",
+    )
+    return completion
+
+
+def decide_inc_completion(completion, user, approve, decision_remarks=""):
+    if completion.status != IncCompletionStatus.PENDING:
+        raise ValidationError("This INC completion has already been decided.")
+
+    entry = completion.entry
+    if approve:
+        correct_grade(
+            entry,
+            user,
+            completion.new_grade,
+            completion.new_remarks,
+            reason=f"INC completion: {completion.remarks_text}" if completion.remarks_text else "INC completion approved.",
+        )
+        completion.status = IncCompletionStatus.APPROVED
+        completion.decided_by = user
+        completion.decided_at = timezone.now()
+        completion.save(update_fields=["status", "decided_by", "decided_at"])
+
+        notify(
+            entry.sheet.class_offering.instructor,
+            "INC completion approved",
+            f"{entry.roster_entry.student.full_name}'s INC in {entry.sheet.class_offering} has been completed.",
+            link=f"/grading/classes/{entry.sheet.class_offering_id}/",
+        )
+        notify(
+            entry.roster_entry.student,
+            "INC completed",
+            f"Your INC in {entry.sheet.class_offering.subject.code} has been completed.",
+            link=f"/grading/my-grades/{entry.roster_entry_id}/",
+        )
+    else:
+        if not decision_remarks or not decision_remarks.strip():
+            raise ValidationError("Remarks are required when rejecting an INC completion.")
+        completion.status = IncCompletionStatus.REJECTED
+        completion.decided_by = user
+        completion.decided_at = timezone.now()
+        completion.decision_remarks = decision_remarks
+        completion.save(update_fields=["status", "decided_by", "decided_at", "decision_remarks"])
+
+        notify(
+            entry.sheet.class_offering.instructor,
+            "INC completion rejected",
+            f"{entry.roster_entry.student.full_name}'s INC completion was rejected: {decision_remarks}",
+            link=f"/grading/classes/{entry.sheet.class_offering_id}/",
+        )
+    return completion
+
+
+def pending_inc_completions_for_program_head(user):
+    return (
+        IncCompletion.objects.filter(
+            status=IncCompletionStatus.PENDING,
+            entry__sheet__class_offering__sections__program__program_head=user,
+        )
+        .distinct()
+        .select_related("entry__roster_entry__student", "entry__sheet__class_offering__subject")
+    )
+
+
+def inc_completions_to_file_for_instructor(instructor):
+    """Active (RELEASED/LOCKED + INC) entries for this instructor's
+    classes that don't already have a PENDING/APPROVED filing — what the
+    instructor's "INC to complete" list shows."""
+    return (
+        GradeSheetEntry.objects.filter(
+            remarks=GradeSheetEntry.Remarks.INC,
+            sheet__class_offering__instructor=instructor,
+            sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED],
+        )
+        .exclude(inc_completions__status__in=[IncCompletionStatus.PENDING, IncCompletionStatus.APPROVED])
+        .select_related("roster_entry__student", "sheet__class_offering__subject")
+    )
+
+
+def inc_completions_pending_for_classes(classes):
+    """Batched sibling of inc_completions_to_file_for_instructor, for the
+    instructor to-do dashboard — one query for however many classes."""
+    return list(
+        GradeSheetEntry.objects.filter(
+            remarks=GradeSheetEntry.Remarks.INC,
+            sheet__class_offering__in=classes,
+            sheet__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED],
+        )
+        .exclude(inc_completions__status__in=[IncCompletionStatus.PENDING, IncCompletionStatus.APPROVED])
+        .select_related("roster_entry__student", "sheet__class_offering__subject")
+    )
 
 
 def compute_gwa(student, semester):

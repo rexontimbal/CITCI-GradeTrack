@@ -1,0 +1,53 @@
+{% load sidebar_icons %}
+<div id="queue-table">
+    {% if completions %}
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <tr>
+                    <th class="px-4 py-3">Student</th>
+                    <th class="px-4 py-3">Class</th>
+                    <th class="px-4 py-3">New Grade</th>
+                    <th class="px-4 py-3">Filed</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for completion in completions %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ completion.entry.roster_entry.student.full_name }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ completion.entry.sheet.class_offering }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ completion.new_grade }} — {{ completion.get_new_remarks_display }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ completion.created_at|date:"M d, Y" }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <button hx-get="{% url 'approvals:inc_completion_decide' completion.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-primary-700 hover:underline">
+                            Review
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if completions.paginator.num_pages > 1 %}
+    <div class="mt-3 flex items-center justify-between text-sm text-gray-600">
+        <p>Page {{ completions.number }} of {{ completions.paginator.num_pages }} ({{ completions.paginator.count }} total)</p>
+        <div class="flex gap-2">
+            {% if completions.has_previous %}
+            <a href="?status=INC_COMPLETIONS&page={{ completions.previous_page_number }}"
+               hx-get="?status=INC_COMPLETIONS&page={{ completions.previous_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+               class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
+            {% endif %}
+            {% if completions.has_next %}
+            <a href="?status=INC_COMPLETIONS&page={{ completions.next_page_number }}"
+               hx-get="?status=INC_COMPLETIONS&page={{ completions.next_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+               class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% else %}
+    {% include "partials/_empty_state.html" with icon="check-circle" title="Nothing here" description="No pending INC completions." %}
+    {% endif %}
+</div>

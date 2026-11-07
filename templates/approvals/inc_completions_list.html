@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block page_title %}INC to Complete{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="INC to Complete" subtitle="Students with an INC on a released grade sheet, in your classes." %}
+
+{% if entries %}
+<div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+                <th class="px-4 py-3">Student</th>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3">Released</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for entry in entries %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ entry.roster_entry.student.full_name }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ entry.sheet.class_offering }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ entry.sheet.released_at|date:"M d, Y"|default:"—" }}</td>
+                <td class="px-4 py-3 text-right">
+                    <button hx-get="{% url 'approvals:inc_completion_file' entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                            class="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-primary-700 hover:underline">
+                        Complete INC
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+{% include "partials/_empty_state.html" with icon="check-circle" title="Nothing here" description="No INC grades waiting to be completed." %}
+{% endif %}
+{% endblock %}

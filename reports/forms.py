@@ -22,6 +22,7 @@ class InstitutionSettingsForm(StyledModelForm):
             "registrar_title",
             "show_unofficial_scores_to_students",
             "show_forecasts_to_students",
+            "inc_completion_window_days",
             "privacy_notice_text",
             "data_privacy_officer_contact",
         ]

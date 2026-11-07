@@ -11,12 +11,17 @@ from accounts.models import User
 from core.htmx import is_htmx
 from grading.services import compute_class
 
-from .forms import CorrectionForm, ReturnRemarksForm, SubmitConfirmForm
-from .models import GradeSheet, GradeSheetEntry, GradeSheetStatus
+from .forms import CorrectionForm, IncCompletionDecisionForm, IncCompletionFileForm, ReturnRemarksForm, SubmitConfirmForm
+from .models import GradeSheet, GradeSheetEntry, GradeSheetStatus, IncCompletion
 from .services import (
     approve_grade_sheet,
+    can_file_inc_completion,
     correct_grade,
+    decide_inc_completion,
+    file_inc_completion,
+    inc_completions_to_file_for_instructor,
     lock_term,
+    pending_inc_completions_for_program_head,
     release_all_approved,
     release_grade_sheet,
     return_grade_sheet,
@@ -166,25 +171,35 @@ def index(request):
     status_filter = request.GET.get("status", GradeSheetStatus.SUBMITTED)
     base_qs = GradeSheet.objects.filter(class_offering__sections__program__program_head=request.user).distinct()
 
-    sheets = base_qs
-    if status_filter and status_filter != "ALL":
-        sheets = sheets.filter(status=status_filter)
-    sheets = sheets.select_related("class_offering__subject", "class_offering__instructor").order_by("-submitted_at", "-created_at")
-
     counts = {status: base_qs.filter(status=status).count() for status, _ in GradeSheetStatus.choices}
-
-    paginator = Paginator(sheets, 20)
-    page = paginator.get_page(request.GET.get("page"))
+    counts["INC_COMPLETIONS"] = pending_inc_completions_for_program_head(request.user).count()
 
     context = {
         "page_title": "Grade Approvals",
-        "sheets": page,
         "status_filter": status_filter,
         "counts": counts,
         "statuses": GradeSheetStatus.choices,
     }
+
+    if status_filter == "INC_COMPLETIONS":
+        completions = pending_inc_completions_for_program_head(request.user).order_by("-created_at")
+        paginator = Paginator(completions, 20)
+        context["completions"] = paginator.get_page(request.GET.get("page"))
+        template = "approvals/_inc_completions_table.html"
+    else:
+        sheets = base_qs
+        if status_filter and status_filter != "ALL":
+            sheets = sheets.filter(status=status_filter)
+        sheets = sheets.select_related("class_offering__subject", "class_offering__instructor").order_by(
+            "-submitted_at", "-created_at"
+        )
+        paginator = Paginator(sheets, 20)
+        context["sheets"] = paginator.get_page(request.GET.get("page"))
+        template = "approvals/_queue_table.html"
+
     if is_htmx(request):
-        return render(request, "approvals/_queue_table.html", context)
+        return render(request, template, context)
+    context["queue_template"] = template
     return render(request, "approvals/queue.html", context)
 
 
@@ -362,6 +377,93 @@ def admin_lock_term(request):
         messages.success(request, f"{len(locked)} grade sheet(s) locked.")
     else:
         messages.error(request, "No active semester is set.")
+
+    response = HttpResponse(status=204)
+    response["HX-Refresh"] = "true"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# INC completion — instructor files, Program Head approves/rejects (the
+# "INC_COMPLETIONS" tab inside index() above handles the queue list).
+# ---------------------------------------------------------------------------
+
+
+@role_required(INSTRUCTOR)
+def inc_completions_list(request):
+    entries = inc_completions_to_file_for_instructor(request.user).order_by(
+        "sheet__class_offering__subject__code", "roster_entry__student__last_name"
+    )
+    return render(request, "approvals/inc_completions_list.html", {"page_title": "INC to Complete", "entries": entries})
+
+
+@role_required(INSTRUCTOR)
+def inc_completion_file(request, entry_pk):
+    entry = get_object_or_404(
+        GradeSheetEntry.objects.select_related("sheet__class_offering", "roster_entry__student"), pk=entry_pk
+    )
+    if entry.sheet.class_offering.instructor_id != request.user.id:
+        raise PermissionDenied("This class is not assigned to you.")
+
+    allowed, reason = can_file_inc_completion(entry)
+
+    if request.method == "GET":
+        form = IncCompletionFileForm() if allowed else None
+        return render(
+            request,
+            "approvals/_inc_completion_file_modal.html",
+            {"entry": entry, "form": form, "blocked_reason": reason},
+        )
+
+    if not allowed:
+        return render(
+            request,
+            "approvals/_inc_completion_file_modal.html",
+            {"entry": entry, "form": None, "blocked_reason": reason},
+        )
+
+    form = IncCompletionFileForm(request.POST)
+    if not form.is_valid():
+        return render(request, "approvals/_inc_completion_file_modal.html", {"entry": entry, "form": form})
+    try:
+        file_inc_completion(
+            entry,
+            request.user,
+            form.cleaned_data["new_grade"],
+            form.cleaned_data["new_remarks"],
+            form.cleaned_data["date_complied"],
+            form.cleaned_data["remarks_text"],
+        )
+    except ValidationError as exc:
+        form.add_error(None, str(exc))
+        return render(request, "approvals/_inc_completion_file_modal.html", {"entry": entry, "form": form})
+
+    response = HttpResponse(status=204)
+    response["HX-Refresh"] = "true"
+    return response
+
+
+@role_required(PROGRAM_HEAD)
+def inc_completion_decide(request, pk):
+    completion = get_object_or_404(
+        IncCompletion.objects.select_related("entry__sheet__class_offering", "entry__roster_entry__student"), pk=pk
+    )
+    if not _program_head_owns(request.user, completion.entry.sheet.class_offering):
+        raise PermissionDenied("This class is not under your program.")
+
+    if request.method == "GET":
+        form = IncCompletionDecisionForm()
+        return render(request, "approvals/_inc_completion_decide_modal.html", {"completion": completion, "form": form})
+
+    form = IncCompletionDecisionForm(request.POST)
+    approve = request.POST.get("decision") == "approve"
+    if not form.is_valid():
+        return render(request, "approvals/_inc_completion_decide_modal.html", {"completion": completion, "form": form})
+    try:
+        decide_inc_completion(completion, request.user, approve, form.cleaned_data["decision_remarks"])
+    except ValidationError as exc:
+        form.add_error(None, str(exc))
+        return render(request, "approvals/_inc_completion_decide_modal.html", {"completion": completion, "form": form})
 
     response = HttpResponse(status=204)
     response["HX-Refresh"] = "true"

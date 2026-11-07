@@ -17,6 +17,10 @@ urlpatterns = [
     path("sheets/<int:pk>/approve/", views.approve, name="approve"),
     path("sheets/<int:pk>/return/", views.return_sheet, name="return_sheet"),
     path("sheets/<int:pk>/release/", views.release, name="release"),
+    # INC completion — instructor files, Program Head decides
+    path("inc-completions/", views.inc_completions_list, name="inc_completions_list"),
+    path("inc-completions/<int:entry_pk>/file/", views.inc_completion_file, name="inc_completion_file"),
+    path("inc-completions/<int:pk>/decide/", views.inc_completion_decide, name="inc_completion_decide"),
     # Admin
     path("admin/sheets/", views.admin_sheets, name="admin_sheets"),
     path("admin/lock-term/", views.admin_lock_term, name="admin_lock_term"),

@@ -24,6 +24,7 @@ def _sidebar_badges(user):
     import cycle."""
     if user.is_program_head:
         from approvals.models import GradeSheet, GradeSheetStatus
+        from approvals.services import pending_inc_completions_for_program_head
 
         count = (
             GradeSheet.objects.filter(
@@ -32,6 +33,7 @@ def _sidebar_badges(user):
             .distinct()
             .count()
         )
+        count += pending_inc_completions_for_program_head(user).count()
         if count:
             return {"approvals:index": count}
     return {}

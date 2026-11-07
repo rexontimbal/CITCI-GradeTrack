@@ -23,6 +23,35 @@ class SubmitConfirmForm(forms.Form):
     )
 
 
+class IncCompletionFileForm(forms.Form):
+    new_grade = forms.DecimalField(
+        label="New final grade",
+        min_value=1,
+        max_value=5,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={"step": "0.01", "class": INPUT_CLASSES}),
+    )
+    new_remarks = forms.ChoiceField(
+        label="Remarks",
+        choices=[(GradeSheetEntry.Remarks.PASSED, "Passed"), (GradeSheetEntry.Remarks.FAILED, "Failed")],
+        widget=forms.Select(attrs={"class": INPUT_CLASSES}),
+    )
+    date_complied = forms.DateField(
+        label="Date complied", widget=forms.DateInput(attrs={"type": "date", "class": INPUT_CLASSES})
+    )
+    remarks_text = forms.CharField(
+        label="Notes", required=False, widget=forms.Textarea(attrs={"rows": 3, "class": TEXTAREA_CLASSES})
+    )
+
+
+class IncCompletionDecisionForm(forms.Form):
+    decision_remarks = forms.CharField(
+        label="Remarks (required if rejecting)",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "class": TEXTAREA_CLASSES}),
+    )
+
+
 class CorrectionForm(forms.Form):
     final_grade = forms.DecimalField(
         label="Final grade",

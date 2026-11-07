@@ -152,3 +152,46 @@ class GradeCorrection(TimeStampedModel):
 
     def __str__(self):
         return f"Correction: {self.entry} ({self.old_grade} -> {self.new_grade})"
+
+
+class IncCompletionStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+
+
+class IncCompletion(TimeStampedModel):
+    """An instructor's request to resolve an INC entry on a RELEASED/LOCKED
+    sheet — PENDING until the Program Head approves/rejects. "Completed
+    INC" is never a stored flag on GradeSheetEntry (its remarks column is
+    DB-constrained to PASSED/FAILED/INC/DROPPED) — it's derived at display
+    time from `entry.inc_completions.filter(status=APPROVED).exists()`,
+    the same philosophy as forecasting.services.risk_level. Approval
+    reuses approvals.services.correct_grade verbatim, so the
+    GradeCorrection/GradeSheetTransition/notifications are identical to an
+    admin-filed correction."""
+
+    entry = models.ForeignKey(GradeSheetEntry, on_delete=models.CASCADE, related_name="inc_completions")
+    filed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    new_grade = models.DecimalField(max_digits=4, decimal_places=2)
+    new_remarks = models.CharField(
+        max_length=10,
+        choices=[(GradeSheetEntry.Remarks.PASSED, "Passed"), (GradeSheetEntry.Remarks.FAILED, "Failed")],
+        help_text="An INC completion always resolves to Passed or Failed — never INC/Dropped again.",
+    )
+    date_complied = models.DateField()
+    remarks_text = models.TextField(blank=True, help_text="Instructor's notes filing the completion.")
+    status = models.CharField(max_length=10, choices=IncCompletionStatus.choices, default=IncCompletionStatus.PENDING)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_remarks = models.TextField(blank=True, help_text="Required on rejection.")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"INC completion for {self.entry.roster_entry.student} ({self.get_status_display()})"

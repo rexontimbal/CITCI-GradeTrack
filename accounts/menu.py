@@ -89,6 +89,7 @@ MENUS = {
             "items": [
                 ("academics:my_classes", "My Classes", "chalkboard"),
                 ("approvals:submitted", "Submitted Grades", "clipboard"),
+                ("approvals:inc_completions_list", "INC to Complete", "document"),
                 ("forecasting:at_risk", "At-Risk Students", "alert"),
             ],
         },

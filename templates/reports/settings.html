@@ -96,6 +96,13 @@
         </div>
 
         <div>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">INC Completion</h3>
+            <label for="{{ form.inc_completion_window_days.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.inc_completion_window_days.label }}</label>
+            {{ form.inc_completion_window_days }}
+            <p class="mt-1 text-xs text-gray-600">{{ form.inc_completion_window_days.help_text }}</p>
+        </div>
+
+        <div>
             <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Data Privacy Notice (RA 10173)</h3>
             <p class="mb-3 text-xs text-gray-600">Shown on both the login page's Data Privacy Notice modal and the forced first-login consent page — edit it once here, not in templates.</p>
             <div class="space-y-3">

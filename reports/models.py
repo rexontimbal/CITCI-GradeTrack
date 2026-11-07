@@ -38,6 +38,13 @@ class InstitutionSettings(TimeStampedModel):
         "forecast card/section at all (never probability or the words \"at risk\" either way).",
     )
 
+    inc_completion_window_days = models.PositiveIntegerField(
+        default=365,
+        help_text="Days after a grade sheet is released that an instructor may still file a "
+        "Complete INC. Past this window, the entry shows \"INC lapsed — contact Registrar\" — no "
+        "automatic grade change.",
+    )
+
     privacy_notice_text = models.TextField(
         blank=True,
         default=(

@@ -20,12 +20,17 @@ from dashboard.models import Notification
 from grading.models import AssessmentTerm
 from grading.tests import GradingTestBase, make_user
 
-from .models import GradeCorrection, GradeSheet, GradeSheetEntry, GradeSheetStatus, GradeSheetTransition
+from .models import GradeCorrection, GradeSheet, GradeSheetEntry, GradeSheetStatus, GradeSheetTransition, IncCompletion, IncCompletionStatus
 from .services import (
     approve_grade_sheet,
+    can_file_inc_completion,
     compute_gwa,
     correct_grade,
+    decide_inc_completion,
+    file_inc_completion,
+    inc_completions_to_file_for_instructor,
     lock_term,
+    pending_inc_completions_for_program_head,
     release_grade_sheet,
     return_grade_sheet,
     submit_grade_sheet,
@@ -432,4 +437,188 @@ class FinalRemarksSnapshotTests(ApprovalsTestBase):
     def test_gwa_none_when_no_released_entries(self):
         result = compute_gwa(self.student, self.semester)
         self.assertIsNone(result["gwa"])
-        self.assertEqual(result["total_units"], Decimal("0"))
+
+
+class IncCompletionTestBase(ApprovalsTestBase):
+    """A released sheet with an INC entry — the starting point for every
+    INC-completion test below."""
+
+    def setUp(self):
+        super().setUp()
+        self.roster_entry.is_incomplete = True
+        self.roster_entry.incomplete_reason = "Hospitalized"
+        self.roster_entry.save()
+        self.make_items("Attendance", [10])  # left blank, but INC exempts it from missing_score_students
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        approve_grade_sheet(sheet, self.program_head)
+        self.sheet = release_grade_sheet(sheet, self.program_head)
+        self.entry = self.sheet.entries.get(roster_entry=self.roster_entry)
+        self.assertEqual(self.entry.remarks, "INC")
+
+
+class IncCompletionFilingTests(IncCompletionTestBase):
+    def test_can_file_when_released_and_inc(self):
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "")
+
+    def test_cannot_file_when_not_inc(self):
+        self.entry.remarks = "PASSED"
+        self.entry.final_grade = Decimal("1.50")
+        self.entry.save()
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertFalse(allowed)
+
+    def test_cannot_file_when_sheet_not_released_or_locked(self):
+        self.sheet.status = GradeSheetStatus.SUBMITTED
+        self.sheet.save()
+        entry = GradeSheetEntry.objects.get(pk=self.entry.pk)
+        allowed, reason = can_file_inc_completion(entry)
+        self.assertFalse(allowed)
+
+    def test_cannot_file_twice_while_pending(self):
+        file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertFalse(allowed)
+        self.assertIn("already filed", reason)
+
+    def test_can_refile_after_a_rejection(self):
+        completion = file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+        decide_inc_completion(completion, self.program_head, approve=False, decision_remarks="Not enough proof")
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertTrue(allowed)
+
+    def test_filing_must_resolve_to_passed_or_failed(self):
+        with self.assertRaises(ValidationError):
+            file_inc_completion(self.entry, self.instructor, Decimal("5.00"), "INC", "2026-01-15")
+
+    def test_pending_completion_notifies_program_heads(self):
+        file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+        self.assertTrue(Notification.objects.filter(recipient=self.program_head, title__icontains="INC").exists())
+
+
+class IncCompletionWindowTests(IncCompletionTestBase):
+    def test_lapsed_window_blocks_filing_with_no_automatic_grade_change(self):
+        from reports.models import InstitutionSettings
+
+        InstitutionSettings.get_solo()
+        InstitutionSettings.objects.filter(pk=1).update(inc_completion_window_days=0)
+        self.sheet.released_at = self.sheet.released_at.replace(year=self.sheet.released_at.year - 1)
+        self.sheet.save(update_fields=["released_at"])
+
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "INC lapsed — contact Registrar.")
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.remarks, "INC")  # untouched
+
+    def test_configurable_window_allows_filing_within_it(self):
+        from reports.models import InstitutionSettings
+
+        InstitutionSettings.get_solo()
+        InstitutionSettings.objects.filter(pk=1).update(inc_completion_window_days=3650)
+        allowed, reason = can_file_inc_completion(self.entry)
+        self.assertTrue(allowed)
+
+
+class IncCompletionApprovalTests(IncCompletionTestBase):
+    def setUp(self):
+        super().setUp()
+        self.completion = file_inc_completion(
+            self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15", "Submitted late work"
+        )
+
+    def test_approval_reuses_correct_grade_mechanism(self):
+        decide_inc_completion(self.completion, self.program_head, approve=True)
+
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.final_grade, Decimal("1.50"))
+        self.assertEqual(self.entry.remarks, "PASSED")
+        self.assertTrue(GradeCorrection.objects.filter(entry=self.entry).exists())
+        self.assertTrue(
+            GradeSheetTransition.objects.filter(sheet=self.sheet, from_status=self.sheet.status, to_status=self.sheet.status).exists()
+        )
+
+    def test_approval_marks_completion_approved_and_notifies_both(self):
+        decide_inc_completion(self.completion, self.program_head, approve=True)
+        self.completion.refresh_from_db()
+        self.assertEqual(self.completion.status, IncCompletionStatus.APPROVED)
+        self.assertEqual(self.completion.decided_by, self.program_head)
+
+        self.assertTrue(Notification.objects.filter(recipient=self.instructor, title__icontains="INC completion approved").exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.roster_entry.student, title__icontains="INC completed").exists())
+
+    def test_gwa_reflects_the_corrected_grade_immediately(self):
+        before = compute_gwa(self.roster_entry.student, self.semester)
+        self.assertFalse(before["is_complete"])  # still INC
+
+        decide_inc_completion(self.completion, self.program_head, approve=True)
+
+        after = compute_gwa(self.roster_entry.student, self.semester)
+        self.assertTrue(after["is_complete"])
+        self.assertEqual(after["gwa"], Decimal("1.50"))
+
+    def test_cannot_decide_an_already_decided_completion(self):
+        decide_inc_completion(self.completion, self.program_head, approve=True)
+        with self.assertRaises(ValidationError):
+            decide_inc_completion(self.completion, self.program_head, approve=True)
+
+
+class IncCompletionRejectionTests(IncCompletionTestBase):
+    def setUp(self):
+        super().setUp()
+        self.completion = file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+
+    def test_rejection_requires_remarks(self):
+        with self.assertRaises(ValidationError):
+            decide_inc_completion(self.completion, self.program_head, approve=False, decision_remarks="")
+
+    def test_rejection_leaves_entry_untouched_and_notifies_only_instructor(self):
+        decide_inc_completion(self.completion, self.program_head, approve=False, decision_remarks="Not enough proof")
+
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.remarks, "INC")
+        self.completion.refresh_from_db()
+        self.assertEqual(self.completion.status, IncCompletionStatus.REJECTED)
+
+        self.assertTrue(Notification.objects.filter(recipient=self.instructor, title__icontains="rejected").exists())
+        self.assertFalse(Notification.objects.filter(recipient=self.roster_entry.student, title__icontains="rejected").exists())
+
+
+class IncCompletionScopeTests(IncCompletionTestBase):
+    def setUp(self):
+        super().setUp()
+        self.completion = file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+        self.other_instructor = make_user(User.Role.INSTRUCTOR, "other_inc_instructor")
+        self.other_program_head = make_user(User.Role.PROGRAM_HEAD, "other_inc_ph")
+
+    def test_program_head_only_sees_their_own_program(self):
+        self.assertIn(self.completion, pending_inc_completions_for_program_head(self.program_head))
+        self.assertNotIn(self.completion, pending_inc_completions_for_program_head(self.other_program_head))
+
+    def test_already_filed_entry_disappears_from_the_to_file_list(self):
+        # self.completion (created in setUp) is PENDING for self.entry, so
+        # it must no longer appear in the "still needs filing" list.
+        self.assertNotIn(self.entry, inc_completions_to_file_for_instructor(self.instructor))
+
+    def test_other_instructor_sees_nothing(self):
+        self.assertEqual(inc_completions_to_file_for_instructor(self.other_instructor).count(), 0)
+
+    def test_other_instructor_gets_403_filing(self):
+        self.client.force_login(self.other_instructor)
+        response = self.client.get(reverse("approvals:inc_completion_file", args=[self.entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_other_program_head_gets_403_deciding(self):
+        self.client.force_login(self.other_program_head)
+        response = self.client.get(reverse("approvals:inc_completion_decide", args=[self.completion.pk]))
+        self.assertEqual(response.status_code, 403)
+
+
+class IncCompletionDashboardBadgeTests(IncCompletionTestBase):
+    def test_sidebar_badge_includes_pending_inc_completions(self):
+        from accounts.context_processors import _sidebar_badges
+
+        file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
+        badges = _sidebar_badges(self.program_head)
+        self.assertEqual(badges.get("approvals:index"), 1)

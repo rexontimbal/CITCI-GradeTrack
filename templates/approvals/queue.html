@@ -29,7 +29,12 @@
        class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         All
     </a>
+    <a href="?status=INC_COMPLETIONS"
+       hx-get="?status=INC_COMPLETIONS" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+       class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == "INC_COMPLETIONS" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+        INC Completions <span class="ml-1 text-xs opacity-75">{{ counts.INC_COMPLETIONS|default:0 }}</span>
+    </a>
 </div>
 
-{% include "approvals/_queue_table.html" %}
+{% include queue_template %}
 {% endblock %}

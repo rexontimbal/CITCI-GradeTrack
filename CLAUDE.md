@@ -87,6 +87,28 @@
 > `dashboard.tests.DashboardQueryCountTests` for the regression guard. The rest of Phase 8 part B
 > (coverage ≥80%, At-Risk query reduction, accessibility audit, load/perf tooling, UAT
 > questionnaires, diagrams, manuals, `CHANGES_FROM_PROPOSAL.md`, demo script) is still the next task.
+>
+> **2026-11-07: Phase 8 part B is done — the project is complete.** At-Risk query reduction: 118 →
+> 21 queries on a 6-class fixture (`forecasting.services.get_display_forecasts_for_classes`, see
+> `forecasting.tests.AtRiskQueryCountTests`). Coverage: 293 tests, 76.1% overall, ≥80% on every
+> service module and every access-control module (the spec's actual target — see
+> `docs/TEST_REPORT.md`). Accessibility: an axe-core audit (`tools/accessibility_audit.py`) found
+> and fixed a project-wide color-contrast issue plus several unlabeled-control issues — 0
+> violations on re-run across 35 page/modal visits (`docs/ACCESSIBILITY.md` — note its "the earlier
+> audit was invalid" postscript: the first pass accidentally audited the onboarding gate page
+> instead of real content, caught and corrected the same session). Load/perf: `seed_load_test` +
+> `tools/perf_check.py` — every page under the 2s requirement including a worst-case 450-student
+> class (`docs/PERFORMANCE.md`). UAT: three ISO/IEC 25010:2011 questionnaire versions (Students /
+> Staff / IT Experts) plus `tools/uat_analysis.py` (weighted means, interpretation bands, one-way
+> ANOVA — `docs/UAT_QUESTIONNAIRE.md`, `docs/uat/`). Docs: `docs/ERD.md`/`DATA_DICTIONARY.md`
+> generated straight from the models (`tools/generate_erd.py`), architecture/DFD/use-case diagrams
+> (`docs/diagrams/`), a user manual per role with real screenshots
+> (`tools/generate_user_manuals.py`, `docs/manuals/`), `docs/CHANGES_FROM_PROPOSAL.md` (every
+> deviation from the approved proposal, cited section-by-section — including the fourth role,
+> Program Head, and the grade-sheet/teaching-load workflows the proposal never described), and
+> `docs/DEFENSE_DEMO_SCRIPT.md`. See `README.md`'s "Documentation" section for the full index and
+> how to regenerate each generated doc. No further phases are planned — future work is whatever the
+> defense panel or continued CITCI use surfaces.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -1357,21 +1379,37 @@ until the previous one passes its tests.
   At-Risk-page query reduction (would need batching `current_checkpoint_for_class` across classes,
   a larger refactor of its per-class signature). **Part B (ISO/IEC 25010 UAT questionnaire +
   analysis script) is the next phase, not built yet** — see below.
-- **Phase 8 part B — Testing & evaluation (O5):**
-  - Feature/unit tests for all modules; target ≥ 80% coverage of services and access-control logic
-  - Seeder: 1 admin, 2 program heads, 15 instructors, 450 students, current + 2 past terms with
-    realistic scores
-  - Simple performance check script (timed requests on key pages with seeded data), results in
-    `docs/PERFORMANCE.md`
-  - `docs/UAT_QUESTIONNAIRE.md`: ISO/IEC 25010 Likert (1–5) questionnaire covering Functional
-    Suitability, Performance Efficiency, Usability, Reliability, Security, Maintainability,
-    Compatibility, Portability — separate versions for instructors and students
-  - `tools/uat_analysis.py`: reads a CSV of responses, outputs per-item and per-characteristic
-    weighted mean, SD, percentage distribution, interpretation (4.21–5.00 Excellent, 3.41–4.20 Very
-    Good, 2.61–3.40 Good, 1.81–2.60 Fair, 1.00–1.80 Poor), and one-way ANOVA between instructor and
-    student groups
-  - Final `docs/` set: ERD, architecture diagram, data flow diagram, user manual per role,
-    deployment guide
+- **Phase 8 part B — Testing & evaluation (O5, done — project complete):**
+  - 293 tests, 76.1% overall line coverage, ≥80% on every service module and every access-control
+    module (the spec's actual target — see `docs/TEST_REPORT.md` for the full breakdown and why the
+    overall number sits lower: HTTP view-layer secondary branches and two data-import parsers,
+    neither a service nor access-control code).
+  - `core.management.commands.seed_load_test`: 1 admin, 2 program heads, 15 instructors, 450
+    students, current + 2 past terms with realistic scores, released sheets, computed forecasts —
+    all data clearly prefixed `load_`/`LOAD*`, refuses under prod settings.
+  - `tools/perf_check.py`: timed requests on key pages (p50/p95/max) plus a 50/100-concurrent-user
+    burst, against `seed_load_test` data — results in `docs/PERFORMANCE.md` (every page under the
+    2s non-functional requirement, including a worst-case 450-student class).
+  - `tools/accessibility_audit.py`: axe-core via Playwright, 35 page/modal visits across all four
+    roles — 0 violations after fixing a project-wide color-contrast issue and several
+    unlabeled-control issues (`docs/ACCESSIBILITY.md`).
+  - `docs/UAT_QUESTIONNAIRE.md` (+ `docs/uat/`): ISO/IEC 25010:2011 Likert (1–5) questionnaire,
+    three versions — Students (5 end-user characteristics), Instructors/Program Heads/Admin (the
+    same 5 for their workflows), IT Experts (all 8, including Maintainability/Portability/
+    Compatibility). `tools/generate_uat_docs.py` emits a `.docx`/`.csv` twin of each from one
+    item-bank definition.
+  - `tools/uat_analysis.py`: reads a response CSV, outputs per-item and per-characteristic weighted
+    mean, SD, percentage distribution, interpretation (4.21–5.00 Excellent, 3.41–4.20 Very Good,
+    2.61–3.40 Good, 1.81–2.60 Fair, 1.00–1.80 Poor), and one-way ANOVA between respondent groups
+    (scipy) — an `.xlsx` workbook + Markdown summary, with a sample response CSV and a test suite
+    (`tools/test_uat_analysis.py`).
+  - Final `docs/` set: `docs/ERD.md`/`DATA_DICTIONARY.md` generated from the Django models
+    (`tools/generate_erd.py`), `docs/diagrams/` (architecture, context + level-1 DFD, one use-case
+    diagram per role), a user manual per role with real screenshots from seeded demo data
+    (`tools/generate_user_manuals.py`, `docs/manuals/`), `docs/CHANGES_FROM_PROPOSAL.md` (every
+    deviation from the approved proposal, cited section-by-section), `docs/DEFENSE_DEMO_SCRIPT.md`,
+    and the pre-existing `docs/DEPLOYMENT.md`. See `README.md`'s "Documentation" section for the
+    full index.
 
 ---
 

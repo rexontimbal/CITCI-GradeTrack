@@ -141,6 +141,34 @@ updated offerings sheet. It also writes `docs/source/DATA_ISSUES.md`, listing in
 pairs that look like they might be the same person misspelled/mistitled (e.g. "Mr. Garibay" vs
 "Ms. Garibay") — these are **never auto-merged**, confirm with CITCI first.
 
+### Resetting to a clean slate (dev only)
+
+`python manage.py reset_dev_clean --yes` wipes **every** data row (users, academic years/
+semesters/programs/majors/sections/subjects/classes/class lists, grading data, grade sheets,
+notifications, forecasts/predictions, historical data, audit logs, axes lockouts) and recreates
+exactly what a fresh production install has: one superuser admin (`admin` / `Admin@1234`, no
+forced password change), Institution Settings defaults, and the CITCI Default grading template —
+**no** demo users or academic data. It backs up first automatically (`backup_db`) and refuses
+outright under the production settings module (no override flag — there's no legitimate reason to
+run this against production). `docs/source/` (the Registrar `.docx`/JSON) is untouched, so
+"Import Class Offerings" can still be tested against it. Pass `--skip-backup` only for
+tests/CI — never skip it against a real dev database you care about.
+
+To go back to the full demo dataset afterward, run in this order:
+
+```bash
+python manage.py seed_demo_users       # admin/program_head/instructor/student demo accounts
+python manage.py seed_citci_academics  # real CITCI offerings + demo students/instructors on rosters
+                                        #   (this also runs seed_grading_demo and seed_forecasting_demo
+                                        #   automatically at the end)
+```
+
+`seed_citci_academics` alone is enough for most testing — it chains `seed_grading_demo` (grading
+template + sample scores/grade sheets) and `seed_forecasting_demo` (synthetic models + forecasts)
+itself. Run `seed_demo_users` first only if you also want the four named demo accounts
+(`admin`/`program_head`/`instructor`/`student`) rather than just the real-instructor accounts
+`seed_citci_academics` creates on its own.
+
 ## Login security
 
 - **Account lockout** (django-axes): 5 failed logins locks that *username* (not IP — a shared

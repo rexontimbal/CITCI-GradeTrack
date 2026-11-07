@@ -161,6 +161,58 @@ class BackupDbCommandTests(TestCase):
             self.assertLessEqual(len(remaining), 2)
 
 
+class ResetDevCleanCommandTests(TestCase):
+    """Dev-only destructive reset — no --force-demo escape hatch under
+    prod (unlike every other seed_* command), always backs up first
+    (mocked here, same as BackupDbCommandTests), and must leave the
+    database in exactly the fresh-install state."""
+
+    def setUp(self):
+        from academics.tests import make_user as academics_make_user
+        from academics.models import AcademicYear, Program
+
+        self.academics_make_user = academics_make_user
+        AcademicYear.objects.create(start_year=2026)
+        Program.objects.create(code="BSED", name="BS Secondary Education")
+
+    @override_settings(SETTINGS_MODULE="config.settings.prod")
+    def test_refuses_under_prod_settings_with_no_override(self):
+        with self.assertRaises(CommandError):
+            call_command("reset_dev_clean", "--yes")
+
+    def test_refuses_without_yes(self):
+        with self.assertRaises(CommandError):
+            call_command("reset_dev_clean")
+
+    def test_wipes_data_and_recreates_minimal_setup(self):
+        from accounts.models import User
+        from academics.models import AcademicYear, Program
+        from grading.models import GradingTemplate
+        from reports.models import InstitutionSettings
+
+        self.academics_make_user(User.Role.INSTRUCTOR, "someone")
+        fake_result = mock.Mock(returncode=0, stderr="")
+        with mock.patch("core.management.commands.backup_db.Command._run", return_value=fake_result):
+            call_command("reset_dev_clean", "--yes")
+
+        self.assertEqual(User.objects.count(), 1)
+        admin = User.objects.get()
+        self.assertEqual(admin.username, "admin")
+        self.assertTrue(admin.is_superuser)
+        self.assertTrue(admin.check_password("Admin@1234"))
+        self.assertFalse(admin.must_change_password)
+
+        self.assertEqual(AcademicYear.objects.count(), 0)
+        self.assertEqual(Program.objects.count(), 0)
+        self.assertTrue(InstitutionSettings.objects.filter(pk=1).exists())
+        self.assertTrue(GradingTemplate.objects.filter(name="CITCI Default", is_default=True).exists())
+
+    def test_skip_backup_flag_avoids_calling_backup_db(self):
+        with mock.patch("core.management.commands.reset_dev_clean.call_command") as mock_call:
+            call_command("reset_dev_clean", "--yes", "--skip-backup")
+        mock_call.assert_not_called()
+
+
 class RestoreDbCommandTests(TestCase):
     def test_refuses_without_confirmation_flag(self):
         with self.assertRaises(CommandError):

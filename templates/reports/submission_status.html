@@ -6,6 +6,12 @@
         <a href="{% url 'reports:index' %}" class="text-sm text-gray-600 hover:underline">&larr; Reports</a>
         <h2 class="mt-1 text-xl font-bold text-gray-900">Grade Submission Status</h2>
         <p class="mt-1 text-sm text-gray-600">{{ semester|default:"No semester selected" }}</p>
+        {% if late_or_unsubmitted %}
+        <p class="mt-1 text-sm text-gray-600">
+            <span class="font-medium text-red-700">{{ late_or_unsubmitted.late_count }}</span> late ·
+            <span class="font-medium text-amber-700">{{ late_or_unsubmitted.not_submitted_count }}</span> not yet submitted
+        </p>
+        {% endif %}
     </div>
     <div class="flex items-center gap-2">
         <form method="get" class="flex items-center gap-2 text-sm">
@@ -31,6 +37,7 @@
                 <th class="px-4 py-3">Submitted</th>
                 <th class="px-4 py-3">Approved</th>
                 <th class="px-4 py-3">Released</th>
+                <th class="px-4 py-3">Late</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -42,9 +49,10 @@
                 <td class="px-4 py-3 text-gray-600">{{ row.submitted_at|date:"M d, Y"|default:"—" }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.approved_at|date:"M d, Y"|default:"—" }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.released_at|date:"M d, Y"|default:"—" }}</td>
+                <td class="px-4 py-3">{% if row.is_late %}<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Late</span>{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No classes found.</td></tr>
+            <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No classes found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

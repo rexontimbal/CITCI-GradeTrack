@@ -4,6 +4,22 @@
 {% block content %}
 {% include "partials/_page_header.html" with title="Grade Approvals" subtitle="Grade sheets submitted for classes under your program(s)." %}
 
+{% if late_counts %}
+<div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <a href="?status={{ status_filter }}&late=1" hx-get="?status={{ status_filter }}&late=1" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+       class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 font-medium text-red-700 hover:bg-red-100">
+        {{ late_counts.late_count }} late
+    </a>
+    <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 font-medium text-amber-800">
+        {{ late_counts.not_submitted_count }} not yet submitted
+    </span>
+    {% if late_only %}
+    <a href="?status={{ status_filter }}" hx-get="?status={{ status_filter }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+       class="text-gray-600 underline hover:no-underline">Clear late filter</a>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if counts.APPROVED %}
 <div class="mb-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-900">
     <span>{{ counts.APPROVED }} grade sheet{{ counts.APPROVED|pluralize }} approved and ready to release.</span>

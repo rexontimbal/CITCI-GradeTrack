@@ -12,6 +12,15 @@
     <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.submitted }} / {{ total_classes }}</strong> submitted</span>
     <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.approved }} / {{ total_classes }}</strong> approved</span>
     <span class="rounded-lg bg-white px-3 py-1.5"><strong class="text-gray-900">{{ progress.released }} / {{ total_classes }}</strong> released</span>
+    {% if late_counts %}
+    <a href="?late=1" hx-get="?late=1" hx-target="#admin-sheets-table" hx-swap="outerHTML" hx-push-url="true"
+       class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 font-medium text-red-700 hover:bg-red-100">
+        {{ late_counts.late_count }} late
+    </a>
+    <span class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 font-medium text-amber-800">
+        {{ late_counts.not_submitted_count }} not yet submitted
+    </span>
+    {% endif %}
     <button hx-get="{% url 'approvals:admin_lock_term' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
             class="ml-auto flex items-center gap-1.5 rounded-lg bg-brand-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
         {% sidebar_icon "lock" "w-4 h-4" %} Lock Term

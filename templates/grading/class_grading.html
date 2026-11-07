@@ -15,6 +15,9 @@
             <h2 class="mt-1 flex items-center gap-2 text-xl font-bold text-gray-900">
                 {{ class_offering.subject.code }} — {{ class_offering.subject.title }}
                 {% if grade_sheet %}{% include "approvals/_status_badge.html" with status=grade_sheet.status %}{% endif %}
+                {% if is_owner and deadline and not grade_sheet or is_owner and deadline and grade_sheet.status == "DRAFT" %}
+                {% include "partials/_deadline_countdown.html" with deadline=deadline is_overdue=is_overdue %}
+                {% endif %}
             </h2>
             <p class="mt-1 text-sm text-gray-600">
                 {% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}

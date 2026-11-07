@@ -1,8 +1,10 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from academics.models import (
     AcademicYear,
@@ -622,3 +624,127 @@ class IncCompletionDashboardBadgeTests(IncCompletionTestBase):
         file_inc_completion(self.entry, self.instructor, Decimal("1.50"), "PASSED", "2026-01-15")
         badges = _sidebar_badges(self.program_head)
         self.assertEqual(badges.get("approvals:index"), 1)
+
+
+class LateFlagTests(ApprovalsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.fully_score_class()
+
+    def test_submit_on_time_is_not_late(self):
+        from django.utils import timezone
+
+        self.semester.submission_deadline = timezone.now() + timedelta(days=7)
+        self.semester.save()
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertFalse(sheet.is_late)
+
+    def test_submit_after_deadline_is_late(self):
+        from django.utils import timezone
+
+        self.semester.submission_deadline = timezone.now() - timedelta(days=1)
+        self.semester.save()
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertTrue(sheet.is_late)
+
+    def test_submit_with_no_deadline_set_is_never_late(self):
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertFalse(sheet.is_late)
+
+    def test_resubmit_recomputes_against_the_current_deadline(self):
+        from django.utils import timezone
+
+        self.semester.submission_deadline = timezone.now() - timedelta(days=1)
+        self.semester.save()
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertTrue(sheet.is_late)
+
+        return_grade_sheet(sheet, self.program_head, "fix")
+        self.semester.submission_deadline = timezone.now() + timedelta(days=7)
+        self.semester.save()
+        sheet2 = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertFalse(sheet2.is_late)
+
+
+class LateFilterTests(ApprovalsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.fully_score_class()
+        self.semester.submission_deadline = timezone.now() - timedelta(days=1)
+        self.semester.save()
+        self.sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertTrue(self.sheet.is_late)
+
+    def test_program_head_late_filter_returns_only_late_sheets(self):
+        from .services import late_or_unsubmitted_counts
+
+        counts = late_or_unsubmitted_counts(self.semester, Program.objects.filter(pk=self.program.pk))
+        self.assertEqual(counts["late_count"], 1)
+
+        self.client.force_login(self.program_head)
+        response = self.client.get(reverse("approvals:index"), {"status": "SUBMITTED", "late": "1"})
+        self.assertContains(response, "Late")
+
+    def test_admin_grade_sheets_late_filter(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("approvals:admin_sheets"), {"late": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, str(self.class_offering.subject.code))
+
+
+class SendRemindersCommandTests(ApprovalsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.fully_score_class()
+
+    def _run(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        call_command("send_reminders", stdout=StringIO())
+
+    def test_fires_only_inside_the_3_day_window(self):
+        self.semester.submission_deadline = timezone.now() + timedelta(days=10)
+        self.semester.save()
+        self._run()
+        self.assertFalse(Notification.objects.filter(recipient=self.instructor, title__icontains="deadline").exists())
+
+    def test_fires_inside_the_window_and_is_deduplicated(self):
+        self.semester.submission_deadline = timezone.now() + timedelta(days=2)
+        self.semester.save()
+        self._run()
+        self.assertEqual(Notification.objects.filter(recipient=self.instructor, title__icontains="deadline").count(), 1)
+
+        self._run()  # second run in the same window must not re-notify
+        self.assertEqual(Notification.objects.filter(recipient=self.instructor, title__icontains="deadline").count(), 1)
+
+    def test_does_not_fire_for_an_already_submitted_sheet(self):
+        self.semester.submission_deadline = timezone.now() + timedelta(days=2)
+        self.semester.save()
+        submit_grade_sheet(self.class_offering, self.instructor)
+        self._run()
+        self.assertFalse(Notification.objects.filter(recipient=self.instructor, title__icontains="deadline").exists())
+
+    def test_no_reminder_when_no_deadline_set(self):
+        self._run()
+        self.assertFalse(Notification.objects.filter(recipient=self.instructor, title__icontains="deadline").exists())
+
+
+class SubmissionStatusReportLateColumnTests(ApprovalsTestBase):
+    def test_late_counts_match_a_hand_built_fixture(self):
+        from reports.services import submission_status_rows
+
+        from .services import late_or_unsubmitted_counts
+
+        self.fully_score_class()
+        self.semester.submission_deadline = timezone.now() - timedelta(days=1)
+        self.semester.save()
+        submit_grade_sheet(self.class_offering, self.instructor)
+
+        rows = submission_status_rows(self.semester, Program.objects.filter(pk=self.program.pk))
+        self.assertTrue(rows[0]["is_late"])
+
+        counts = late_or_unsubmitted_counts(self.semester, Program.objects.filter(pk=self.program.pk))
+        self.assertEqual(counts["late_count"], 1)
+        self.assertEqual(counts["not_submitted_count"], 0)

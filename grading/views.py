@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from django.views import View
 
 from academics.models import ClassOffering, ClassRosterEntry
@@ -373,6 +374,8 @@ def class_grading(request, pk):
         scheme_error = str(exc)
 
     term_filter = request.GET.get("term") or None
+    deadline = class_offering.semester.submission_deadline
+    is_overdue = bool(deadline and timezone.now() > deadline and grade_sheet is None)
 
     context = {
         "page_title": f"Grading — {class_offering}",
@@ -387,6 +390,8 @@ def class_grading(request, pk):
         "tab": request.GET.get("tab", "setup"),
         "term_filter": term_filter,
         "assessment_terms": AssessmentTerm.choices,
+        "deadline": deadline,
+        "is_overdue": is_overdue,
     }
 
     if scheme:

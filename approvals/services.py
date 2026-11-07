@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from academics.models import ClassRosterEntry
+from academics.models import ClassOffering, ClassRosterEntry
 from dashboard.services import notify, notify_many
 from grading.services import compute_class, released_entries_for
 
@@ -77,6 +77,64 @@ def missing_score_students(class_offering):
     ]
 
 
+def missing_score_counts_for_classes(classes):
+    """Count-only, batched sibling of missing_score_students — the to-do
+    dashboard only needs a number per class, not full StudentGradeResult
+    objects. {class_id: count}, omitting classes with zero."""
+    counts = {}
+    for class_offering in classes:
+        count = len(missing_score_students(class_offering))
+        if count:
+            counts[class_offering.id] = count
+    return counts
+
+
+def returned_sheets_for_classes(classes):
+    return list(
+        GradeSheet.objects.filter(class_offering__in=classes, status=GradeSheetStatus.RETURNED).select_related(
+            "class_offering__subject"
+        )
+    )
+
+
+def unsubmitted_sheets_for_classes(classes):
+    """Classes with no sheet yet, or a DRAFT/RETURNED one — each paired
+    with its semester's deadline (or None) for a countdown display."""
+    classes = list(classes)
+    sheets_by_class = {
+        sheet.class_offering_id: sheet
+        for sheet in GradeSheet.objects.filter(class_offering__in=classes, period=GradeSheetPeriod.FINAL)
+    }
+    rows = []
+    for class_offering in classes:
+        sheet = sheets_by_class.get(class_offering.id)
+        if sheet is not None and sheet.status not in (GradeSheetStatus.DRAFT, GradeSheetStatus.RETURNED):
+            continue
+        rows.append({"class_offering": class_offering, "deadline": class_offering.semester.submission_deadline})
+    return rows
+
+
+def unsubmitted_sheets_for_instructor(instructor, semester):
+    classes = ClassOffering.objects.filter(instructor=instructor, semester=semester).select_related(
+        "subject", "semester"
+    )
+    return unsubmitted_sheets_for_classes(classes)
+
+
+def late_or_unsubmitted_counts(semester, programs=None):
+    """Batched counts for the Late / Not-yet-submitted filters on Grade
+    Approvals, Grade Sheets, and the Submission Status report. `programs`
+    is already role-scoped by the caller (reports.views._scope_programs's
+    convention)."""
+    classes = ClassOffering.objects.filter(semester=semester)
+    if programs is not None:
+        classes = classes.filter(sections__program__in=programs).distinct()
+
+    late_count = GradeSheet.objects.filter(class_offering__in=classes, is_late=True).count()
+    not_submitted_count = len(unsubmitted_sheets_for_classes(classes))
+    return {"late_count": late_count, "not_submitted_count": not_submitted_count}
+
+
 def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
     """Instructor submits (first time) or re-submits (after a return). Both
     paths replace the sheet's entire entry snapshot — re-submitting isn't a
@@ -90,6 +148,8 @@ def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
         )
 
     results = compute_class(class_offering)
+    deadline = class_offering.semester.submission_deadline
+    is_late = bool(deadline and timezone.now() > deadline)
 
     with transaction.atomic():
         sheet.entries.all().delete()
@@ -119,6 +179,7 @@ def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
         sheet.status = GradeSheetStatus.SUBMITTED
         sheet.submitted_at = timezone.now()
         sheet.submitted_by = user
+        sheet.is_late = is_late
         sheet.save()
         _log_transition(sheet, from_status, GradeSheetStatus.SUBMITTED, user)
 

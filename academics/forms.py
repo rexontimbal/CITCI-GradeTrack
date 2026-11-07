@@ -17,10 +17,11 @@ class AcademicYearForm(StyledModelForm):
 class SemesterForm(StyledModelForm):
     class Meta:
         model = Semester
-        fields = ["academic_year", "term", "start_date", "end_date"]
+        fields = ["academic_year", "term", "start_date", "end_date", "submission_deadline"]
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
+            "submission_deadline": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
 
 

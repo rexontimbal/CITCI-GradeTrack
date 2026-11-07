@@ -44,6 +44,11 @@ class Semester(TimeStampedModel):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=False)
+    submission_deadline = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Grade sheets submitted after this are still accepted but flagged Late.",
+    )
 
     class Meta:
         ordering = ["-academic_year__start_year", "term"]

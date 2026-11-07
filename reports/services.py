@@ -30,6 +30,7 @@ def submission_status_rows(semester, programs):
                 "submitted_at": sheet.submitted_at if sheet else None,
                 "approved_at": sheet.approved_at if sheet else None,
                 "released_at": sheet.released_at if sheet else None,
+                "is_late": sheet.is_late if sheet else False,
             }
         )
     return rows

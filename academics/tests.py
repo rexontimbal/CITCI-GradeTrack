@@ -55,6 +55,29 @@ class SingleActiveSemesterTests(TestCase):
         self.assertEqual(Semester.objects.filter(is_active=True).count(), 1)
 
 
+class SubmissionDeadlineFormTests(TestCase):
+    def test_admin_can_set_and_clear_submission_deadline(self):
+        from .forms import SemesterForm
+
+        ay = AcademicYear.objects.create(start_year=2026)
+        form = SemesterForm(
+            data={
+                "academic_year": ay.pk, "term": Term.FIRST,
+                "submission_deadline": "2027-03-15T17:00",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        semester = form.save()
+        self.assertIsNotNone(semester.submission_deadline)
+
+        form2 = SemesterForm(
+            data={"academic_year": ay.pk, "term": Term.FIRST, "submission_deadline": ""}, instance=semester
+        )
+        self.assertTrue(form2.is_valid(), form2.errors)
+        semester2 = form2.save()
+        self.assertIsNone(semester2.submission_deadline)
+
+
 class AcademicYearTests(TestCase):
     def test_end_year_is_derived_from_start_year(self):
         ay = AcademicYear.objects.create(start_year=2026)

@@ -287,10 +287,18 @@ def submission_status(request):
         workbook = excel.build_submission_status_workbook(semester, rows)
         return excel.workbook_response(workbook, f"GradeSubmissionStatus_{semester}.xlsx" if semester else "GradeSubmissionStatus.xlsx")
 
+    from approvals.services import late_or_unsubmitted_counts
+
     return render(
         request,
         "reports/submission_status.html",
-        {"page_title": "Grade Submission Status", "semester": semester, "rows": rows, "semesters": Semester.objects.all()},
+        {
+            "page_title": "Grade Submission Status",
+            "semester": semester,
+            "rows": rows,
+            "semesters": Semester.objects.all(),
+            "late_or_unsubmitted": late_or_unsubmitted_counts(semester, programs) if semester else None,
+        },
     )
 
 

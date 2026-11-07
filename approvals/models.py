@@ -52,6 +52,16 @@ class GradeSheet(TimeStampedModel):
     # Most recent return remarks — shown prominently on the class grading
     # page while RETURNED; superseded (not cleared) by the next return.
     return_remarks = models.TextField(blank=True)
+    # Snapshot taken AT SUBMISSION time (never retroactively recomputed if
+    # the semester's deadline changes later) — a resubmit after RETURNED
+    # recomputes it fresh, consistent with "resubmitting replaces the
+    # whole snapshot" elsewhere on this model.
+    is_late = models.BooleanField(default=False)
+    # De-dup for the 3-day-before-deadline reminder (send_reminders) — set
+    # once and never cleared; a deadline doesn't recur, so there's no
+    # "episode" concept to reset it for, unlike forecasting's notified_at
+    # fields.
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

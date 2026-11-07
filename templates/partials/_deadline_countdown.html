@@ -1,0 +1,14 @@
+{% comment %}
+Takes: deadline (datetime or None), is_late (bool, for an already-submitted
+sheet), is_overdue (bool, precomputed by the view — never computed here,
+to avoid fragile template-side date math).
+{% endcomment %}
+{% if deadline %}
+{% if is_late %}
+<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Overdue — Late</span>
+{% elif is_overdue %}
+<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Deadline passed — will be flagged Late</span>
+{% else %}
+<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Due {{ deadline|date:"M d, Y H:i" }}</span>
+{% endif %}
+{% endif %}

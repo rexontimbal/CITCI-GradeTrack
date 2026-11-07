@@ -20,6 +20,7 @@ from .services import (
     decide_inc_completion,
     file_inc_completion,
     inc_completions_to_file_for_instructor,
+    late_or_unsubmitted_counts,
     lock_term,
     pending_inc_completions_for_program_head,
     release_all_approved,
@@ -174,11 +175,18 @@ def index(request):
     counts = {status: base_qs.filter(status=status).count() for status, _ in GradeSheetStatus.choices}
     counts["INC_COMPLETIONS"] = pending_inc_completions_for_program_head(request.user).count()
 
+    active = Semester.objects.filter(is_active=True).first()
+    late_counts = (
+        late_or_unsubmitted_counts(active, Program.objects.filter(program_head=request.user)) if active else None
+    )
+
     context = {
         "page_title": "Grade Approvals",
         "status_filter": status_filter,
         "counts": counts,
         "statuses": GradeSheetStatus.choices,
+        "late_counts": late_counts,
+        "late_only": request.GET.get("late") == "1",
     }
 
     if status_filter == "INC_COMPLETIONS":
@@ -190,6 +198,8 @@ def index(request):
         sheets = base_qs
         if status_filter and status_filter != "ALL":
             sheets = sheets.filter(status=status_filter)
+        if context["late_only"]:
+            sheets = sheets.filter(is_late=True)
         sheets = sheets.select_related("class_offering__subject", "class_offering__instructor").order_by(
             "-submitted_at", "-created_at"
         )
@@ -306,12 +316,15 @@ def admin_sheets(request):
     program_id = request.GET.get("program")
     status = request.GET.get("status")
     instructor_id = request.GET.get("instructor")
+    late_only = request.GET.get("late") == "1"
     if program_id:
         sheets = sheets.filter(class_offering__sections__program_id=program_id)
     if status:
         sheets = sheets.filter(status=status)
     if instructor_id:
         sheets = sheets.filter(class_offering__instructor_id=instructor_id)
+    if late_only:
+        sheets = sheets.filter(is_late=True)
     sheets = (
         sheets.distinct()
         .select_related("class_offering__subject", "class_offering__instructor")
@@ -355,6 +368,8 @@ def admin_sheets(request):
         "selected_program": program_id or "",
         "selected_status": status or "",
         "selected_instructor": instructor_id or "",
+        "late_only": late_only,
+        "late_counts": late_or_unsubmitted_counts(active) if active else None,
     }
     if is_htmx(request):
         return render(request, "approvals/_admin_sheets_table.html", context)

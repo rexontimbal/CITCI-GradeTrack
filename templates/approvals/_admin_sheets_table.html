@@ -17,7 +17,10 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ sheet.class_offering }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ sheet.class_offering.instructor.full_name|default:"—" }}</td>
-                    <td class="px-4 py-3">{% include "approvals/_status_badge.html" with status=sheet.status %}</td>
+                    <td class="px-4 py-3">
+                        {% include "approvals/_status_badge.html" with status=sheet.status %}
+                        {% if sheet.is_late %}<span class="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">Late</span>{% endif %}
+                    </td>
                     <td class="px-4 py-3 text-gray-600">{{ sheet.submitted_at|date:"M d, Y"|default:"—" }}</td>
                     <td class="px-4 py-3 text-gray-600">{{ sheet.released_at|date:"M d, Y"|default:"—" }}</td>
                     <td class="px-4 py-3 text-right">

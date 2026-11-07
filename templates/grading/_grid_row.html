@@ -1,11 +1,11 @@
 {% load grading_extras sidebar_icons %}
 <tr id="row-{{ row.result.roster_entry.id }}"
-    class="h-10 {% if not row.is_active %}bg-gray-100 text-gray-400{% else %}odd:bg-white even:bg-gray-50/70 hover:bg-brand-primary-50/50{% endif %} transition-colors">
+    class="h-10 {% if not row.is_active %}bg-gray-100 text-gray-600{% else %}odd:bg-white even:bg-gray-50/70 hover:bg-brand-primary-50/50{% endif %} transition-colors">
     <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;">{{ row.row_number|default:"—" }}</td>
     <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
     <td class="sticky-shadow sticky z-10 border-r border-gray-200 bg-inherit px-2 py-1.5 text-sm font-medium text-gray-900" style="left:144px;min-width:160px;">
         {{ row.result.roster_entry.student.last_name }}, {{ row.result.roster_entry.student.first_name }}
-        {% if not row.is_active %}<span class="ml-1 text-xs text-gray-400">(Dropped)</span>{% endif %}
+        {% if not row.is_active %}<span class="ml-1 text-xs text-gray-600">(Dropped)</span>{% endif %}
     </td>
 
     {% for block in row.component_blocks %}
@@ -54,14 +54,14 @@
             {% elif remarks == "DROPPED" %}
             <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs font-medium text-gray-600">Dropped</span>
             {% else %}
-            <span class="text-xs text-gray-400">—</span>
+            <span class="text-xs text-gray-600">—</span>
             {% endif %}
             {% endwith %}
 
             {% if can_edit and row.is_active %}
             <div x-data="{ open: false }" class="relative">
                 <button type="button" @click="open = !open" @click.outside="open = false"
-                        class="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600" title="Row actions">
+                        class="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200 hover:text-gray-600" title="Row actions">
                     {% sidebar_icon "dots-vertical" "w-4 h-4" %}
                 </button>
                 <div x-show="open" x-cloak @click="open = false"

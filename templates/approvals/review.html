@@ -5,12 +5,12 @@
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
     <div>
         {% if is_admin %}
-        <a href="{% url 'approvals:admin_sheets' %}" class="text-sm text-gray-500 hover:underline">&larr; Grade Sheets</a>
+        <a href="{% url 'approvals:admin_sheets' %}" class="text-sm text-gray-600 hover:underline">&larr; Grade Sheets</a>
         {% else %}
-        <a href="{% url 'approvals:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Grade Approvals</a>
+        <a href="{% url 'approvals:index' %}" class="text-sm text-gray-600 hover:underline">&larr; Grade Approvals</a>
         {% endif %}
         <h2 class="mt-1 text-xl font-bold text-gray-900">{{ sheet.class_offering.subject.code }} — {{ sheet.class_offering.subject.title }}</h2>
-        <p class="mt-1 text-sm text-gray-500">
+        <p class="mt-1 text-sm text-gray-600">
             {% for section in sheet.class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
             · {{ sheet.class_offering.instructor.full_name|default:"Unassigned" }}
             · {% include "approvals/_status_badge.html" with status=sheet.status %}
@@ -53,19 +53,19 @@
 
 <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Passed</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Passed</p>
         <p class="mt-1 text-2xl font-bold text-green-700">{{ counts.PASSED }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Failed</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Failed</p>
         <p class="mt-1 text-2xl font-bold text-red-700">{{ counts.FAILED }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">INC</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">INC</p>
         <p class="mt-1 text-2xl font-bold text-amber-700">{{ counts.INC }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Class Average</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Class Average</p>
         <p class="mt-1 text-2xl font-bold text-brand-primary-800">{{ average|grade_display }}</p>
     </div>
 </div>
@@ -73,7 +73,7 @@
 <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll lg:col-span-2">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">Student</th>
                     <th class="px-4 py-3">Final Grade</th>
@@ -91,7 +91,7 @@
                         {% if entry.is_corrected %}<span class="ml-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">Corrected</span>{% endif %}
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ entry.final_grade|grade_display }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ entry.get_remarks_display }}{% if entry.remarks == "INC" and entry.inc_reason %} <span class="text-xs text-gray-400">({{ entry.inc_reason }})</span>{% endif %}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ entry.get_remarks_display }}{% if entry.remarks == "INC" and entry.inc_reason %} <span class="text-xs text-gray-600">({{ entry.inc_reason }})</span>{% endif %}</td>
                     {% if is_admin and sheet.status == "RELEASED" or is_admin and sheet.status == "LOCKED" %}
                     <td class="px-4 py-3 text-right">
                         <button hx-get="{% url 'approvals:correct_entry' entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
@@ -128,8 +128,8 @@
                     <span class="font-medium">{{ t.get_from_status_display }} → {{ t.get_to_status_display }}</span> by {{ t.actor.full_name|default:"System" }}
                     {% endif %}
                 </p>
-                {% if t.remarks %}<p class="text-gray-500">{{ t.remarks }}</p>{% endif %}
-                <p class="text-xs text-gray-400">{{ t.created_at|date:"M d, Y H:i" }}</p>
+                {% if t.remarks %}<p class="text-gray-600">{{ t.remarks }}</p>{% endif %}
+                <p class="text-xs text-gray-600">{{ t.created_at|date:"M d, Y H:i" }}</p>
             </div>
         </li>
         {% endfor %}

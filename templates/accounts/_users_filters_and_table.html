@@ -4,8 +4,8 @@
         {% for value, label in tabs %}
         <button hx-get="{% url 'accounts:users' %}" hx-vals='{"role": "{{ value }}"}' hx-target="#{{ table_id }}" hx-swap="outerHTML"
                 class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition
-                       {% if active_tab == value %}border-brand-accent-600 text-brand-primary-800{% else %}border-transparent text-gray-500 hover:text-gray-700{% endif %}">
-            {{ label }} <span class="ml-1 text-xs text-gray-400">({{ tab_counts|get_item:value }})</span>
+                       {% if active_tab == value %}border-brand-accent-600 text-brand-primary-800{% else %}border-transparent text-gray-600 hover:text-gray-700{% endif %}">
+            {{ label }} <span class="ml-1 text-xs text-gray-600">({{ tab_counts|get_item:value }})</span>
         </button>
         {% endfor %}
     </div>
@@ -15,33 +15,33 @@
           class="mb-4 flex flex-wrap items-center gap-2">
         <input type="hidden" name="role" value="{{ active_tab }}">
         <div class="relative">
-            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" %}
+            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
             <input type="text" name="q" value="{{ query }}" placeholder="Search name, username, ID number"
                    class="w-64 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
         </div>
-        <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All statuses</option>
+        <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All statuses">
+    <option value="">All statuses</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
         </select>
         {% if active_tab == "STUDENT" %}
-        <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All programs</option>
+        <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All programs">
+    <option value="">All programs</option>
             {% for p in programs %}<option value="{{ p.pk }}">{{ p.code }}</option>{% endfor %}
         </select>
-        <select name="major" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All majors</option>
+        <select name="major" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All majors">
+    <option value="">All majors</option>
             {% for m in majors %}<option value="{{ m.pk }}">{{ m }}</option>{% endfor %}
         </select>
-        <select name="year_level" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All year levels</option>
+        <select name="year_level" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All year levels">
+    <option value="">All year levels</option>
             <option value="1">1st Year</option>
             <option value="2">2nd Year</option>
             <option value="3">3rd Year</option>
             <option value="4">4th Year</option>
         </select>
-        <select name="section" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All sections</option>
+        <select name="section" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All sections">
+    <option value="">All sections</option>
             {% for s in sections %}<option value="{{ s.pk }}">{{ s }}</option>{% endfor %}
         </select>
         {% endif %}
@@ -50,7 +50,7 @@
     {% if page_obj.object_list %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">ID Number</th>
                     <th class="px-4 py-3">Name</th>
@@ -87,29 +87,29 @@
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-1">
                             <button hx-get="{% url 'accounts:user_edit' u.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Edit">
                                 {% sidebar_icon "pencil" "w-4 h-4" %}
                             </button>
                             <button hx-get="{% url 'accounts:user_reset_password' u.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Reset Password">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Reset Password">
                                 {% sidebar_icon "sliders" "w-4 h-4" %}
                             </button>
                             {% if u.id == request.user.id %}
-                            <span class="flex items-center px-2 text-xs text-gray-400" title="You can't deactivate your own account">You</span>
+                            <span class="flex items-center px-2 text-xs text-gray-600" title="You can't deactivate your own account">You</span>
                             {% elif u.is_active %}
                             <button hx-post="{% url 'accounts:user_toggle_active' u.pk %}" hx-swap="none"
                                     hx-confirm="Deactivate {{ u.full_name }}?"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Deactivate">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Deactivate">
                                 {% sidebar_icon "close" "w-4 h-4" %}
                             </button>
                             {% else %}
                             <button hx-post="{% url 'accounts:user_toggle_active' u.pk %}" hx-swap="none"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-green-50 hover:text-green-600" title="Reactivate">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-green-50 hover:text-green-600" title="Reactivate">
                                 {% sidebar_icon "check-circle" "w-4 h-4" %}
                             </button>
                             {% endif %}
                             <button hx-post="{% url 'accounts:user_unlock' u.pk %}" hx-swap="none"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Unlock (clear failed-login lockout)">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Unlock (clear failed-login lockout)">
                                 {% sidebar_icon "alert" "w-4 h-4" %}
                             </button>
                         </div>

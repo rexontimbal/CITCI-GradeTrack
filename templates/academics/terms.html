@@ -6,7 +6,7 @@
 
 <div class="mb-8">
     <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Academic Years</h3>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-600">Academic Years</h3>
         <button hx-get="{% url 'academics:academic_year_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                 class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
             {% sidebar_icon "plus" "w-4 h-4" %} Add Academic Year
@@ -17,7 +17,7 @@
 
 <div>
     <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Semesters</h3>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-600">Semesters</h3>
         <button hx-get="{% url 'academics:semester_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                 class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
             {% sidebar_icon "plus" "w-4 h-4" %} Add Semester

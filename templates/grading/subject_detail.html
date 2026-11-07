@@ -2,7 +2,7 @@
 {% load grading_extras %}
 {% block page_title %}{{ class_offering.subject.code }}{% endblock %}
 {% block content %}
-<a href="{% url 'grading:my_grades' %}" class="text-sm text-gray-500 hover:underline">&larr; My Grades</a>
+<a href="{% url 'grading:my_grades' %}" class="text-sm text-gray-600 hover:underline">&larr; My Grades</a>
 
 <div class="mt-2 mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
@@ -10,7 +10,7 @@
             {{ class_offering.subject.code }} — {{ class_offering.subject.title }}
             {% include "grading/_subject_status_chip.html" with status_label=status_label status_key=status_key %}
         </h2>
-        <p class="mt-1 text-sm text-gray-500">
+        <p class="mt-1 text-sm text-gray-600">
             {{ class_offering.instructor.full_name|default:"Unassigned" }}
             · {{ class_offering.schedule|default:"—" }} / {{ class_offering.room|default:"—" }}
             · {{ class_offering.semester }}
@@ -20,7 +20,7 @@
     <div class="rounded-2xl border border-gray-200 bg-white px-4 py-3 text-right">
         {% if is_released %}
         <p class="text-2xl font-bold text-gray-900">{{ final_grade|grade_display }}</p>
-        <p class="text-xs text-gray-500">{{ remarks_display }}</p>
+        <p class="text-xs text-gray-600">{{ remarks_display }}</p>
         {% else %}
         <p class="text-2xl font-bold text-gray-900">{{ final_grade|grade_display }}</p>
         <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">Unofficial</span>
@@ -57,7 +57,7 @@
         <p class="mb-3 text-sm font-semibold text-gray-700">Component Breakdown</p>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <thead class="text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                     <tr>
                         <th class="py-2 pr-2">Component</th>
                         <th class="py-2 pr-2">Weight</th>
@@ -74,13 +74,13 @@
                         <td class="py-2 text-gray-900">{{ c.grade|grade_display }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="py-4 text-center text-gray-400">No components set up yet.</td></tr>
+                    <tr><td colspan="4" class="py-4 text-center text-gray-600">No components set up yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% if component_averages %}
-        <p class="mt-3 text-xs text-gray-500">Class average (≥5 active students) — for context only, never another student's own data.</p>
+        <p class="mt-3 text-xs text-gray-600">Class average (≥5 active students) — for context only, never another student's own data.</p>
         <ul class="mt-1 text-xs text-gray-600">
             {% for avg in component_averages %}
             <li>{{ avg.name }}: class average {{ avg.average|grade_display }}</li>
@@ -114,7 +114,7 @@
             <div class="flex items-center justify-between gap-3 text-sm">
                 <div class="min-w-0">
                     <p class="truncate font-medium text-gray-800">{{ item.component_name }} — {{ item.title }}</p>
-                    {% if item.date %}<p class="text-xs text-gray-400">{{ item.date|date:"M d, Y" }}</p>{% endif %}
+                    {% if item.date %}<p class="text-xs text-gray-600">{{ item.date|date:"M d, Y" }}</p>{% endif %}
                 </div>
                 <div class="w-28 shrink-0 text-right">
                     {% if item.score is not None %}
@@ -123,7 +123,7 @@
                         <div class="h-1.5 rounded-full bg-brand-accent-500" style="width: {% widthratio item.score item.max_score 100 %}%"></div>
                     </div>
                     {% else %}
-                    <p class="text-xs text-gray-400">Not yet recorded</p>
+                    <p class="text-xs text-gray-600">Not yet recorded</p>
                     {% endif %}
                 </div>
             </div>

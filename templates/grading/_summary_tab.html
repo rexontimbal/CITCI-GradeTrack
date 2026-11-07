@@ -1,35 +1,35 @@
 {% load grading_extras %}
 <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Passed</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Passed</p>
         <p class="mt-1 text-2xl font-bold text-green-700">{{ summary.counts.PASSED }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Failed</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Failed</p>
         <p class="mt-1 text-2xl font-bold text-red-700">{{ summary.counts.FAILED }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">INC</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">INC</p>
         <p class="mt-1 text-2xl font-bold text-amber-700">{{ summary.counts.INC }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Dropped</p>
-        <p class="mt-1 text-2xl font-bold text-gray-500">{{ summary.counts.DROPPED }}</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Dropped</p>
+        <p class="mt-1 text-2xl font-bold text-gray-600">{{ summary.counts.DROPPED }}</p>
     </div>
 </div>
 
 {% if summary.risk_counts.AT_RISK or summary.risk_counts.WATCH or summary.risk_counts.ON_TRACK %}
 <div class="mb-4 grid grid-cols-3 gap-3">
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">At Risk</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">At Risk</p>
         <p class="mt-1 text-2xl font-bold text-red-700">{{ summary.risk_counts.AT_RISK }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Watch</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Watch</p>
         <p class="mt-1 text-2xl font-bold text-amber-700">{{ summary.risk_counts.WATCH }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4 text-center">
-        <p class="text-xs uppercase tracking-wide text-gray-500">On Track</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">On Track</p>
         <p class="mt-1 text-2xl font-bold text-green-700">{{ summary.risk_counts.ON_TRACK }}</p>
     </div>
 </div>
@@ -37,7 +37,7 @@
 
 <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
     <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-xs uppercase tracking-wide text-gray-500">Class Average (Final Grade)</p>
+        <p class="text-xs uppercase tracking-wide text-gray-600">Class Average (Final Grade)</p>
         <p class="mt-1 text-2xl font-bold text-brand-primary-800">{{ summary.average|grade_display }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-4">
@@ -50,7 +50,7 @@
 
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Student</th>
                 {% for col in record.columns %}<th class="px-4 py-3">{{ col.component.name }}</th>{% endfor %}

@@ -4,7 +4,7 @@
 {% include "partials/_page_header.html" with title="Reports" subtitle="Program-scoped reports for the chosen semester." %}
 
 <form method="get" class="mb-5 flex items-center gap-2 text-sm">
-    <label for="semester" class="text-gray-500">Semester:</label>
+    <label for="semester" class="text-gray-600">Semester:</label>
     <select id="semester" name="semester" onchange="this.form.submit()"
             class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
         {% for s in semesters %}
@@ -17,22 +17,22 @@
     <a href="{% url 'reports:submission_status' %}?semester={{ semester.pk }}"
        class="rounded-2xl border border-gray-200 bg-white p-5 hover:border-brand-primary-300 hover:shadow-sm">
         <p class="text-base font-semibold text-gray-900">Grade Submission Status</p>
-        <p class="mt-1 text-sm text-gray-500">Class, instructor, status, and key dates.</p>
+        <p class="mt-1 text-sm text-gray-600">Class, instructor, status, and key dates.</p>
     </a>
     <a href="{% url 'reports:class_performance' %}?semester={{ semester.pk }}"
        class="rounded-2xl border border-gray-200 bg-white p-5 hover:border-brand-primary-300 hover:shadow-sm">
         <p class="text-base font-semibold text-gray-900">Class Performance Summary</p>
-        <p class="mt-1 text-sm text-gray-500">Passed/failed/INC/dropped counts, average, pass rate.</p>
+        <p class="mt-1 text-sm text-gray-600">Passed/failed/INC/dropped counts, average, pass rate.</p>
     </a>
     <a href="{% url 'reports:failing_inc' %}?semester={{ semester.pk }}"
        class="rounded-2xl border border-gray-200 bg-white p-5 hover:border-brand-primary-300 hover:shadow-sm">
         <p class="text-base font-semibold text-gray-900">Students with Failing/INC Grades</p>
-        <p class="mt-1 text-sm text-gray-500">From released/locked grade sheets only.</p>
+        <p class="mt-1 text-sm text-gray-600">From released/locked grade sheets only.</p>
     </a>
 </div>
 
 <div class="mt-6">
-    <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Program Grade Report (PDF)</h3>
+    <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-600">Program Grade Report (PDF)</h3>
     <div class="flex flex-wrap gap-2">
         {% for program in programs %}
         <a href="{% url 'reports:program_grade_report_pdf' program.pk %}?semester={{ semester.pk }}" target="_blank"
@@ -40,7 +40,7 @@
             {{ program.code }}
         </a>
         {% empty %}
-        <p class="text-sm text-gray-500">No programs available.</p>
+        <p class="text-sm text-gray-600">No programs available.</p>
         {% endfor %}
     </div>
 </div>

@@ -3,17 +3,17 @@
 {% block content %}
 <div class="mb-4">
     <h2 class="text-xl font-bold text-gray-900">Audit Log</h2>
-    <p class="mt-1 text-sm text-gray-500">{{ total_count }} event{{ total_count|pluralize }} across account changes, score edits, grading components, and grade sheet actions.</p>
+    <p class="mt-1 text-sm text-gray-600">{{ total_count }} event{{ total_count|pluralize }} across account changes, score edits, grading components, and grade sheet actions.</p>
 </div>
 
 <form method="get" class="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-sm">
     <div>
-        <label class="mb-1 block text-xs font-medium text-gray-600">From</label>
-        <input type="date" name="date_from" value="{{ date_from }}" class="rounded-lg border border-gray-300 px-2 py-1.5">
+        <label for="id_date_from" class="mb-1 block text-xs font-medium text-gray-600">From</label>
+        <input type="date" id="id_date_from" name="date_from" value="{{ date_from }}" class="rounded-lg border border-gray-300 px-2 py-1.5">
     </div>
     <div>
-        <label class="mb-1 block text-xs font-medium text-gray-600">To</label>
-        <input type="date" name="date_to" value="{{ date_to }}" class="rounded-lg border border-gray-300 px-2 py-1.5">
+        <label for="id_date_to" class="mb-1 block text-xs font-medium text-gray-600">To</label>
+        <input type="date" id="id_date_to" name="date_to" value="{{ date_to }}" class="rounded-lg border border-gray-300 px-2 py-1.5">
     </div>
     <div>
         <label class="mb-1 block text-xs font-medium text-gray-600">Username</label>
@@ -21,15 +21,15 @@
     </div>
     <div>
         <label class="mb-1 block text-xs font-medium text-gray-600">Type</label>
-        <select name="source" class="rounded-lg border border-gray-300 px-2 py-1.5">
-            <option value="">All types</option>
+        <select name="source" class="rounded-lg border border-gray-300 px-2 py-1.5" aria-label="All types">
+    <option value="">All types</option>
             {% for key, label in sources %}
             <option value="{{ key }}" {% if selected_source == key %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </div>
     <button type="submit" class="rounded-lg bg-brand-primary-700 px-4 py-2 font-medium text-white hover:bg-brand-primary-800">Filter</button>
-    <a href="{% url 'accounts:audit_log' %}" class="text-gray-500 hover:underline">Clear</a>
+    <a href="{% url 'accounts:audit_log' %}" class="text-gray-600 hover:underline">Clear</a>
     <a href="{% url 'accounts:audit_log_export' %}?{{ request.GET.urlencode }}" class="ml-auto rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 hover:bg-gray-50">
         Export Excel
     </a>
@@ -37,7 +37,7 @@
 
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Timestamp</th>
                 <th class="px-4 py-3">Type</th>
@@ -50,19 +50,19 @@
         <tbody class="divide-y divide-gray-100">
             {% for row in page %}
             <tr class="hover:bg-gray-50 align-top">
-                <td class="whitespace-nowrap px-4 py-3 text-gray-500">{{ row.timestamp|date:"M d, Y H:i" }}</td>
+                <td class="whitespace-nowrap px-4 py-3 text-gray-600">{{ row.timestamp|date:"M d, Y H:i" }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.source }}</td>
                 <td class="px-4 py-3 font-medium text-gray-900">{{ row.action }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.actor|default:"—" }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.target|default:"—" }}</td>
-                <td class="px-4 py-3 text-gray-500">
+                <td class="px-4 py-3 text-gray-600">
                     {% for k, v in row.details.items %}
                     <span class="mr-2 inline-block">{{ k }}: {{ v }}</span>
                     {% endfor %}
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No matching events.</td></tr>
+            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No matching events.</td></tr>
             {% endfor %}
         </tbody>
     </table>

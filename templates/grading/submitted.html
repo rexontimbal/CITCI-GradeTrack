@@ -7,7 +7,7 @@
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
 {% else %}
 <form hx-get="{% url 'approvals:submitted' %}" hx-target="#submitted-table" hx-swap="outerHTML" class="mb-4 flex items-center gap-2">
-    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" hx-trigger="change" hx-get="{% url 'approvals:submitted' %}" hx-target="#submitted-table" hx-swap="outerHTML">
+    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" hx-trigger="change" hx-get="{% url 'approvals:submitted' %}" hx-target="#submitted-table" hx-swap="outerHTML" aria-label="Filter by status">
         <option value="">All statuses</option>
         {% for status, label in statuses %}<option value="{{ status }}" {% if status_filter == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>

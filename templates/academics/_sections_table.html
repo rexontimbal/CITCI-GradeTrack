@@ -3,7 +3,7 @@
     {% if page_obj.object_list %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">Section</th>
                     <th class="px-4 py-3">Program</th>
@@ -24,11 +24,11 @@
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-1">
                             <button hx-get="{% url 'academics:section_edit' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Edit">
                                 {% sidebar_icon "pencil" "w-4 h-4" %}
                             </button>
                             <button hx-get="{% url 'academics:section_delete' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Delete">
                                 {% sidebar_icon "trash" "w-4 h-4" %}
                             </button>
                         </div>

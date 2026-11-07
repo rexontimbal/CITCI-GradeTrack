@@ -8,7 +8,7 @@
         {% csrf_token %}
 
         <div>
-            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">School header</h3>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">School header</h3>
             <div class="space-y-3">
                 <div>
                     <label for="{{ form.school_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.school_name.label }}</label>
@@ -33,15 +33,15 @@
                 <div>
                     <label for="{{ form.logo.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.logo.label }}</label>
                     {{ form.logo }}
-                    {% if instance.logo %}<p class="mt-1 text-xs text-gray-500">Current: {{ instance.logo.name }}</p>
-                    {% else %}<p class="mt-1 text-xs text-gray-500">Using the default CITCI seal.</p>{% endif %}
+                    {% if instance.logo %}<p class="mt-1 text-xs text-gray-600">Current: {{ instance.logo.name }}</p>
+                    {% else %}<p class="mt-1 text-xs text-gray-600">Using the default CITCI seal.</p>{% endif %}
                     {% for error in form.logo.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
                 </div>
             </div>
         </div>
 
         <div>
-            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Report signatories</h3>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Report signatories</h3>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                     <label for="{{ form.dean_name.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.dean_name.label }}</label>
@@ -74,30 +74,30 @@
                     {% for error in form.registrar_title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
                 </div>
             </div>
-            <p class="mt-2 text-xs text-gray-500">The Dean signs the Grade Sheet/Program reports; the Registrar signs a student's own Report of Grades.</p>
+            <p class="mt-2 text-xs text-gray-600">The Dean signs the Grade Sheet/Program reports; the Registrar signs a student's own Report of Grades.</p>
         </div>
 
         <div>
-            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Student portal</h3>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Student portal</h3>
             <label class="flex items-start gap-2 text-sm text-gray-700">
                 {{ form.show_unofficial_scores_to_students }}
                 <span>
                     {{ form.show_unofficial_scores_to_students.label }}
-                    <br><span class="text-xs text-gray-500">When off, a student's in-progress subjects show only "Grades not yet released" — no running score.</span>
+                    <br><span class="text-xs text-gray-600">When off, a student's in-progress subjects show only "Grades not yet released" — no running score.</span>
                 </span>
             </label>
             <label class="mt-3 flex items-start gap-2 text-sm text-gray-700">
                 {{ form.show_forecasts_to_students }}
                 <span>
                     {{ form.show_forecasts_to_students.label }}
-                    <br><span class="text-xs text-gray-500">Off by default while active models are trained on synthetic data. Students never see a probability or the words "at risk" either way.</span>
+                    <br><span class="text-xs text-gray-600">Off by default while active models are trained on synthetic data. Students never see a probability or the words "at risk" either way.</span>
                 </span>
             </label>
         </div>
 
         <div>
-            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Data Privacy Notice (RA 10173)</h3>
-            <p class="mb-3 text-xs text-gray-500">Shown on both the login page's Data Privacy Notice modal and the forced first-login consent page — edit it once here, not in templates.</p>
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Data Privacy Notice (RA 10173)</h3>
+            <p class="mb-3 text-xs text-gray-600">Shown on both the login page's Data Privacy Notice modal and the forced first-login consent page — edit it once here, not in templates.</p>
             <div class="space-y-3">
                 <div>
                     <label for="{{ form.privacy_notice_text.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.privacy_notice_text.label }}</label>

@@ -2,7 +2,7 @@
     {% if sheets %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">Class</th>
                     <th class="px-4 py-3">Status</th>
@@ -16,8 +16,8 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ sheet.class_offering }}</td>
                     <td class="px-4 py-3">{% include "approvals/_status_badge.html" with status=sheet.status %}</td>
-                    <td class="px-4 py-3 text-gray-500">{{ sheet.submitted_at|date:"M d, Y H:i"|default:"—" }}</td>
-                    <td class="px-4 py-3 text-gray-500">{{ sheet.updated_at|date:"M d, Y H:i" }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ sheet.submitted_at|date:"M d, Y H:i"|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ sheet.updated_at|date:"M d, Y H:i" }}</td>
                     <td class="px-4 py-3 text-right">
                         <a href="{% url 'grading:class_grading' sheet.class_offering.pk %}" class="text-sm font-medium text-brand-primary-700 hover:underline">
                             Open Class

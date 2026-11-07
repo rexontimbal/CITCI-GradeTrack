@@ -1,7 +1,7 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
-    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
@@ -16,7 +16,7 @@
     <div>
         <label for="{{ field.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ field.label }}</label>
         {{ field }}
-        {% if field.help_text %}<p class="mt-1 text-xs text-gray-500">{{ field.help_text }}</p>{% endif %}
+        {% if field.help_text %}<p class="mt-1 text-xs text-gray-600">{{ field.help_text }}</p>{% endif %}
         {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
     </div>
     {% endfor %}

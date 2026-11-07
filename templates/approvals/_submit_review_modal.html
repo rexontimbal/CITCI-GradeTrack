@@ -1,7 +1,7 @@
 {% load sidebar_icons grading_extras %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 class="text-base font-semibold text-gray-900">Submit Grades — {{ class_offering }}</h3>
-    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Submit Grades — {{ class_offering }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
@@ -13,19 +13,19 @@
 
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div class="rounded-lg border border-gray-200 p-2 text-center">
-            <p class="text-[10px] uppercase text-gray-500">Passed</p>
+            <p class="text-[10px] uppercase text-gray-600">Passed</p>
             <p class="font-bold text-green-700">{{ summary.counts.PASSED }}</p>
         </div>
         <div class="rounded-lg border border-gray-200 p-2 text-center">
-            <p class="text-[10px] uppercase text-gray-500">Failed</p>
+            <p class="text-[10px] uppercase text-gray-600">Failed</p>
             <p class="font-bold text-red-700">{{ summary.counts.FAILED }}</p>
         </div>
         <div class="rounded-lg border border-gray-200 p-2 text-center">
-            <p class="text-[10px] uppercase text-gray-500">INC</p>
+            <p class="text-[10px] uppercase text-gray-600">INC</p>
             <p class="font-bold text-amber-700">{{ summary.counts.INC }}</p>
         </div>
         <div class="rounded-lg border border-gray-200 p-2 text-center">
-            <p class="text-[10px] uppercase text-gray-500">Average</p>
+            <p class="text-[10px] uppercase text-gray-600">Average</p>
             <p class="font-bold text-brand-primary-800">{{ summary.average|grade_display }}</p>
         </div>
     </div>

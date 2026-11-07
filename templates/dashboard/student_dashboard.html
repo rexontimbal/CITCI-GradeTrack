@@ -4,7 +4,7 @@
 {% block content %}
 {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle=active_semester|default:"No active semester set." %}
 
-<p class="mb-4 -mt-2 text-sm text-gray-500">
+<p class="mb-4 -mt-2 text-sm text-gray-600">
     {{ user.student_profile.program.code|default:"—" }}
     {% if user.student_profile.major %}· {{ user.student_profile.major.code }}{% endif %}
     {% if user.student_profile.year_level %}· {{ user.student_profile.get_year_level_display }}{% endif %}
@@ -20,7 +20,7 @@
                 {% sidebar_icon "chart" "w-5 h-5" %}
             </div>
             <div>
-                <p class="text-xs font-medium uppercase tracking-wide text-gray-500" title="Shows '—' until every subject this semester is released.">Official GWA</p>
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-600" title="Shows '—' until every subject this semester is released.">Official GWA</p>
                 <p class="text-xl font-bold text-gray-900">{% if gwa.is_complete %}{{ gwa.gwa|grade_display }}{% else %}—{% endif %}</p>
             </div>
         </div>
@@ -37,7 +37,7 @@
                 {% sidebar_icon "alert" "w-5 h-5" %}
             </div>
             <div>
-                <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Warnings</p>
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-600">Warnings</p>
                 <p class="text-xl font-bold text-gray-900">{% if warnings_count is not None %}{{ warnings_count }}{% else %}—{% endif %}</p>
             </div>
         </div>
@@ -45,7 +45,7 @@
 </div>
 
 <div class="mt-6">
-    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">My Subjects</h3>
+    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">My Subjects</h3>
     {% if cards %}
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {% for card in cards %}
@@ -57,14 +57,14 @@
                 </div>
                 {% include "grading/_subject_status_chip.html" with status_label=card.status_label status_key=card.status_key %}
             </div>
-            <p class="mt-2 text-xs text-gray-500">
+            <p class="mt-2 text-xs text-gray-600">
                 {{ card.entry.class_offering.subject.units }} unit{{ card.entry.class_offering.subject.units|floatformat:0|pluralize }}
                 · {{ card.entry.class_offering.instructor.full_name|default:"Unassigned" }}
             </p>
 
             <div class="mt-3">
                 {% if card.is_released %}
-                <p class="text-lg font-bold text-gray-900">{{ card.final_grade|grade_display }} <span class="text-xs font-normal text-gray-500">{{ card.remarks }}</span></p>
+                <p class="text-lg font-bold text-gray-900">{{ card.final_grade|grade_display }} <span class="text-xs font-normal text-gray-600">{{ card.remarks }}</span></p>
                 {% elif card.unofficial_grade is not None %}
                 <p class="text-lg font-bold text-gray-900">
                     {{ card.unofficial_grade|grade_display }}
@@ -72,7 +72,7 @@
                 </p>
                 <p class="text-[11px] text-amber-700">Unofficial — running grade, may still change</p>
                 {% else %}
-                <p class="text-sm text-gray-500">Grades not yet released</p>
+                <p class="text-sm text-gray-600">Grades not yet released</p>
                 {% endif %}
             </div>
 
@@ -80,7 +80,7 @@
                 <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                     <div class="h-1.5 rounded-full bg-brand-accent-500" style="width: {{ card.progress_pct }}%"></div>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ card.progress_pct }}% of items encoded so far</p>
+                <p class="mt-1 text-[11px] text-gray-600">{{ card.progress_pct }}% of items encoded so far</p>
             </div>
         </a>
         {% endfor %}
@@ -111,7 +111,7 @@
     {% else %}
     <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5">
         <p class="text-sm font-semibold text-gray-700">Academic Forecast</p>
-        <p class="mt-1 text-sm text-gray-500">Coming soon — early warning based on your grades.</p>
+        <p class="mt-1 text-sm text-gray-600">Coming soon — early warning based on your grades.</p>
     </div>
     {% endif %}
 
@@ -124,15 +124,15 @@
         <ul class="divide-y divide-gray-100">
             {% for n in notifications %}
             <li>
-                <a href="{% url 'dashboard:mark_read' n.pk %}" class="block py-2 {% if not n.is_read %}font-medium text-gray-900{% else %}text-gray-500{% endif %}">
+                <a href="{% url 'dashboard:mark_read' n.pk %}" class="block py-2 {% if not n.is_read %}font-medium text-gray-900{% else %}text-gray-600{% endif %}">
                     <p class="text-sm">{{ n.title }}</p>
-                    <p class="text-xs text-gray-400">{{ n.created_at|date:"M d, Y H:i" }}</p>
+                    <p class="text-xs text-gray-600">{{ n.created_at|date:"M d, Y H:i" }}</p>
                 </a>
             </li>
             {% endfor %}
         </ul>
         {% else %}
-        <p class="text-sm text-gray-500">No notifications yet.</p>
+        <p class="text-sm text-gray-600">No notifications yet.</p>
         {% endif %}
     </div>
 </div>

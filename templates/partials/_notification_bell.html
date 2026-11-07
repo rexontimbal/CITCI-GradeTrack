@@ -1,10 +1,11 @@
 {% load sidebar_icons %}
 <div class="relative">
-    <button type="button" @click="notifOpen = !notifOpen" title="Notifications" aria-label="Notifications{% if unread_count %} ({{ unread_count }} unread){% endif %}"
-            class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
+    <button type="button" @click="notifOpen = !notifOpen" title="Notifications"
+            class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100">
+        <span class="sr-only">Notifications{% if unread_count %} ({{ unread_count }} unread){% endif %}</span>
         {% sidebar_icon "bell" "w-5 h-5" %}
         {% if unread_count %}
-        <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+        <span aria-hidden="true" class="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
             {{ unread_count }}
         </span>
         {% endif %}
@@ -25,11 +26,11 @@
             <a href="{% url 'dashboard:mark_read' n.pk %}"
                class="block border-b border-gray-50 px-3 py-2.5 text-sm hover:bg-gray-50 {% if not n.is_read %}bg-brand-accent-50{% endif %}">
                 <p class="font-medium text-gray-900">{{ n.title }}</p>
-                {% if n.message %}<p class="mt-0.5 line-clamp-2 text-xs text-gray-500">{{ n.message }}</p>{% endif %}
-                <p class="mt-0.5 text-[10px] text-gray-400">{{ n.created_at|timesince }} ago</p>
+                {% if n.message %}<p class="mt-0.5 line-clamp-2 text-xs text-gray-600">{{ n.message }}</p>{% endif %}
+                <p class="mt-0.5 text-[10px] text-gray-600">{{ n.created_at|timesince }} ago</p>
             </a>
             {% empty %}
-            <p class="px-3 py-4 text-center text-sm text-gray-400">No notifications yet.</p>
+            <p class="px-3 py-4 text-center text-sm text-gray-600">No notifications yet.</p>
             {% endfor %}
         </div>
         <a href="{% url 'dashboard:notifications' %}" class="block border-t border-gray-100 px-3 py-2 text-center text-xs font-medium text-brand-primary-700 hover:bg-gray-50">

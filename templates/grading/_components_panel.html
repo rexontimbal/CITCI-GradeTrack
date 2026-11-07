@@ -18,19 +18,19 @@
                 {{ form.id }}
                 <span class="delete-checkbox hidden">{{ form.DELETE }}</span>
                 {% if form.instance.is_locked %}
-                <span title="Set by the school" class="text-gray-400">{% sidebar_icon "lock" "w-4 h-4" %}</span>
+                <span title="Set by the school" class="text-gray-600">{% sidebar_icon "lock" "w-4 h-4" %}</span>
                 {% else %}
                 <span class="w-4"></span>
                 {% endif %}
                 <div class="min-w-[9rem] flex-1">{{ form.name }}</div>
                 <div class="w-44">{{ form.category }}</div>
                 <div class="flex w-28 items-center gap-1">
-                    {{ form.weight }}<span class="text-sm text-gray-500">%</span>
+                    {{ form.weight }}<span class="text-sm text-gray-600">%</span>
                 </div>
                 {% if form.instance.is_locked %}
-                <span class="text-xs text-gray-400" title="Set by the school">Locked</span>
+                <span class="text-xs text-gray-600" title="Set by the school">Locked</span>
                 {% else %}
-                <button type="button" class="remove-row-btn rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove">
+                <button type="button" class="remove-row-btn rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Remove">
                     {% sidebar_icon "trash" "w-4 h-4" %}
                 </button>
                 {% endif %}
@@ -47,9 +47,9 @@
                 <div class="min-w-[9rem] flex-1">{{ formset.empty_form.name }}</div>
                 <div class="w-44">{{ formset.empty_form.category }}</div>
                 <div class="flex w-28 items-center gap-1">
-                    {{ formset.empty_form.weight }}<span class="text-sm text-gray-500">%</span>
+                    {{ formset.empty_form.weight }}<span class="text-sm text-gray-600">%</span>
                 </div>
-                <button type="button" class="remove-row-btn rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove">
+                <button type="button" class="remove-row-btn rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Remove">
                     {% sidebar_icon "trash" "w-4 h-4" %}
                 </button>
             </div>
@@ -78,9 +78,9 @@
     <div class="space-y-2">
         {% for component in scheme.components.all %}
         <div class="flex items-center gap-2 rounded-lg border border-gray-200 p-2 {% if component.is_locked %}bg-gray-50{% endif %}">
-            {% if component.is_locked %}<span title="Set by the school" class="text-gray-400">{% sidebar_icon "lock" "w-4 h-4" %}</span>{% endif %}
+            {% if component.is_locked %}<span title="Set by the school" class="text-gray-600">{% sidebar_icon "lock" "w-4 h-4" %}</span>{% endif %}
             <span class="flex-1 font-medium text-gray-900">{{ component.name }}</span>
-            <span class="text-xs text-gray-500">{{ component.get_category_display }}</span>
+            <span class="text-xs text-gray-600">{{ component.get_category_display }}</span>
             <span class="font-semibold text-brand-primary-800">{{ component.weight }}%</span>
         </div>
         {% endfor %}
@@ -100,7 +100,7 @@
                 {% if log.action == "EDITED" and log.before and log.after %}
                 — {% if log.before.name != log.after.name %}name {{ log.before.name }} → {{ log.after.name }}; {% endif %}{% if log.before.weight != log.after.weight %}weight {{ log.before.weight }}% → {{ log.after.weight }}%; {% endif %}{% if log.before.category != log.after.category %}category changed{% endif %}
                 {% endif %}
-                <span class="text-gray-400">· {{ log.changed_at|date:"M d, Y H:i" }}</span>
+                <span class="text-gray-600">· {{ log.changed_at|date:"M d, Y H:i" }}</span>
             </div>
             {% endfor %}
         </div>

@@ -33,9 +33,9 @@
 
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
-                    <th class="px-4 py-3"><input type="checkbox" onclick="document.querySelectorAll('.class-checkbox').forEach(c => c.checked = this.checked)"></th>
+                    <th class="px-4 py-3"><span class="sr-only">Select all</span><input type="checkbox" aria-label="Select all classes" onclick="document.querySelectorAll('.class-checkbox').forEach(c => c.checked = this.checked)"></th>
                     <th class="px-4 py-3">Class</th>
                     <th class="px-4 py-3">Instructor</th>
                     <th class="px-4 py-3">Students</th>
@@ -46,7 +46,7 @@
             <tbody class="divide-y divide-gray-100">
                 {% for class_offering in classes %}
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox"></td>
+                    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox" aria-label="Select {{ class_offering }}"></td>
                     <td class="px-4 py-3">
                         <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
                     </td>

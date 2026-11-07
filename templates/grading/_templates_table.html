@@ -3,7 +3,7 @@
     {% if page_obj.object_list %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">Name</th>
                     <th class="px-4 py-3">Weight Total</th>
@@ -18,7 +18,7 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">
                         <a href="{% url 'grading:template_components' tpl.pk %}" class="hover:underline">{{ tpl.name }}</a>
-                        {% if tpl.description %}<p class="text-xs font-normal text-gray-500">{{ tpl.description }}</p>{% endif %}
+                        {% if tpl.description %}<p class="text-xs font-normal text-gray-600">{{ tpl.description }}</p>{% endif %}
                     </td>
                     <td class="px-4 py-3">
                         {% if tpl.weight_total == 100 %}
@@ -33,7 +33,7 @@
                         <span class="rounded-full bg-brand-accent-100 px-2 py-0.5 text-xs font-medium text-brand-primary-800">Default</span>
                         {% else %}
                         <button hx-post="{% url 'grading:template_set_default' tpl.pk %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
-                                class="text-xs font-medium text-gray-500 underline hover:text-brand-primary-700">Set as default</button>
+                                class="text-xs font-medium text-gray-600 underline hover:text-brand-primary-700">Set as default</button>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">
@@ -46,15 +46,15 @@
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-1">
                             <a href="{% url 'grading:template_components' tpl.pk %}"
-                               class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Components">
+                               class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Components">
                                 {% sidebar_icon "sliders" "w-4 h-4" %}
                             </a>
                             <button hx-get="{% url 'grading:template_edit' tpl.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700" title="Edit">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Edit">
                                 {% sidebar_icon "pencil" "w-4 h-4" %}
                             </button>
                             <button hx-get="{% url 'grading:template_delete' tpl.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600" title="Delete">
+                                    class="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Delete">
                                 {% sidebar_icon "trash" "w-4 h-4" %}
                             </button>
                         </div>

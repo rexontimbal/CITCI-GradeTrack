@@ -1,8 +1,8 @@
 {% load sidebar_icons %}
 <div x-data="{ role: '{{ selected_role|default:form.role.value|default:"" }}' }">
     <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-        <h3 class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
-        <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+        <h3 id="modal-title" class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
+        <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
             {% sidebar_icon "close" "w-5 h-5" %}
         </button>
     </div>
@@ -42,7 +42,7 @@
                         Suggest
                     </button>
                 </div>
-                {% if form.username.help_text %}<p class="mt-1 text-xs text-gray-500">{{ form.username.help_text }}</p>{% endif %}
+                {% if form.username.help_text %}<p class="mt-1 text-xs text-gray-600">{{ form.username.help_text }}</p>{% endif %}
                 {% for error in form.username.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
             </div>
         </div>

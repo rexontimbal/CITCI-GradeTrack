@@ -3,7 +3,7 @@
     {% if sheets %}
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
                     <th class="px-4 py-3">Class</th>
                     <th class="px-4 py-3">Instructor</th>
@@ -18,7 +18,7 @@
                     <td class="px-4 py-3 font-medium text-gray-900">{{ sheet.class_offering }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ sheet.class_offering.instructor.full_name|default:"—" }}</td>
                     <td class="px-4 py-3">{% include "approvals/_status_badge.html" with status=sheet.status %}</td>
-                    <td class="px-4 py-3 text-gray-500">{{ sheet.submitted_at|date:"M d, Y H:i"|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ sheet.submitted_at|date:"M d, Y H:i"|default:"—" }}</td>
                     <td class="px-4 py-3 text-right">
                         <a href="{% url 'approvals:review' sheet.pk %}" class="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-primary-700 hover:underline">
                             Review

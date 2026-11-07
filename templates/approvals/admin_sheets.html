@@ -20,16 +20,16 @@
 
 <form hx-get="{% url 'approvals:admin_sheets' %}" hx-target="#admin-sheets-table" hx-swap="outerHTML"
       hx-trigger="change from:select" class="mb-4 flex flex-wrap items-center gap-2">
-    <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        <option value="">All programs</option>
+    <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All programs">
+    <option value="">All programs</option>
         {% for p in programs %}<option value="{{ p.pk }}" {% if selected_program == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.code }}</option>{% endfor %}
     </select>
-    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        <option value="">All statuses</option>
+    <select name="status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All statuses">
+    <option value="">All statuses</option>
         {% for status, label in statuses %}<option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
-    <select name="instructor" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        <option value="">All instructors</option>
+    <select name="instructor" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All instructors">
+    <option value="">All instructors</option>
         {% for i in instructors %}<option value="{{ i.pk }}" {% if selected_instructor == i.pk|stringformat:"s" %}selected{% endif %}>{{ i.full_name }}</option>{% endfor %}
     </select>
 </form>

@@ -1,10 +1,10 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
     <div>
-        <h3 class="text-base font-semibold text-gray-900">{{ roster_entry.student.full_name }}</h3>
-        <p class="text-xs text-gray-500">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</p>
+        <h3 id="modal-title" class="text-base font-semibold text-gray-900">{{ roster_entry.student.full_name }}</h3>
+        <p class="text-xs text-gray-600">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</p>
     </div>
-    <button type="button" @click="modalOpen = false" class="text-gray-400 hover:text-gray-600">
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
@@ -17,17 +17,17 @@
         <div>
             <div class="flex items-center gap-2">
                 {% include "forecasting/_risk_badge.html" with level=level %}
-                <span class="text-xs text-gray-500">as of {{ prediction.get_checkpoint_display }}</span>
+                <span class="text-xs text-gray-600">as of {{ prediction.get_checkpoint_display }}</span>
             </div>
             <p class="mt-1 text-2xl font-bold text-gray-900">{{ probability_pct }}%</p>
-            <p class="text-xs text-gray-400">Computed {{ prediction.computed_at|date:"M d, Y H:i" }}</p>
+            <p class="text-xs text-gray-600">Computed {{ prediction.computed_at|date:"M d, Y H:i" }}</p>
         </div>
     </div>
 
     {% if contributions %}
     <div class="rounded-2xl border border-gray-200 bg-white p-4">
         <p class="mb-2 text-sm font-semibold text-gray-700">Feature contributions</p>
-        <p class="mb-3 text-xs text-gray-400">Positive = increases risk, negative = decreases risk.</p>
+        <p class="mb-3 text-xs text-gray-600">Positive = increases risk, negative = decreases risk.</p>
         <canvas id="contributions-chart" height="220"></canvas>
         {{ chart_labels|json_script:"contrib-labels" }}
         {{ chart_values|json_script:"contrib-values" }}
@@ -40,7 +40,7 @@
         <div class="flex gap-4 text-sm">
             {% for h in history %}
             <div>
-                <p class="text-xs text-gray-500">{{ h.label }}</p>
+                <p class="text-xs text-gray-600">{{ h.label }}</p>
                 <p class="font-semibold text-gray-900">{{ h.probability_pct }}%</p>
                 {% include "forecasting/_risk_badge.html" with level=h.level %}
             </div>
@@ -66,10 +66,10 @@
             <li class="rounded-lg border border-gray-100 bg-gray-50 p-2">
                 <div class="flex items-center justify-between">
                     <p class="font-medium text-gray-800">{{ i.get_type_display }}</p>
-                    <span class="text-xs text-gray-400">{{ i.date }}</span>
+                    <span class="text-xs text-gray-600">{{ i.date }}</span>
                 </div>
                 {% if i.notes %}<p class="mt-1 text-xs text-gray-600">{{ i.notes }}</p>{% endif %}
-                <div class="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                <div class="mt-1 flex items-center gap-2 text-xs text-gray-600">
                     <span>Outcome: {{ i.get_outcome_display }}</span>
                     {% if i.follow_up_date %}<span>· Follow-up: {{ i.follow_up_date }}</span>{% endif %}
                     <span>· logged by {{ i.created_by.full_name|default:"—" }}</span>
@@ -78,7 +78,7 @@
             {% endfor %}
         </ul>
         {% else %}
-        <p class="text-xs text-gray-400">No interventions logged yet.</p>
+        <p class="text-xs text-gray-600">No interventions logged yet.</p>
         {% endif %}
     </div>
 </div>

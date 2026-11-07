@@ -4,9 +4,9 @@
 {% block content %}
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <div>
-        <a href="{% url 'reports:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Reports</a>
+        <a href="{% url 'reports:index' %}" class="text-sm text-gray-600 hover:underline">&larr; Reports</a>
         <h2 class="mt-1 text-xl font-bold text-gray-900">Students with Failing/INC Grades</h2>
-        <p class="mt-1 text-sm text-gray-500">{{ semester|default:"No semester selected" }} · Released/Locked sheets only</p>
+        <p class="mt-1 text-sm text-gray-600">{{ semester|default:"No semester selected" }} · Released/Locked sheets only</p>
     </div>
     <div class="flex items-center gap-2">
         <form method="get" class="flex items-center gap-2 text-sm">
@@ -24,7 +24,7 @@
 
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Student</th>
                 <th class="px-4 py-3">Program / Major / Year</th>
@@ -49,7 +49,7 @@
                 <td class="px-4 py-3 text-gray-600">{{ entry.sheet.class_offering.instructor.full_name|default:"—" }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-500">No failing/INC grades found.</td></tr>
+            <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No failing/INC grades found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

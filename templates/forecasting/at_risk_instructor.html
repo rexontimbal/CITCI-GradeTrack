@@ -4,20 +4,20 @@
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <div>
         <h2 class="text-xl font-bold text-gray-900">At-Risk Students</h2>
-        <p class="mt-1 text-sm text-gray-500">Students flagged At Risk or Watch across your classes this semester.</p>
+        <p class="mt-1 text-sm text-gray-600">Students flagged At Risk or Watch across your classes this semester.</p>
     </div>
 </div>
 
 {% include "forecasting/_synthetic_banner.html" %}
 
 <form method="get" class="mb-4 flex flex-wrap items-center gap-2 text-sm">
-    <select name="class" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+    <select name="class" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Filter by class">
         <option value="">All classes</option>
         {% for c in classes %}
         <option value="{{ c.pk }}" {% if class_filter == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.subject.code }}</option>
         {% endfor %}
     </select>
-    <select name="level" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+    <select name="level" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Filter by risk level">
         <option value="">All risk levels</option>
         <option value="AT_RISK" {% if level_filter == "AT_RISK" %}selected{% endif %}>At Risk</option>
         <option value="WATCH" {% if level_filter == "WATCH" %}selected{% endif %}>Watch</option>
@@ -35,7 +35,7 @@
 {% if rows %}
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Student</th>
                 <th class="px-4 py-3">Class</th>
@@ -55,8 +55,8 @@
                 <td class="px-4 py-3 text-gray-600">{{ row.checkpoint|title }}</td>
                 <td class="px-4 py-3">{% include "forecasting/_risk_badge.html" with level=row.level %}</td>
                 <td class="px-4 py-3 text-gray-700">{{ row.probability|floatformat:2 }}%</td>
-                <td class="px-4 py-3 text-xs text-gray-500">{{ row.reasons|join:"; " }}</td>
-                <td class="px-4 py-3 text-xs text-gray-500">
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.reasons|join:"; " }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">
                     {% if row.last_intervention %}{{ row.last_intervention.get_type_display }} ({{ row.last_intervention.date }}){% else %}—{% endif %}
                 </td>
                 <td class="px-4 py-3 text-right">

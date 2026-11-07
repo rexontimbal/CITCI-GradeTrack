@@ -4,9 +4,9 @@
 {% block content %}
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <div>
-        <a href="{% url 'reports:index' %}" class="text-sm text-gray-500 hover:underline">&larr; Reports</a>
+        <a href="{% url 'reports:index' %}" class="text-sm text-gray-600 hover:underline">&larr; Reports</a>
         <h2 class="mt-1 text-xl font-bold text-gray-900">Class Performance Summary</h2>
-        <p class="mt-1 text-sm text-gray-500">{{ semester|default:"No semester selected" }}</p>
+        <p class="mt-1 text-sm text-gray-600">{{ semester|default:"No semester selected" }}</p>
     </div>
     <div class="flex items-center gap-2">
         <form method="get" class="flex items-center gap-2 text-sm">
@@ -24,7 +24,7 @@
 
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Class</th>
                 <th class="px-4 py-3 text-center">Students</th>
@@ -44,12 +44,12 @@
                 <td class="px-4 py-3 text-center text-green-700">{{ row.counts.PASSED }}</td>
                 <td class="px-4 py-3 text-center text-red-700">{{ row.counts.FAILED }}</td>
                 <td class="px-4 py-3 text-center text-amber-700">{{ row.counts.INC }}</td>
-                <td class="px-4 py-3 text-center text-gray-500">{{ row.counts.DROPPED }}</td>
+                <td class="px-4 py-3 text-center text-gray-600">{{ row.counts.DROPPED }}</td>
                 <td class="px-4 py-3 text-center text-gray-700">{{ row.average|grade_display }}</td>
                 <td class="px-4 py-3 text-center text-gray-700">{% if row.pass_rate is not None %}{{ row.pass_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="8" class="px-4 py-6 text-center text-gray-500">No classes found.</td></tr>
+            <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">No classes found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

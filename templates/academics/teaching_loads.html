@@ -11,7 +11,7 @@
     {% if request.user.is_admin_role %}
     <div>
         <label class="mb-1 block text-xs font-medium text-gray-700">Program</label>
-        <select name="program" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()">
+        <select name="program" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()" aria-label="Filter by program">
             <option value="">All programs</option>
             {% for program in programs %}
             <option value="{{ program.pk }}" {% if program_filter == program.pk|stringformat:"s" %}selected{% endif %}>{{ program.code }}</option>
@@ -21,7 +21,7 @@
     {% endif %}
     <div>
         <label class="mb-1 block text-xs font-medium text-gray-700">Instructor</label>
-        <select name="instructor" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()">
+        <select name="instructor" class="rounded-lg border-gray-300 text-sm" onchange="this.form.submit()" aria-label="Filter by instructor">
             <option value="">All instructors</option>
             {% for instructor in instructors %}
             <option value="{{ instructor.pk }}" {% if instructor_filter == instructor.pk|stringformat:"s" %}selected{% endif %}>{{ instructor.full_name }}</option>
@@ -36,7 +36,7 @@
 {% if rows %}
 <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
     <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
             <tr>
                 <th class="px-4 py-3">Instructor</th>
                 <th class="px-4 py-3">Classes</th>

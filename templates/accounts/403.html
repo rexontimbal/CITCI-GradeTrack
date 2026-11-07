@@ -8,7 +8,7 @@
         </svg>
     </div>
     <h3 class="text-base font-semibold text-gray-900">403 — Access Denied</h3>
-    <p class="mt-1 max-w-sm text-sm text-gray-500">Your account role ({{ user.get_role_display }}) does not have access to this page.</p>
+    <p class="mt-1 max-w-sm text-sm text-gray-600">Your account role ({{ user.get_role_display }}) does not have access to this page.</p>
     <a href="{% url 'dashboard:home' %}" class="mt-5 inline-block rounded-lg bg-brand-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
         Back to Dashboard
     </a>

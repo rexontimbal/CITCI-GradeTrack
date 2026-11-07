@@ -282,6 +282,7 @@ from reports.models import InstitutionSettings
 
 from .models import Intervention
 from .services import (
+    at_risk_without_intervention,
     current_checkpoint_for_class,
     get_display_forecast,
     recompute_and_notify,
@@ -576,6 +577,58 @@ class InterventionPrivacyTests(ForecastingPart2TestBase):
         self.client.force_login(self.program_head)
         response = self.client.get(reverse("forecasting:forecast_detail", args=[self.roster_entry.pk]))
         self.assertContains(response, "Confidential note.")
+
+
+class AtRiskWithoutInterventionTests(ForecastingPart2TestBase):
+    def test_at_risk_student_with_no_intervention_is_included(self):
+        self.score_exam_item(value=1, max_score=20)
+        recompute_and_notify([self.roster_entry])
+
+        rows = at_risk_without_intervention([self.class_offering])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["roster_entry"], self.roster_entry)
+        self.assertIn(rows[0]["level"], ("AT_RISK", "WATCH"))
+
+    def test_at_risk_student_with_a_logged_intervention_is_excluded(self):
+        self.score_exam_item(value=1, max_score=20)
+        recompute_and_notify([self.roster_entry])
+        Intervention.objects.create(
+            roster_entry=self.roster_entry, created_by=self.instructor, date="2026-11-04", type="CONSULTATION",
+            notes="Checked in.", outcome="PENDING",
+        )
+
+        rows = at_risk_without_intervention([self.class_offering])
+        self.assertEqual(rows, [])
+
+    def test_on_track_student_is_never_included(self):
+        self.score_exam_item(value=19, max_score=20)
+        recompute_and_notify([self.roster_entry])
+        rows = at_risk_without_intervention([self.class_offering])
+        self.assertEqual(rows, [])
+
+    def test_query_count_does_not_scale_with_class_count(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from academics.models import ClassOffering
+
+        self.score_exam_item(value=1, max_score=20)
+        recompute_and_notify([self.roster_entry])
+
+        with CaptureQueriesContext(connection) as single:
+            at_risk_without_intervention([self.class_offering])
+
+        extra_classes = [self.class_offering]
+        for i in range(3):
+            other_subject = Subject.objects.create(code=f"ARI{i}", title=f"ARI {i}", units=3, term=self.semester.term)
+            other_class = ClassOffering.objects.create(subject=other_subject, semester=self.semester, instructor=self.instructor)
+            other_class.sections.set([self.section])
+            extra_classes.append(other_class)
+
+        with CaptureQueriesContext(connection) as multi:
+            at_risk_without_intervention(extra_classes)
+
+        self.assertLessEqual(len(multi), len(single) + 3)
 
 
 class AtRiskQueryCountTests(ForecastingPart2TestBase):

@@ -6,11 +6,100 @@
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {% include "partials/_stat_card.html" with icon="chalkboard" label="My Classes" value=my_classes_count %}
         {% include "partials/_stat_card.html" with icon="users" label="Total Students" value=total_students %}
-        {% include "partials/_stat_card.html" with icon="clipboard" label="Grade Sheets Pending" value="—" %}
-        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value="—" %}
+        {% include "partials/_stat_card.html" with icon="clipboard" label="Grade Sheets Pending" value=grade_sheets_pending_count %}
+        {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value=at_risk_no_intervention|length %}
     </div>
 
-    <div class="mt-6">
-        {% include "partials/_empty_state.html" with icon="clipboard" title="Score encoding coming soon" description="Score encoding, computed grades, and forecasts will be available once the grading engine is built." %}
+    <div class="mt-6 space-y-6">
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Classes with missing scores</h3>
+            {% if missing_score_items %}
+            <ul class="divide-y divide-gray-100">
+                {% for item in missing_score_items %}
+                <li class="flex items-center justify-between py-2 text-sm">
+                    <span class="text-gray-900">{{ item.class_offering }}</span>
+                    <a href="{% url 'grading:class_grading' item.class_offering.pk %}?tab=record" class="font-medium text-brand-primary-700 hover:underline">
+                        {{ item.count }} missing — Encode Grades
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-600">Nothing here.</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Returned sheets</h3>
+            {% if returned_sheets %}
+            <ul class="divide-y divide-gray-100">
+                {% for sheet in returned_sheets %}
+                <li class="py-2 text-sm">
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-900">{{ sheet.class_offering }}</span>
+                        <a href="{% url 'grading:class_grading' sheet.class_offering.pk %}" class="font-medium text-amber-700 hover:underline">Resubmit</a>
+                    </div>
+                    {% if sheet.return_remarks %}<p class="mt-0.5 text-xs text-gray-600">{{ sheet.return_remarks }}</p>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-600">Nothing here.</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Not yet submitted</h3>
+            {% if unsubmitted_sheets %}
+            <ul class="divide-y divide-gray-100">
+                {% for row in unsubmitted_sheets %}
+                <li class="flex items-center justify-between py-2 text-sm">
+                    <span class="text-gray-900">{{ row.class_offering }}</span>
+                    <div class="flex items-center gap-2">
+                        {% include "partials/_deadline_countdown.html" with deadline=row.deadline is_overdue=row.is_overdue %}
+                        <a href="{% url 'grading:class_grading' row.class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">Submit</a>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-600">Nothing here.</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">At-risk students without an intervention</h3>
+            {% if at_risk_no_intervention %}
+            <ul class="divide-y divide-gray-100">
+                {% for row in at_risk_no_intervention %}
+                <li class="flex items-center justify-between py-2 text-sm">
+                    <span class="text-gray-900">
+                        {{ row.roster_entry.student.full_name }} — {{ row.class_offering }}
+                        <span class="ml-1 rounded-full {% if row.level == 'AT_RISK' %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-800{% endif %} px-2 py-0.5 text-[10px] font-medium">{{ row.level }}</span>
+                    </span>
+                    <a href="{% url 'forecasting:at_risk' %}" class="font-medium text-brand-primary-700 hover:underline">Log intervention</a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-600">Nothing here.</p>
+            {% endif %}
+        </div>
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+            <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-600">Pending INC completions</h3>
+            {% if inc_pending %}
+            <ul class="divide-y divide-gray-100">
+                {% for completion in inc_pending %}
+                <li class="py-2 text-sm text-gray-900">
+                    {{ completion.entry.roster_entry.student.full_name }} — {{ completion.entry.sheet.class_offering }}
+                    <span class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">Awaiting Program Head</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-600">Nothing here.</p>
+            {% endif %}
+        </div>
     </div>
 {% endblock %}

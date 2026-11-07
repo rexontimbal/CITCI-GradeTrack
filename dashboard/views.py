@@ -60,15 +60,50 @@ def _program_head_dashboard(request):
 
 
 def _instructor_dashboard(request):
+    from approvals.services import (
+        missing_score_counts_for_classes,
+        pending_inc_completions_for_classes,
+        returned_sheets_for_classes,
+        unsubmitted_sheets_for_classes,
+    )
+    from forecasting.services import at_risk_without_intervention
+
     active = _active_semester()
-    classes = ClassOffering.objects.filter(instructor=request.user, semester=active) if active else ClassOffering.objects.none()
+    classes = (
+        list(ClassOffering.objects.filter(instructor=request.user, semester=active).select_related("subject", "semester"))
+        if active
+        else []
+    )
     total_students = (
         ClassRosterEntry.objects.filter(class_offering__in=classes, status=ClassRosterEntry.Status.ACTIVE)
         .values("student")
         .distinct()
         .count()
+        if classes
+        else 0
     )
-    context = {"my_classes_count": classes.count(), "total_students": total_students}
+
+    missing_counts = missing_score_counts_for_classes(classes) if classes else {}
+    missing_score_items = [
+        {"class_offering": class_offering, "count": count}
+        for class_offering in classes
+        if (count := missing_counts.get(class_offering.id))
+    ]
+    returned_sheets = returned_sheets_for_classes(classes) if classes else []
+    unsubmitted_sheets = unsubmitted_sheets_for_classes(classes) if classes else []
+    at_risk_no_intervention = at_risk_without_intervention(classes) if classes else []
+    inc_pending = pending_inc_completions_for_classes(classes) if classes else []
+
+    context = {
+        "my_classes_count": len(classes),
+        "total_students": total_students,
+        "missing_score_items": missing_score_items,
+        "returned_sheets": returned_sheets,
+        "unsubmitted_sheets": unsubmitted_sheets,
+        "at_risk_no_intervention": at_risk_no_intervention,
+        "inc_pending": inc_pending,
+        "grade_sheets_pending_count": len(returned_sheets) + len(unsubmitted_sheets),
+    }
     return render(request, "dashboard/instructor_dashboard.html", context)
 
 

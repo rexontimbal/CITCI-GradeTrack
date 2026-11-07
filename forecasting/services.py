@@ -273,6 +273,47 @@ def get_display_forecasts_for_classes(class_offerings):
     return results
 
 
+def at_risk_without_intervention(classes):
+    """Students at AT_RISK/WATCH across the given classes with no logged
+    Intervention yet — the instructor to-do dashboard's "needs a check-in"
+    list. Built on get_display_forecasts_for_classes (the batched primitive
+    every At-Risk screen already uses), so this stays a handful of queries
+    total regardless of how many classes are passed in — no existing
+    function filtered by absence-of-intervention before this (Intervention
+    was only ever prefetched alongside forecast-card building). Returns a
+    list of {"roster_entry", "class_offering", "level", "probability",
+    "checkpoint"} dicts."""
+    classes = list(classes)
+    if not classes:
+        return []
+    bulk = get_display_forecasts_for_classes(classes)
+    classes_by_id = {co.pk: co for co in classes}
+
+    rows = []
+    for class_id, (checkpoint, forecasts, entries_by_id) in bulk.items():
+        if checkpoint is None:
+            continue
+        for entry_id, forecast in forecasts.items():
+            if isinstance(forecast, str):
+                continue
+            level = risk_level(forecast.probability, forecast.model_version.threshold)
+            if level == "ON_TRACK":
+                continue
+            entry = entries_by_id.get(entry_id)
+            if entry is None or entry.interventions.all():  # already prefetched — no extra query
+                continue
+            rows.append(
+                {
+                    "roster_entry": entry,
+                    "class_offering": classes_by_id[class_id],
+                    "level": level,
+                    "probability": forecast.probability,
+                    "checkpoint": checkpoint,
+                }
+            )
+    return rows
+
+
 STUDENT_STUDY_TIPS = [
     "Review your notes a little each day instead of cramming before an exam.",
     "Ask your instructor a specific question about what's unclear to you.",

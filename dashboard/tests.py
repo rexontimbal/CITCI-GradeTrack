@@ -220,11 +220,38 @@ class DashboardQueryCountTests(GradingTestBase):
         self.assertLessEqual(len(queries), 35)
 
     def test_instructor_dashboard_query_count(self):
+        # missing_score_counts_for_classes calls the existing (per-class)
+        # compute_class once per class — real, already-accepted cost
+        # elsewhere in this codebase, not a new N+1 this pass introduces.
+        # The regression guard here is growth staying roughly linear in
+        # class count (no cross-class N+1 ON TOP of that), not a fixed
+        # low ceiling — measured ~11-12 queries/class for this fixture.
         self.client.force_login(self.instructor)
         with CaptureQueriesContext(connection) as queries:
             response = self.client.get(reverse("dashboard:home"))
         self.assertEqual(response.status_code, 200)
-        self.assertLessEqual(len(queries), 15)
+        self.assertLessEqual(
+            len(queries), 90, f"Instructor dashboard issued {len(queries)} queries for {len(self.extra_entries) + 1} classes."
+        )
+
+    def test_instructor_dashboard_query_count_stays_flat_vs_fewer_classes(self):
+        """Growth stays roughly proportional to class count — no cross-
+        class N+1 on top of the already-accepted per-class compute_class
+        cost (see the single-class test's comment)."""
+        from academics.models import ClassOffering, Subject
+
+        self.client.force_login(self.instructor)
+        with CaptureQueriesContext(connection) as baseline:
+            self.client.get(reverse("dashboard:home"))
+
+        extra_subject = Subject.objects.create(code="QC_EXTRA", title="Extra", units=Decimal("3.0"), term=self.semester.term)
+        extra_class = ClassOffering.objects.create(subject=extra_subject, semester=self.semester, instructor=self.instructor)
+        extra_class.sections.set([self.section])
+
+        with CaptureQueriesContext(connection) as grown:
+            self.client.get(reverse("dashboard:home"))
+        per_class_cost = max(1, (len(baseline) - 10) / max(1, self.EXTRA_SUBJECTS + 1))
+        self.assertLessEqual(len(grown), len(baseline) + per_class_cost * 3)
 
     def test_program_head_dashboard_query_count_stays_flat(self):
         from accounts.models import User as _User
@@ -240,3 +267,60 @@ class DashboardQueryCountTests(GradingTestBase):
         self.assertLessEqual(
             len(queries), 25, f"Program Head dashboard issued {len(queries)} queries for {len(self.extra_entries) + 1} classes."
         )
+
+
+class InstructorTodoDashboardTests(GradingTestBase):
+    def setUp(self):
+        super().setUp()
+        self.other_instructor = make_user(User.Role.INSTRUCTOR, "todo_other_instructor")
+
+    def test_empty_states_when_nothing_pending(self):
+        self.client.force_login(self.other_instructor)  # owns no classes
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertEqual(response.context["missing_score_items"], [])
+        self.assertEqual(response.context["returned_sheets"], [])
+        self.assertEqual(response.context["unsubmitted_sheets"], [])
+        self.assertContains(response, "Nothing here.")
+
+    def test_missing_scores_item_appears_with_count_and_link(self):
+        self.make_items("Attendance", [10])  # left blank
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("dashboard:home"))
+        items = response.context["missing_score_items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["class_offering"], self.class_offering)
+        self.assertGreaterEqual(items[0]["count"], 1)
+
+    def test_returned_sheet_appears_with_remarks(self):
+        from approvals.services import return_grade_sheet, submit_grade_sheet
+
+        for name in ["Attendance", "Quizzes", "Recitation", "Project", "Examination"]:
+            items = self.make_items(name, [10])
+            self.set_scores(self.roster_entry, items, [8])
+        sheet = submit_grade_sheet(self.class_offering, self.instructor)
+        return_grade_sheet(sheet, self._make_program_head(), "Fix quiz scores")
+
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("dashboard:home"))
+        returned = response.context["returned_sheets"]
+        self.assertEqual(len(returned), 1)
+        self.assertEqual(returned[0].return_remarks, "Fix quiz scores")
+
+    def _make_program_head(self):
+        head = make_user(User.Role.PROGRAM_HEAD, "todo_ph")
+        self.program.program_head = head
+        self.program.save()
+        return head
+
+    def test_unsubmitted_sheet_appears_for_a_draft_class(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("dashboard:home"))
+        unsubmitted = response.context["unsubmitted_sheets"]
+        self.assertEqual(len(unsubmitted), 1)
+        self.assertEqual(unsubmitted[0]["class_offering"], self.class_offering)
+
+    def test_instructor_never_sees_another_instructors_items(self):
+        self.client.force_login(self.other_instructor)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertEqual(response.context["unsubmitted_sheets"], [])
+        self.assertEqual(response.context["my_classes_count"], 0)

@@ -110,7 +110,14 @@ def unsubmitted_sheets_for_classes(classes):
         sheet = sheets_by_class.get(class_offering.id)
         if sheet is not None and sheet.status not in (GradeSheetStatus.DRAFT, GradeSheetStatus.RETURNED):
             continue
-        rows.append({"class_offering": class_offering, "deadline": class_offering.semester.submission_deadline})
+        deadline = class_offering.semester.submission_deadline
+        rows.append(
+            {
+                "class_offering": class_offering,
+                "deadline": deadline,
+                "is_overdue": bool(deadline and timezone.now() > deadline),
+            }
+        )
     return rows
 
 
@@ -455,9 +462,9 @@ def inc_completions_to_file_for_instructor(instructor):
     )
 
 
-def inc_completions_pending_for_classes(classes):
-    """Batched sibling of inc_completions_to_file_for_instructor, for the
-    instructor to-do dashboard — one query for however many classes."""
+def inc_completions_to_file_for_classes(classes):
+    """Batched sibling of inc_completions_to_file_for_instructor (entries
+    still needing a filing), for callers that already have a class list."""
     return list(
         GradeSheetEntry.objects.filter(
             remarks=GradeSheetEntry.Remarks.INC,
@@ -466,6 +473,17 @@ def inc_completions_pending_for_classes(classes):
         )
         .exclude(inc_completions__status__in=[IncCompletionStatus.PENDING, IncCompletionStatus.APPROVED])
         .select_related("roster_entry__student", "sheet__class_offering__subject")
+    )
+
+
+def pending_inc_completions_for_classes(classes):
+    """IncCompletion rows already filed and awaiting the Program Head's
+    decision, for the instructor to-do dashboard's read-only "Pending INC
+    completions" section — distinct from inc_completions_to_file_for_classes
+    (entries that still need a filing)."""
+    return list(
+        IncCompletion.objects.filter(status=IncCompletionStatus.PENDING, entry__sheet__class_offering__in=classes)
+        .select_related("entry__roster_entry__student", "entry__sheet__class_offering")
     )
 
 

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Import Class Offerings{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Import Class Offerings" subtitle="Upload an .xlsx (or the Registrar's .docx) to create subjects/classes for a semester — preview first, nothing is created until you confirm." %}
+
+<div class="max-w-3xl space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+    <p class="text-sm text-gray-600">
+        The header row must include <strong>Semester, Program, Course Code, Description, Units</strong>
+        (and optionally Major, Year Level, Room, Schedule, Instructor). An unmatched instructor name is
+        never created or merged — the class is created Unassigned, listed below for you to assign manually.
+    </p>
+    <a href="{% url 'academics:offerings_import_template' %}" class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary-700 hover:underline">
+        {% sidebar_icon "document" "w-4 h-4" %} Download the class offerings template (.xlsx)
+    </a>
+
+    <form hx-post="{% url 'academics:offerings_import_upload' %}" hx-target="#offerings-import-results" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data" class="space-y-4 border-t border-gray-200 pt-4">
+        {% csrf_token %}
+        <div>
+            <label class="mb-1 block text-sm font-medium text-gray-700">Target semester</label>
+            <select name="semester" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                {% for s in semesters %}
+                <option value="{{ s.pk }}" {% if s == active_semester %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="file" name="file" accept=".xlsx,.csv,.docx" required
+               class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-brand-primary-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-primary-800">
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Upload &amp; Preview
+        </button>
+    </form>
+</div>
+
+<div id="offerings-import-results" class="mt-6 max-w-3xl"></div>
+{% endblock %}

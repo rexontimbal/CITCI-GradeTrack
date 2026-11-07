@@ -24,6 +24,7 @@ MENUS = {
                 ("academics:sections", "Sections", "grid"),
                 ("academics:subjects", "Subjects", "book"),
                 ("academics:classes", "Classes", "chalkboard"),
+                ("academics:offerings_import", "Import Class Offerings", "upload"),
                 ("academics:class_lists", "Class Lists", "clipboard"),
                 ("academics:teaching_loads", "Teaching Loads", "chart"),
             ],

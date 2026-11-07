@@ -36,8 +36,22 @@ from .models import (
     Semester,
     Subject,
 )
+from .offerings_import import (
+    SpreadsheetImportError,
+    build_offerings_preview,
+    commit_offerings_import,
+    parse_offerings_docx_for_preview,
+    parse_offerings_xlsx,
+)
 from .roster_import import RosterImportError, build_preview, commit_import, parse_roster_file
-from .services import assign_instructor, log_and_notify_instructor_change, teaching_load_rows
+from .services import (
+    assign_instructor,
+    build_copy_preview,
+    commit_copy,
+    default_source_semester,
+    log_and_notify_instructor_change,
+    teaching_load_rows,
+)
 
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
@@ -900,6 +914,187 @@ def class_list_import_confirm(request, pk):
     # refreshRoster is picked up both by the Class Lists page's #roster-container
     # and by class_roster.html (read-only roster, reloads itself on this event).
     return trigger_response("refreshRoster", toast="Class list imported.")
+
+
+# ---------------------------------------------------------------------------
+# Import Class Offerings (ADMIN only) — upload an .xlsx or the Registrar's
+# .docx -> preview (new subjects / new classes / shared classes / unknown
+# instructors) -> confirm. Never auto-creates or auto-merges an instructor.
+# ---------------------------------------------------------------------------
+
+_OFFERINGS_IMPORT_SESSION_KEY = "offerings_import_preview"
+
+
+@role_required(ADMIN)
+def offerings_import_template(request):
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Class Offerings"
+    sheet.append(["Semester", "Program", "Major", "Year Level", "Course Code", "Description", "Units", "Room", "Schedule", "Instructor"])
+    sheet.append(["FIRST", "BSED", "ENG", "1", "ENG101", "Introduction to Literature", "3", "Room 101", "MWF 8:00-9:00AM", ""])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    response = HttpResponse(
+        buffer.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="class_offerings_template.xlsx"'
+    return response
+
+
+@role_required(ADMIN)
+def offerings_import(request):
+    context = {
+        "page_title": "Import Class Offerings",
+        "semesters": Semester.objects.select_related("academic_year").all(),
+        "active_semester": Semester.objects.filter(is_active=True).first(),
+    }
+    return render(request, "academics/offerings_import.html", context)
+
+
+@role_required(ADMIN)
+def offerings_import_upload(request):
+    semester_id = request.POST.get("semester")
+    target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
+    if target_semester is None:
+        return render(
+            request, "academics/_offerings_import_result.html", {"error": "Choose a target semester first."}
+        )
+
+    uploaded_file = request.FILES.get("file")
+    if not uploaded_file:
+        return render(
+            request,
+            "academics/_offerings_import_result.html",
+            {"error": "Choose a file first.", "target_semester": target_semester},
+        )
+
+    name = uploaded_file.name.lower()
+    try:
+        if name.endswith(".docx"):
+            preview = parse_offerings_docx_for_preview(uploaded_file, target_semester)
+        else:
+            index, data_rows = parse_offerings_xlsx(uploaded_file)
+            preview = build_offerings_preview(index, data_rows, target_semester)
+    except SpreadsheetImportError as exc:
+        return render(
+            request,
+            "academics/_offerings_import_result.html",
+            {"error": str(exc), "target_semester": target_semester},
+        )
+
+    request.session[_OFFERINGS_IMPORT_SESSION_KEY] = {"semester_id": target_semester.pk, "classes": preview["classes"]}
+    context = {"target_semester": target_semester, **preview}
+    return render(request, "academics/_offerings_import_preview.html", context)
+
+
+@role_required(ADMIN)
+def offerings_import_confirm(request):
+    semester_id = request.POST.get("semester")
+    target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
+
+    stashed = request.session.get(_OFFERINGS_IMPORT_SESSION_KEY)
+    if not stashed or not target_semester or stashed.get("semester_id") != target_semester.pk:
+        return render(
+            request,
+            "academics/_offerings_import_result.html",
+            {"error": "Your preview expired — upload the file again."},
+        )
+
+    counts = commit_offerings_import(stashed["classes"], target_semester)
+    del request.session[_OFFERINGS_IMPORT_SESSION_KEY]
+    return render(
+        request,
+        "academics/_offerings_import_result.html",
+        {"target_semester": target_semester, "success": True, **counts},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Copy classes from previous semester (ADMIN only) — preview first; the
+# instructor is always left Unassigned on the copy (Program Heads assign
+# teaching loads).
+# ---------------------------------------------------------------------------
+
+_OFFERINGS_COPY_SESSION_KEY = "offerings_copy_preview"
+
+
+@role_required(ADMIN)
+def offerings_copy_previous(request):
+    target_semester = Semester.objects.filter(is_active=True).first()
+    if request.method != "POST":
+        source = default_source_semester(target_semester) if target_semester else None
+        return render(
+            request,
+            "academics/_offerings_copy_modal.html",
+            {
+                "target_semester": target_semester,
+                "default_source": source,
+                "semesters": Semester.objects.exclude(pk=getattr(target_semester, "pk", None)).select_related("academic_year"),
+            },
+        )
+
+    source_id = request.POST.get("source_semester")
+    source_semester = get_object_or_404(Semester, pk=source_id)
+    if target_semester is None:
+        return render(
+            request,
+            "academics/_offerings_copy_modal.html",
+            {"error": "No active semester is set.", "semesters": Semester.objects.select_related("academic_year")},
+        )
+
+    preview_rows = build_copy_preview(source_semester, target_semester)
+    request.session[_OFFERINGS_COPY_SESSION_KEY] = {
+        "source_semester_id": source_semester.pk,
+        "target_semester_id": target_semester.pk,
+        "rows": [
+            {
+                "class_offering_id": row["class_offering"].pk,
+                "target_section_ids": row["target_section_ids"],
+                "can_copy": row["can_copy"],
+            }
+            for row in preview_rows
+        ],
+    }
+    return render(
+        request,
+        "academics/_offerings_copy_preview.html",
+        {"target_semester": target_semester, "source_semester": source_semester, "rows": preview_rows},
+    )
+
+
+@role_required(ADMIN)
+def offerings_copy_previous_confirm(request):
+    stashed = request.session.get(_OFFERINGS_COPY_SESSION_KEY)
+    target_semester = Semester.objects.filter(is_active=True).first()
+    if not stashed or not target_semester or stashed.get("target_semester_id") != target_semester.pk:
+        return render(
+            request,
+            "academics/_offerings_copy_modal.html",
+            {"error": "Your preview expired — start again.", "semesters": Semester.objects.select_related("academic_year")},
+        )
+
+    preview_rows = []
+    for row in stashed["rows"]:
+        class_offering = ClassOffering.objects.filter(pk=row["class_offering_id"]).first()
+        if class_offering is None:
+            continue
+        preview_rows.append(
+            {
+                "class_offering": class_offering,
+                "target_section_ids": row["target_section_ids"],
+                "can_copy": row["can_copy"],
+            }
+        )
+
+    counts = commit_copy(preview_rows, target_semester)
+    del request.session[_OFFERINGS_COPY_SESSION_KEY]
+    return trigger_response(
+        "refreshClasses",
+        toast=f"Copied {counts['created']} class(es)." + (f" {counts['skipped']} skipped (no matching section)." if counts["skipped"] else ""),
+    )
 
 
 # ---------------------------------------------------------------------------

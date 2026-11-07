@@ -27,10 +27,16 @@
             {% for i in instructors %}<option value="{{ i.pk }}">{{ i.full_name }}</option>{% endfor %}
         </select>
     </form>
-    <button hx-get="{% url 'academics:class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-        {% sidebar_icon "plus" "w-4 h-4" %} Add Class
-    </button>
+    <div class="flex items-center gap-2">
+        <button hx-get="{% url 'academics:offerings_copy_previous' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            {% sidebar_icon "refresh" "w-4 h-4" %} Copy from Previous Semester
+        </button>
+        <button hx-get="{% url 'academics:class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            {% sidebar_icon "plus" "w-4 h-4" %} Add Class
+        </button>
+    </div>
 </div>
 
 {% include table_template %}

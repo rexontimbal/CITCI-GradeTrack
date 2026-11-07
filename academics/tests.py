@@ -688,3 +688,205 @@ class TeachingAssignmentAuditLogTests(TeachingAssignmentTestBase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["actor"], self.head_a)
         self.assertFalse(rows[0]["details"]["is_admin_override"])
+
+
+class OfferingsImportTests(TestCase):
+    """Admin: Import Class Offerings — xlsx preview/confirm. Never
+    auto-creates or auto-merges an instructor."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
+        self.section = Section.objects.create(
+            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name=""
+        )
+        self.instructor = make_user(User.Role.INSTRUCTOR, "garibay", first_name="Juan", last_name="Garibay")
+        self.admin = make_user(User.Role.ADMIN, "import_admin")
+
+    def _index(self):
+        return {
+            "semester": 0, "program": 1, "major": 2, "year level": 3, "course code": 4,
+            "description": 5, "units": 6, "room": 7, "schedule": 8, "instructor": 9,
+        }
+
+    def test_preview_classifies_new_subject_and_matches_known_instructor(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [
+            ("FIRST", "BSED", "ENG", "1", "ENG101", "Intro to Lit", "3", "Room 1", "MWF 8-9AM", "Juan Garibay"),
+        ]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(preview["new_subject_count"], 1)
+        self.assertEqual(preview["new_class_count"], 1)
+        self.assertEqual(preview["invalid_count"], 0)
+        self.assertEqual(preview["unknown_instructor_names"], [])
+        self.assertEqual(preview["classes"][0]["matched_instructor_id"], self.instructor.pk)
+
+    def test_preview_never_matches_or_creates_an_unknown_instructor(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [
+            ("FIRST", "BSED", "ENG", "1", "ENG102", "World Lit", "3", "Room 1", "MWF 9-10AM", "Someone Unknown"),
+        ]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(preview["unknown_instructor_names"], ["Someone Unknown"])
+        self.assertIsNone(preview["classes"][0]["matched_instructor_id"])
+        self.assertEqual(User.objects.filter(role=User.Role.INSTRUCTOR).count(), 1)  # unchanged
+
+    def test_preview_flags_unknown_program_and_missing_section_as_invalid(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [
+            ("FIRST", "XXXX", "", "", "ENG103", "Bad Program", "3", "", "", ""),
+            ("FIRST", "BSED", "ENG", "4", "ENG104", "No Section For Year 4", "3", "", "", ""),
+        ]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(preview["invalid_count"], 2)
+        self.assertEqual(preview["classes"], [])
+
+    def test_preview_detects_shared_class_across_sections(self):
+        from .offerings_import import build_offerings_preview
+
+        major2 = Major.objects.create(program=self.program, code="SS", name="Social Studies")
+        Section.objects.create(program=self.program, major=major2, academic_year=self.ay, year_level=1, name="")
+        rows = [
+            ("FIRST", "BSED", "ENG", "1", "GE2", "Purposive Comm", "3", "Rm1", "5-8PM Fri", "Juan Garibay"),
+            ("FIRST", "BSED", "SS", "1", "GE2", "Purposive Comm", "3", "Rm1", "5-8PM Fri", "Juan Garibay"),
+        ]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(preview["new_class_count"], 1)
+        self.assertEqual(preview["shared_class_count"], 1)
+        self.assertEqual(len(preview["classes"][0]["section_ids"]), 2)
+
+    def test_preview_makes_zero_writes(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [("FIRST", "BSED", "ENG", "1", "ENG105", "New Subject", "3", "", "", "")]
+        before_subjects = Subject.objects.count()
+        before_classes = ClassOffering.objects.count()
+        build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(Subject.objects.count(), before_subjects)
+        self.assertEqual(ClassOffering.objects.count(), before_classes)
+
+    def test_commit_creates_subject_and_class_with_unassigned_instructor(self):
+        from .offerings_import import build_offerings_preview, commit_offerings_import
+
+        rows = [("FIRST", "BSED", "ENG", "1", "ENG106", "Shakespeare", "3", "Rm2", "", "Unknown Person")]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        counts = commit_offerings_import(preview["classes"], self.semester)
+
+        self.assertEqual(counts["subjects_created"], 1)
+        self.assertEqual(counts["classes_created"], 1)
+        self.assertEqual(counts["unassigned_instructor_classes"], 1)
+        new_class = ClassOffering.objects.get(subject__code="ENG106")
+        self.assertIsNone(new_class.instructor)
+        self.assertIn(self.section, new_class.sections.all())
+
+    def test_commit_is_one_atomic_transaction(self):
+        from django.db import IntegrityError
+
+        from .offerings_import import commit_offerings_import
+
+        # A class dict with a bogus instructor id forces an IntegrityError
+        # (checked immediately by the FK constraint on ClassOffering.create,
+        # unlike the M2M-through-table FK which Postgres defers to the
+        # surrounding transaction's end under this test runner) mid-loop; a
+        # prior valid row in the same call must not be left committed.
+        classes = [
+            {
+                "code": "ENG107", "description": "Valid Row", "units": "3", "room": "", "schedule": "",
+                "instructor_name": "", "program_ids": [self.program.id], "section_ids": [self.section.id],
+                "matched_instructor_id": None,
+            },
+            {
+                "code": "ENG108", "description": "Bad Row", "units": "3", "room": "", "schedule": "",
+                "instructor_name": "", "program_ids": [self.program.id], "section_ids": [self.section.id],
+                "matched_instructor_id": 999999,
+            },
+        ]
+        with self.assertRaises(IntegrityError):
+            commit_offerings_import(classes, self.semester)
+        self.assertFalse(Subject.objects.filter(code="ENG107").exists())
+
+    def test_non_admin_gets_403_on_every_new_url(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "not_admin_offerings")
+        self.client.force_login(instructor)
+        for url_name in (
+            "academics:offerings_import",
+            "academics:offerings_import_template",
+            "academics:offerings_copy_previous",
+        ):
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 403, url_name)
+
+
+class CopyClassesPreviousSemesterTests(TestCase):
+    def setUp(self):
+        self.ay_old = AcademicYear.objects.create(start_year=2025)
+        self.ay_new = AcademicYear.objects.create(start_year=2026)
+        self.old_semester = Semester.objects.create(academic_year=self.ay_old, term=Term.FIRST)
+        self.new_semester = Semester.objects.create(academic_year=self.ay_new, term=Term.FIRST, is_active=True)
+
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.old_section = Section.objects.create(program=self.program, academic_year=self.ay_old, year_level=1, name="")
+        self.new_section = Section.objects.create(program=self.program, academic_year=self.ay_new, year_level=1, name="")
+
+        self.subject = Subject.objects.create(code="PEd207", title="Assessment", units=Decimal("3.0"), term=Term.FIRST)
+        self.instructor = make_user(User.Role.INSTRUCTOR, "copy_instructor")
+        self.old_class = ClassOffering.objects.create(
+            subject=self.subject, semester=self.old_semester, instructor=self.instructor, room="Rm1"
+        )
+        self.old_class.sections.set([self.old_section])
+
+    def test_default_source_semester_is_same_term_previous_academic_year(self):
+        from .services import default_source_semester
+
+        self.assertEqual(default_source_semester(self.new_semester), self.old_semester)
+
+    def test_preview_resolves_equivalent_section_and_never_copies_instructor(self):
+        from .services import build_copy_preview
+
+        rows = build_copy_preview(self.old_semester, self.new_semester)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["can_copy"])
+        self.assertEqual(rows[0]["target_section_ids"], [self.new_section.id])
+
+    def test_missing_equivalent_section_is_reported_not_guessed(self):
+        from .services import build_copy_preview
+
+        self.new_section.delete()
+        rows = build_copy_preview(self.old_semester, self.new_semester)
+        self.assertFalse(rows[0]["can_copy"])
+        self.assertEqual(rows[0]["missing_sections"], [self.old_section])
+
+    def test_commit_copy_always_leaves_instructor_unassigned(self):
+        from .services import build_copy_preview, commit_copy
+
+        rows = build_copy_preview(self.old_semester, self.new_semester)
+        counts = commit_copy(rows, self.new_semester)
+        self.assertEqual(counts["created"], 1)
+        self.assertEqual(counts["skipped"], 0)
+        new_class = ClassOffering.objects.get(subject=self.subject, semester=self.new_semester)
+        self.assertIsNone(new_class.instructor)
+        self.assertIn(self.new_section, new_class.sections.all())
+
+    def test_commit_copy_skips_unresolvable_rows_without_partial_class(self):
+        from .services import build_copy_preview, commit_copy
+
+        self.new_section.delete()
+        rows = build_copy_preview(self.old_semester, self.new_semester)
+        counts = commit_copy(rows, self.new_semester)
+        self.assertEqual(counts["created"], 0)
+        self.assertEqual(counts["skipped"], 1)
+        self.assertFalse(ClassOffering.objects.filter(subject=self.subject, semester=self.new_semester).exists())
+
+    def test_source_semester_and_sections_untouched_by_copy(self):
+        from .services import build_copy_preview, commit_copy
+
+        rows = build_copy_preview(self.old_semester, self.new_semester)
+        commit_copy(rows, self.new_semester)
+        self.old_class.refresh_from_db()
+        self.assertEqual(self.old_class.instructor, self.instructor)
+        self.assertIn(self.old_section, self.old_class.sections.all())

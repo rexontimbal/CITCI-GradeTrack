@@ -40,6 +40,7 @@ _PATHS = {
     "lock": '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
     "dots-vertical": '<path d="M12 5h.01M12 12h.01M12 19h.01" stroke-width="3"/>',
     "refresh": '<path d="M20 11A8 8 0 1 0 18.5 16.5"/><path d="M20 5v6h-6"/>',
+    "upload": '<path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
 }
 
 

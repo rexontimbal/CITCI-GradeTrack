@@ -1,0 +1,36 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Copy Classes from Previous Semester</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    {% if error %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+    {% elif not target_semester %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">No active semester is set.</div>
+    {% else %}
+    <p class="text-sm text-gray-600">
+        Creates the same class offerings for <strong>{{ target_semester }}</strong> from the semester you pick below.
+        Sections are mapped to their equivalents in the new academic year; the instructor is always left Unassigned.
+    </p>
+    <form hx-post="{% url 'academics:offerings_copy_previous' %}" hx-target="#modal-content" hx-swap="innerHTML">
+        {% csrf_token %}
+        <label class="mb-1 block text-sm font-medium text-gray-700">Source semester</label>
+        <select name="source_semester" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            {% for s in semesters %}
+            <option value="{{ s.pk }}" {% if s == default_source %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Preview
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>

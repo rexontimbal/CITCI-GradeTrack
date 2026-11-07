@@ -80,6 +80,14 @@ urlpatterns = [
     path("classes/<int:pk>/import/", views.class_list_import_upload, name="class_list_import_upload"),
     path("classes/<int:pk>/import/confirm/", views.class_list_import_confirm, name="class_list_import_confirm"),
 
+    # Import Class Offerings + Copy classes from previous semester (admin)
+    path("offerings/import/template/", views.offerings_import_template, name="offerings_import_template"),
+    path("offerings/import/", views.offerings_import, name="offerings_import"),
+    path("offerings/import/upload/", views.offerings_import_upload, name="offerings_import_upload"),
+    path("offerings/import/confirm/", views.offerings_import_confirm, name="offerings_import_confirm"),
+    path("offerings/copy/", views.offerings_copy_previous, name="offerings_copy_previous"),
+    path("offerings/copy/confirm/", views.offerings_copy_previous_confirm, name="offerings_copy_previous_confirm"),
+
     # Searchable-select endpoints
     path("search/instructors/", views.instructor_search, name="instructor_search"),
     path("search/classes/", views.class_search, name="class_search"),

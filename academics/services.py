@@ -8,9 +8,10 @@ a form error.
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Q
 
-from .models import ClassOffering, ClassRosterEntry, TeachingAssignmentLog
+from .models import AcademicYear, ClassOffering, ClassRosterEntry, Section, Semester, TeachingAssignmentLog
 
 
 def check_instructor_change_allowed(class_offering):
@@ -123,3 +124,85 @@ def teaching_load_rows(semester, programs, program_id=None, instructor_id=None):
 
     rows = sorted(by_instructor.values(), key=lambda r: r["instructor"].full_name)
     return rows, unassigned
+
+
+# ---------------------------------------------------------------------------
+# "Copy classes from previous semester" — admin picks a source semester
+# (defaults to the same term, previous A.Y.), previews the classes that
+# would be created for the active/target semester, then confirms. The
+# instructor is always left Unassigned on the copy — Program Heads assign
+# teaching loads (section 3a) — regardless of who taught the source class.
+# ---------------------------------------------------------------------------
+
+
+def default_source_semester(target_semester):
+    """Same term, previous academic year — just a pre-selected default;
+    the admin can still pick a different source semester."""
+    previous_ay = AcademicYear.objects.filter(start_year=target_semester.academic_year.start_year - 1).first()
+    if previous_ay is None:
+        return None
+    return Semester.objects.filter(academic_year=previous_ay, term=target_semester.term).first()
+
+
+def build_copy_preview(source_semester, target_semester):
+    """Never writes. One row per source ClassOffering: its subject, its
+    source sections, the resolved equivalent sections in the target
+    semester's academic year (same program/major/year_level/name), or a
+    reported "no equivalent section" if one can't be found — never
+    guessed."""
+    rows = []
+    classes = source_semester.class_offerings.select_related("subject").prefetch_related(
+        "sections__program", "sections__major"
+    )
+    for class_offering in classes:
+        source_sections = list(class_offering.sections.all())
+        target_sections = []
+        missing = []
+        for section in source_sections:
+            equivalent = Section.objects.filter(
+                program=section.program,
+                major=section.major,
+                academic_year=target_semester.academic_year,
+                year_level=section.year_level,
+                name=section.name,
+            ).first()
+            if equivalent is None:
+                missing.append(section)
+            else:
+                target_sections.append(equivalent)
+        rows.append(
+            {
+                "class_offering": class_offering,
+                "subject": class_offering.subject,
+                "source_sections": source_sections,
+                "target_section_ids": [s.id for s in target_sections],
+                "target_sections": target_sections,
+                "missing_sections": missing,
+                "can_copy": not missing,
+            }
+        )
+    return rows
+
+
+def commit_copy(preview_rows, target_semester):
+    """One atomic transaction. Skips (and the caller reports) any row
+    whose sections didn't fully resolve rather than creating a class with
+    missing sections. Instructor is always None on the copy."""
+    created = 0
+    skipped = 0
+    with transaction.atomic():
+        for row in preview_rows:
+            if not row["can_copy"]:
+                skipped += 1
+                continue
+            source = row["class_offering"]
+            new_class = ClassOffering.objects.create(
+                subject=source.subject,
+                semester=target_semester,
+                instructor=None,
+                schedule=source.schedule,
+                room=source.room,
+            )
+            new_class.sections.set(row["target_section_ids"])
+            created += 1
+    return {"created": created, "skipped": skipped}

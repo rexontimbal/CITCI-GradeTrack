@@ -1,0 +1,10 @@
+{% if error %}
+<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+{% elif success %}
+<div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+    <p class="font-semibold">Import complete for {{ target_semester }}.</p>
+    <p class="mt-1">{{ subjects_created }} new subject(s), {{ classes_created }} class(es) created
+        ({{ shared_classes_detected }} shared across sections,
+        {{ unassigned_instructor_classes }} left Unassigned).</p>
+</div>
+{% endif %}

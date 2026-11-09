@@ -43,15 +43,51 @@ def _admin_dashboard(request):
 
 
 def _program_head_dashboard(request):
-    from academics.scoping import classes_in_scope
+    from django.db.models import Count, Q
+
+    from academics.scoping import classes_in_scope, sections_in_scope
+    from approvals.models import GradeSheet, GradeSheetStatus
     from forecasting.services import count_at_risk_watch
 
     active = _active_semester()
     classes = classes_in_scope(request.user, semester=active) if active else ClassOffering.objects.none()
+
+    sections_created = sections_in_scope(request.user).filter(academic_year=active.academic_year).count() if active else 0
+    classes_created = classes.count() if active else 0
+    classes_without_instructor = classes.filter(instructor__isnull=True).count() if active else 0
+    empty_class_lists = (
+        classes.annotate(
+            roster_size=Count("roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True)
+        )
+        .filter(roster_size=0)
+        .count()
+        if active
+        else 0
+    )
+    sheets_submitted = (
+        GradeSheet.objects.filter(
+            class_offering__in=classes, status__in=[GradeSheetStatus.SUBMITTED, GradeSheetStatus.APPROVED, GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
+        )
+        .distinct()
+        .count()
+        if active
+        else 0
+    )
+
     context = {
         "at_risk_count": count_at_risk_watch(classes)["at_risk"],
-        "unassigned_count": classes.filter(instructor__isnull=True).count() if active else 0,
+        "unassigned_count": classes_without_instructor,
         "unassigned_classes_url": f"{reverse('academics:program_head_classes')}?unassigned=1",
+        "active_semester_set": bool(active),
+        "scope_label": request.user.program_head_scope_label,
+        "checklist": {
+            "sections_created": sections_created,
+            "classes_created": classes_created,
+            "classes_without_instructor": classes_without_instructor,
+            "empty_class_lists": empty_class_lists,
+            "sheets_submitted": sheets_submitted,
+            "sheets_total": classes_created,
+        },
     }
     return render(request, "dashboard/program_head_dashboard.html", context)
 

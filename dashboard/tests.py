@@ -151,6 +151,56 @@ class DashboardHomeRoutingTests(GradingTestBase):
         self.assertEqual(response.context["warnings_count"], 1)
 
 
+class ProgramHeadSetupChecklistTests(GradingTestBase):
+    """The Program Head dashboard's setup checklist — sections/classes
+    created, classes without an instructor, empty class lists, grade
+    sheets submitted — each scoped via academics.scoping.classes_in_scope,
+    not every class in the system."""
+
+    def setUp(self):
+        super().setUp()
+        self.head = make_user(User.Role.PROGRAM_HEAD, "checklist_head")
+        self.program.program_head = self.head
+        self.program.save()
+
+    def test_checklist_counts_reflect_scoped_data(self):
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("dashboard:home"))
+        checklist = response.context["checklist"]
+        self.assertEqual(checklist["sections_created"], 1)
+        self.assertEqual(checklist["classes_created"], 1)
+        self.assertEqual(checklist["classes_without_instructor"], 0)
+        self.assertEqual(checklist["empty_class_lists"], 0)  # roster_entry already exists
+        self.assertEqual(checklist["sheets_submitted"], 0)
+
+    def test_checklist_excludes_other_programs_classes(self):
+        from academics.models import Program
+
+        other_program = Program.objects.create(code="OTHERPH", name="Other Program")
+        other_head = make_user(User.Role.PROGRAM_HEAD, "other_checklist_head")
+        other_program.program_head = other_head
+        other_program.save()
+
+        self.client.force_login(other_head)
+        response = self.client.get(reverse("dashboard:home"))
+        checklist = response.context["checklist"]
+        self.assertEqual(checklist["sections_created"], 0)
+        self.assertEqual(checklist["classes_created"], 0)
+
+    def test_scope_label_shown_under_page_title(self):
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, "BSIT (all majors)")
+
+    def test_no_active_semester_shows_empty_state(self):
+        self.semester.is_active = False
+        self.semester.save()
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, "No active semester")
+        self.assertFalse(response.context["active_semester_set"])
+
+
 class DashboardQueryCountTests(GradingTestBase):
     """Phase 8 part B dashboard query-count pass. Before this pass the
     student dashboard issued ~10-12 queries PER subject (released_entry,

@@ -1,16 +1,54 @@
 {% extends "base.html" %}
 {% block page_title %}Program Head Dashboard{% endblock %}
 {% block content %}
-    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle="Department overview — placeholder values, no live data yet." %}
+    {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle=scope_label %}
 
+    {% if not active_semester_set %}
+        {% include "partials/_no_active_semester.html" %}
+    {% else %}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {% include "partials/_stat_card.html" with icon="chalkboard" label="Classes in Department" value="—" %}
-        {% include "partials/_stat_card.html" with icon="check-circle" label="Pending Approvals" value="—" %}
         {% include "partials/_stat_card.html" with icon="alert" label="At-Risk Students" value=at_risk_count %}
         {% include "partials/_stat_card.html" with icon="chalkboard" label="Unassigned Classes" value=unassigned_count link=unassigned_classes_url %}
     </div>
 
-    <div class="mt-6">
-        {% include "partials/_empty_state.html" with icon="chart" title="Grade distribution coming soon" description="Pass/fail rates and at-risk counts per subject and section will appear here once the grading and forecasting phases are built." %}
+    <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
+        <h3 class="mb-3 text-sm font-semibold text-gray-900">Setup checklist — this semester</h3>
+        <ul class="divide-y divide-gray-100">
+            <li class="flex items-center justify-between py-3">
+                <span class="text-sm text-gray-700">Sections created</span>
+                <a href="{% url 'academics:ph_sections' %}" class="text-sm font-medium text-brand-primary-700 hover:underline">
+                    {{ checklist.sections_created }}
+                </a>
+            </li>
+            <li class="flex items-center justify-between py-3">
+                <span class="text-sm text-gray-700">Classes created</span>
+                <a href="{% url 'academics:program_head_classes' %}" class="text-sm font-medium text-brand-primary-700 hover:underline">
+                    {{ checklist.classes_created }}
+                </a>
+            </li>
+            <li class="flex items-center justify-between py-3">
+                <span class="text-sm text-gray-700">Classes without an instructor</span>
+                <a href="{{ unassigned_classes_url }}" class="text-sm font-medium {% if checklist.classes_without_instructor %}text-amber-700{% else %}text-brand-primary-700{% endif %} hover:underline">
+                    {{ checklist.classes_without_instructor }}
+                </a>
+            </li>
+            <li class="flex items-center justify-between py-3">
+                <span class="text-sm text-gray-700">Class lists still empty</span>
+                <a href="{% url 'academics:class_lists' %}" class="text-sm font-medium {% if checklist.empty_class_lists %}text-amber-700{% else %}text-brand-primary-700{% endif %} hover:underline">
+                    {{ checklist.empty_class_lists }}
+                </a>
+            </li>
+            <li class="flex items-center justify-between py-3">
+                <span class="text-sm text-gray-700">Grade sheets submitted</span>
+                <a href="{% url 'approvals:index' %}" class="text-sm font-medium text-brand-primary-700 hover:underline">
+                    {{ checklist.sheets_submitted }} / {{ checklist.sheets_total }}
+                </a>
+            </li>
+        </ul>
     </div>
+
+    <div class="mt-6">
+        {% include "partials/_empty_state.html" with icon="chart" title="Grade distribution coming soon" description="Pass/fail rates and at-risk counts per subject and section will appear here once this view is built." %}
+    </div>
+    {% endif %}
 {% endblock %}

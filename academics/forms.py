@@ -44,6 +44,25 @@ class SectionForm(StyledModelForm):
         fields = ["program", "major", "academic_year", "year_level", "name"]
 
 
+def _restrict_program_major_fields(form, user):
+    """Shared by every Program-Head-scoped form with program/major fields
+    (Section, Subject): restricts both querysets to academics.scoping.
+    scope_for(user), and pre-selects program when there's only one choice.
+    A program-level scope tuple only covers majors with no head of their
+    own — one with its own head is that head's exclusively."""
+    from .scoping import scope_for
+
+    scope = scope_for(user) or set()
+    program_ids = {program_id for program_id, _ in scope}
+    major_ids = {major_id for _, major_id in scope if major_id is not None}
+    form.fields["program"].queryset = Program.objects.filter(pk__in=program_ids)
+    form.fields["major"].queryset = Major.objects.filter(
+        Q(pk__in=major_ids) | Q(program_id__in=program_ids, program_head__isnull=True)
+    )
+    if len(program_ids) == 1 and not form.initial.get("program"):
+        form.initial["program"] = next(iter(program_ids))
+
+
 class ProgramHeadSectionForm(StyledModelForm):
     """Same model as SectionForm, but program/major choices are locked to
     the acting Program Head's scope (academics.scoping.scope_for) and
@@ -56,25 +75,30 @@ class ProgramHeadSectionForm(StyledModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        from .scoping import scope_for
-
-        scope = scope_for(user) or set()
-        program_ids = {program_id for program_id, _ in scope}
-        major_ids = {major_id for _, major_id in scope if major_id is not None}
-        self.fields["program"].queryset = Program.objects.filter(pk__in=program_ids)
-        # A program-level scope tuple only covers majors with no head of
-        # their own — one with its own head is that head's exclusively.
-        self.fields["major"].queryset = Major.objects.filter(
-            Q(pk__in=major_ids) | Q(program_id__in=program_ids, program_head__isnull=True)
-        )
-        if len(program_ids) == 1 and not self.initial.get("program"):
-            self.initial["program"] = next(iter(program_ids))
+        _restrict_program_major_fields(self, user)
 
 
 class SubjectForm(StyledModelForm):
     class Meta:
         model = Subject
         fields = ["code", "title", "units", "program", "major", "year_level", "term", "is_active"]
+
+
+class ProgramHeadSubjectForm(StyledModelForm):
+    """Same model as SubjectForm, but `program` is required (not blankable
+    — shared/general subjects with no program stay admin-only to create,
+    per the shared-subject-catalog rule) and program/major choices are
+    locked to scope."""
+
+    class Meta:
+        model = Subject
+        fields = ["code", "title", "units", "program", "major", "year_level", "term", "is_active"]
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["program"].required = True
+        self.fields["program"].empty_label = None
+        _restrict_program_major_fields(self, user)
 
 
 class ClassOfferingForm(StyledModelForm):

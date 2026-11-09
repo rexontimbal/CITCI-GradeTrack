@@ -23,6 +23,7 @@ from .forms import (
     MajorForm,
     ProgramForm,
     ProgramHeadSectionForm,
+    ProgramHeadSubjectForm,
     SectionForm,
     SemesterForm,
     SubjectForm,
@@ -492,6 +493,71 @@ class SubjectToggleActiveView(RoleRequiredMixin, ToggleActiveView):
     allowed_roles = (ADMIN,)
     model = Subject
     refresh_event = "refreshSubjects"
+
+
+# ---------------------------------------------------------------------------
+# Program Head — Subjects. The catalog itself is shared (a subject code is
+# unique school-wide, reused across programs) — list shows every active
+# subject, but Edit is only reachable for subjects tagged to this head's
+# own scope; shared/general subjects (program=None) stay admin-only to
+# edit. Create always tags the new subject to the head's own scope
+# (ProgramHeadSubjectForm makes `program` required).
+# ---------------------------------------------------------------------------
+
+
+@role_required(PROGRAM_HEAD)
+def ph_subjects(request):
+    scope = scoping.scope_for(request.user)
+    subjects = list(Subject.objects.filter(is_active=True).select_related("program", "major").order_by("code"))
+    for subject in subjects:
+        subject.editable_by_me = bool(
+            subject.program_id and scoping.is_in_scope(request.user, subject.program_id, subject.major_id)
+        )
+    return render(request, "academics/ph_subjects.html", {"page_title": "Subjects", "subjects": subjects})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_subject_create(request):
+    if request.method != "POST":
+        form = ProgramHeadSubjectForm(user=request.user)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Subject"})
+
+    form = ProgramHeadSubjectForm(request.POST, user=request.user)
+    if form.is_valid():
+        subject = form.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SUBJECT,
+            subject,
+            AcademicSetupChangeLog.Action.CREATED,
+            request.user,
+            is_admin_override=False,
+        )
+        return trigger_response("refreshSubjects", toast="Subject created.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Subject"})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_subject_edit(request, pk):
+    subject = get_object_or_404(Subject, pk=pk)
+    if not subject.program_id or not scoping.is_in_scope(request.user, subject.program_id, subject.major_id):
+        raise PermissionDenied("This subject is not under your program.")
+
+    if request.method != "POST":
+        form = ProgramHeadSubjectForm(instance=subject, user=request.user)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Subject"})
+
+    form = ProgramHeadSubjectForm(request.POST, instance=subject, user=request.user)
+    if form.is_valid():
+        subject = form.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SUBJECT,
+            subject,
+            AcademicSetupChangeLog.Action.UPDATED,
+            request.user,
+            is_admin_override=False,
+        )
+        return trigger_response("refreshSubjects", toast="Subject updated.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Subject"})
 
 
 # ---------------------------------------------------------------------------

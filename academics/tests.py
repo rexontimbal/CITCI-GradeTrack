@@ -1351,3 +1351,59 @@ class ProgramHeadSectionScopeTests(TeachingAssignmentTestBase):
         response = self.client.get(reverse("academics:ph_sections"))
         self.assertContains(response, str(self.section_b))
         self.assertNotContains(response, str(self.section_a))
+
+
+class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
+    def test_can_create_a_subject_tagged_to_own_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_subject_create"),
+            {
+                "code": "ENG101", "title": "Intro to Lit", "units": "3.0", "program": self.program_b.pk,
+                "major": "", "year_level": "1", "term": "FIRST", "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        subject = Subject.objects.get(code="ENG101")
+        self.assertEqual(subject.program, self.program_b)
+
+    def test_create_form_requires_a_program(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_subject_create"),
+            {"code": "ENG102", "title": "No Program", "units": "3.0", "program": "", "major": "", "year_level": "1", "term": "FIRST"},
+        )
+        self.assertEqual(response.status_code, 200)  # re-rendered with a validation error
+        self.assertFalse(Subject.objects.filter(code="ENG102").exists())
+
+    def test_any_active_subject_usable_on_a_class_regardless_of_scope(self):
+        # Confirms the shared-catalog read is unrestricted — a subject
+        # tagged to program_a is still listed (just not editable) when
+        # head_b views the Subjects page.
+        subject = Subject.objects.create(code="SHARED1", title="Shared", units=Decimal("3.0"), term=Term.FIRST, program=self.program_a)
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subjects"))
+        self.assertContains(response, "SHARED1")
+
+    def test_cannot_edit_a_subject_outside_scope(self):
+        subject = Subject.objects.create(code="OUTSCOPE", title="X", units=Decimal("3.0"), term=Term.FIRST, program=self.program_a)
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subject_edit", args=[subject.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_edit_a_shared_subject_with_no_program(self):
+        shared = Subject.objects.create(code="GE2", title="Gen Ed", units=Decimal("3.0"), term=Term.FIRST)
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subject_edit", args=[shared.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_can_edit_a_subject_in_own_scope(self):
+        subject = Subject.objects.create(code="INSCOPE", title="X", units=Decimal("3.0"), term=Term.FIRST, program=self.program_b)
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_subject_edit", args=[subject.pk]),
+            {"code": "INSCOPE", "title": "Updated Title", "units": "3.0", "program": self.program_b.pk, "major": "", "year_level": "1", "term": "FIRST", "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        subject.refresh_from_db()
+        self.assertEqual(subject.title, "Updated Title")

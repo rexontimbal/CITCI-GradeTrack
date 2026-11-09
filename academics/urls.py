@@ -49,6 +49,11 @@ urlpatterns = [
     path("subjects/<int:pk>/delete/", views.SubjectDeleteView.as_view(), name="subject_delete"),
     path("subjects/<int:pk>/toggle-active/", views.SubjectToggleActiveView.as_view(), name="subject_toggle_active"),
 
+    # Subjects (Program Head — shared catalog, create/edit scoped)
+    path("my-program/subjects/", views.ph_subjects, name="ph_subjects"),
+    path("my-program/subjects/create/", views.ph_subject_create, name="ph_subject_create"),
+    path("my-program/subjects/<int:pk>/edit/", views.ph_subject_edit, name="ph_subject_edit"),
+
     # Classes (admin CRUD)
     path("classes/", views.ClassListView.as_view(), name="classes"),
     path("classes/create/", views.ClassFormView.as_view(), name="class_create"),

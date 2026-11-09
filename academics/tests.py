@@ -1278,3 +1278,76 @@ class UsersPageScopeDisplayTests(TeachingAssignmentTestBase):
         self.client.force_login(self.admin)
         response = self.client.get(reverse("accounts:users"), {"role": "PROGRAM_HEAD"})
         self.assertContains(response, "Unassigned")
+
+
+class ProgramHeadSectionScopeTests(TeachingAssignmentTestBase):
+    def test_can_create_a_section_in_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_section_create"),
+            {"program": self.program_b.pk, "major": "", "year_level": "2", "name": "B"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        section = Section.objects.get(program=self.program_b, year_level=2, name="B")
+        self.assertEqual(section.academic_year, self.ay)
+
+    def test_create_form_locks_program_choices_to_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_section_create"))
+        form = response.context["form"]
+        self.assertIn(self.program_b, form.fields["program"].queryset)
+        self.assertNotIn(self.program_a, form.fields["program"].queryset)
+
+    def test_cannot_edit_a_section_outside_scope(self):
+        self.client.force_login(self.head_a)  # heads program_a, not program_b
+        response = self.client.get(reverse("academics:ph_section_edit", args=[self.section_b.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_can_edit_a_section_in_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_section_edit", args=[self.section_b.pk]),
+            {"program": self.program_b.pk, "major": "", "year_level": "3", "name": "A"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        self.section_b.refresh_from_db()
+        self.assertEqual(self.section_b.year_level, 3)
+
+    def test_major_level_head_can_create_in_their_major_only(self):
+        major = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        major_head = make_user(User.Role.PROGRAM_HEAD, "sec_scope_major_head")
+        major.program_head = major_head
+        major.save()
+
+        self.client.force_login(major_head)
+        response = self.client.post(
+            reverse("academics:ph_section_create"),
+            {"program": self.program_b.pk, "major": major.pk, "year_level": "1", "name": "C"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+
+    def test_section_create_logs_change(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.head_b)
+        self.client.post(
+            reverse("academics:ph_section_create"),
+            {"program": self.program_b.pk, "major": "", "year_level": "2", "name": "D"},
+        )
+        log = AcademicSetupChangeLog.objects.get(model_name=AcademicSetupChangeLog.ModelName.SECTION)
+        self.assertEqual(log.action, AcademicSetupChangeLog.Action.CREATED)
+        self.assertFalse(log.is_admin_override)
+        self.assertEqual(log.actor, self.head_b)
+
+    def test_no_active_semester_shows_empty_state(self):
+        self.semester.is_active = False
+        self.semester.save()
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_sections"))
+        self.assertContains(response, "No active semester")
+
+    def test_ph_sections_page_only_lists_own_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_sections"))
+        self.assertContains(response, str(self.section_b))
+        self.assertNotContains(response, str(self.section_a))

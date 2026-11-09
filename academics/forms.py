@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 from django.urls import reverse_lazy
 
 from accounts.models import User
@@ -41,6 +42,33 @@ class SectionForm(StyledModelForm):
     class Meta:
         model = Section
         fields = ["program", "major", "academic_year", "year_level", "name"]
+
+
+class ProgramHeadSectionForm(StyledModelForm):
+    """Same model as SectionForm, but program/major choices are locked to
+    the acting Program Head's scope (academics.scoping.scope_for) and
+    academic_year is never a form field — the view locks it to the active
+    semester's academic year server-side."""
+
+    class Meta:
+        model = Section
+        fields = ["program", "major", "year_level", "name"]
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .scoping import scope_for
+
+        scope = scope_for(user) or set()
+        program_ids = {program_id for program_id, _ in scope}
+        major_ids = {major_id for _, major_id in scope if major_id is not None}
+        self.fields["program"].queryset = Program.objects.filter(pk__in=program_ids)
+        # A program-level scope tuple only covers majors with no head of
+        # their own — one with its own head is that head's exclusively.
+        self.fields["major"].queryset = Major.objects.filter(
+            Q(pk__in=major_ids) | Q(program_id__in=program_ids, program_head__isnull=True)
+        )
+        if len(program_ids) == 1 and not self.initial.get("program"):
+            self.initial["program"] = next(iter(program_ids))
 
 
 class SubjectForm(StyledModelForm):

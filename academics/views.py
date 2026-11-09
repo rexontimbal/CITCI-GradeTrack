@@ -3,7 +3,7 @@ from datetime import date
 
 import openpyxl
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, ProtectedError, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -22,12 +22,14 @@ from .forms import (
     ClassOfferingForm,
     MajorForm,
     ProgramForm,
+    ProgramHeadSectionForm,
     SectionForm,
     SemesterForm,
     SubjectForm,
     TeachingAssignmentForm,
 )
 from .models import (
+    AcademicSetupChangeLog,
     AcademicYear,
     ClassOffering,
     ClassRosterEntry,
@@ -291,6 +293,149 @@ class SectionDeleteView(RoleRequiredMixin, EntityDeleteView):
     model = Section
     refresh_event = "refreshSections"
     protect_message = "This section has classes or students using it."
+
+
+# ---------------------------------------------------------------------------
+# Program Head — Sections (hand-written, matching the style already used
+# for program_head_classes/my_classes/class_lists_home rather than
+# core.crud, since EntityFormView has no hook for scoping a form's
+# querysets to the acting user). Section has no is_active field (neither
+# does admin's own SectionDeleteView offer a "deactivate instead" fallback
+# today) — create/edit/delete, same ProtectedError handling as admin's.
+# ---------------------------------------------------------------------------
+
+
+def _active_academic_year():
+    active = Semester.objects.filter(is_active=True).first()
+    return active.academic_year if active else None
+
+
+def _log_academic_setup_change(model_name, obj, action, actor, is_admin_override, **details):
+    AcademicSetupChangeLog.objects.create(
+        model_name=model_name,
+        object_id=obj.pk,
+        object_repr=str(obj),
+        action=action,
+        program=getattr(obj, "program", None),
+        major=getattr(obj, "major", None),
+        actor=actor,
+        is_admin_override=is_admin_override,
+        details=details,
+    )
+
+
+@role_required(PROGRAM_HEAD)
+def ph_sections(request):
+    academic_year = _active_academic_year()
+    sections = (
+        scoping.sections_in_scope(request.user).filter(academic_year=academic_year).select_related("program", "major")
+        if academic_year
+        else Section.objects.none()
+    )
+    return render(
+        request,
+        "academics/ph_sections.html",
+        {"page_title": "Sections", "sections": sections, "active_semester_set": bool(academic_year)},
+    )
+
+
+def _section_in_scope_or_403(request, section):
+    if not scoping.is_in_scope(request.user, section.program_id, section.major_id):
+        raise PermissionDenied("This section is not under your program.")
+
+
+@role_required(PROGRAM_HEAD)
+def ph_section_create(request):
+    academic_year = _active_academic_year()
+    if academic_year is None:
+        raise PermissionDenied("No active semester is set.")
+
+    if request.method != "POST":
+        form = ProgramHeadSectionForm(user=request.user)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Section"})
+
+    form = ProgramHeadSectionForm(request.POST, user=request.user)
+    if form.is_valid():
+        section = form.save(commit=False)
+        section.academic_year = academic_year
+        section.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SECTION,
+            section,
+            AcademicSetupChangeLog.Action.CREATED,
+            request.user,
+            is_admin_override=False,
+        )
+        return trigger_response("refreshSections", toast="Section created.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Section"})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_section_edit(request, pk):
+    section = get_object_or_404(Section, pk=pk)
+    _section_in_scope_or_403(request, section)
+
+    if request.method != "POST":
+        form = ProgramHeadSectionForm(instance=section, user=request.user)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Section"})
+
+    form = ProgramHeadSectionForm(request.POST, instance=section, user=request.user)
+    if form.is_valid():
+        section = form.save(commit=False)
+        section.academic_year = _active_academic_year()
+        section.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SECTION,
+            section,
+            AcademicSetupChangeLog.Action.UPDATED,
+            request.user,
+            is_admin_override=False,
+        )
+        return trigger_response("refreshSections", toast="Section updated.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Section"})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_section_delete(request, pk):
+    """Section has no is_active field (confirmed against the model — admin's
+    own SectionDeleteView has no deactivate fallback either), so this is a
+    straight delete with the same ProtectedError handling
+    core.crud.EntityDeleteView gives admin pages, replicated by hand."""
+    section = get_object_or_404(Section, pk=pk)
+    _section_in_scope_or_403(request, section)
+
+    if request.method != "POST":
+        return render(
+            request, "partials/_confirm_delete_modal.html", {"object": section, "label": str(section), "protect_error": ""}
+        )
+
+    label = str(section)
+    section_pk, program, major = section.pk, section.program, section.major
+    try:
+        section.delete()
+    except ProtectedError:
+        return render(
+            request,
+            "partials/_confirm_delete_modal.html",
+            {
+                "object": section,
+                "label": label,
+                "protect_error": "This section has classes or students using it.",
+                "can_deactivate": False,
+            },
+        )
+    AcademicSetupChangeLog.objects.create(
+        model_name=AcademicSetupChangeLog.ModelName.SECTION,
+        object_id=section_pk,
+        object_repr=label,
+        action=AcademicSetupChangeLog.Action.DEACTIVATED,
+        program=program,
+        major=major,
+        actor=request.user,
+        is_admin_override=False,
+        details={"note": "deleted"},
+    )
+    return trigger_response("refreshSections", toast=f"{label} deleted.")
 
 
 # ---------------------------------------------------------------------------

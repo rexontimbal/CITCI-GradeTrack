@@ -156,6 +156,31 @@
 > (roles), section 5 (INC completion), section 6 (new fields/models), and section 8 (new screens)
 > below, now updated to describe this state; `docs/CHANGES_FROM_PROPOSAL.md` records these as
 > post-proposal enhancements, not deviations from the original proposal.
+>
+> **2026-11-09 (Program Head scope redesign, built):** Confirmed CITCI practice:
+> **day-to-day academic setup belongs to each program's Program Head, scoped to their own
+> program/major — Admin works at institution level and keeps a full, audited override.** A
+> Program Head can now be assigned at PROGRAM level (`Program.program_head`, unchanged, covers
+> every major with no head of its own) or at MAJOR level (new `Major.program_head`, takes
+> precedence for that one major). One helper, `academics.scoping.scope_for(user)`, is the single
+> source of truth every object-level "does this head own X" check now uses — it replaced ~10
+> independently-duplicated `sections__program__program_head=user`-style expressions across
+> academics/approvals/dashboard/forecasting/grading/reports/accounts. Program Heads gained their
+> own scoped pages — Sections, Subjects (a shared catalog; editing is scope-restricted, a
+> shared/general subject with no program stays admin-only), Classes (including "Join existing
+> class" for a shared class across programs, and "Leave," which auto-deactivates a class once its
+> last section is removed), Class Lists, and Import Class Offerings (out-of-scope rows rejected in
+> preview with a reason) — all under a new "My Program" sidebar group, alongside the existing
+> Teaching Loads. Admin's sidebar splits "Academic Setup" (now just Academic Years & Semesters,
+> Programs, Majors) from a new "Override" group holding the same five entities, banner-marked and
+> logged to a new shared `academics.AcademicSetupChangeLog` with `is_admin_override=True` — the
+> same audit shape already used for teaching-load admin overrides, now combined into the Audit
+> Log page as a new `academic_setup` source. The Program Head dashboard's old placeholder stat
+> cards were replaced with a linked setup checklist (sections/classes created, classes without an
+> instructor, empty class lists, sheets submitted) and the head's scope shown under the page
+> title; every Program Head page shows a clear empty state if Admin hasn't set an active semester
+> yet. See section 3 (roles table) and the new section 3b for the full scope rules, section 8 for
+> the new/moved screens, and the "Program Head scope redesign" bullet under "Build Phases."
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -244,8 +269,8 @@ username not IP); sessions expire after 30 minutes of inactivity or on browser c
 
 | Role | Can do |
 |---|---|
-| **admin** (Registrar/System Admin) | Manage users (CRUD, bulk import, activate/deactivate, reset password); manage programs, academic terms, subjects, class offerings (sections); assign Program Heads (Chairpersons) per program; manage class lists (import from the Registrar); configure grading templates and transmutation table; lock/unlock terms; import historical data; train/activate ML model versions and view model metrics; view audit logs; system-wide reports |
-| **program_head** | View department dashboard (grade distribution, at-risk counts per class/subject); **assign/change which instructor teaches each class in their program (teaching loads) — this is the Program Head's call, not Admin's, confirmed CITCI practice** (see section 3a); view at-risk list with contributing factors; approve or return submitted grade sheets; release approved grades; export reports |
+| **admin** (Registrar/System Admin) | Manage users (CRUD, bulk import, activate/deactivate, reset password); manage academic years/semesters, programs, majors; assign Program Heads (Chairpersons) per program or per major; **override** Sections/Subjects/Classes/Class Lists/Import Class Offerings/Teaching Loads for any program (audited as an admin override — see section 3b) — these are normally the Program Head's own job; configure grading templates; lock/unlock terms; import historical data; train/activate ML model versions and view model metrics; view audit logs; system-wide reports |
+| **program_head** | **Day-to-day academic setup for their own program/major scope — Sections, Subjects, Classes (including joining/leaving a shared class across programs), Class Lists, Import Class Offerings — confirmed CITCI practice** (see section 3b); **assign/change which instructor teaches each class in their program (teaching loads)** (see section 3a); view department dashboard (setup checklist, at-risk counts per class/subject); view at-risk list with contributing factors; approve or return submitted grade sheets; release approved grades; export reports |
 | **instructor** | View assigned classes only; adjust grading component weights for own class (within template rules); create assessments; encode scores (inline table + Excel import using downloadable template); see auto-computed grades live; submit grade sheet; export PDF/Excel grade sheet; view class at-risk list with factors; add intervention notes per student |
 | **student** | View own class-list subjects, running grades per component, period grades, released final grades; term GWA + cumulative GWA; progress charts; own forecast shown as **"Needs Attention" / "On Track"** (never the words "at-risk") with plain-language contributing factors and generic tips; notifications |
 
@@ -288,6 +313,83 @@ Enforce access with middleware + Django Policies (view-level `role_required`/`Ro
 today; move to per-object permission checks once there's per-object data to protect). Instructors
 must never see classes not assigned to them; students only their own data. Write tests for every
 authorization rule — `accounts/tests.py` has the pattern (login, menu visibility, 403s).
+
+### 3b. Program Head academic-setup scope (built)
+
+**Day-to-day academic setup belongs to each program's Program Head, scoped to their own
+program/major — Admin works at institution level and keeps a full, audited override.** A Program
+Head can be assigned at **PROGRAM level** (`Program.program_head`, unchanged — covers every major
+in that program with no head of its own) or at **MAJOR level** (`Major.program_head`, nullable —
+takes precedence over the program-level catch-all for that one major; a program-level and a
+major-level assignment for the same user are both kept, since they mean different things). One
+helper, `academics.scoping.scope_for(user)`, is the single source of truth every object-level
+"does this Program Head own X" check uses — it returns `None` for admin (unrestricted — every
+caller must branch on this before filtering, rather than treating `None` as "no matches") or a set
+of `(program_id, major_id-or-None)` tuples for everyone else; companion querysets
+`sections_in_scope`/`classes_in_scope`/`subjects_editable_by`/`programs_in_scope` and a membership
+check `is_in_scope(user, program_id, major_id)` build on it. `scope_for` is memoized on the user
+instance — it used to be recomputed (2 queries each) up to 3x in a single request (the sidebar
+badge, the INC-completions badge, the page's own class list); a fresh request always gets a
+freshly-queried `User` instance, so this never leaks across requests or users. This replaced ~10
+independently-duplicated `sections__program__program_head=user`/`program__program_head_id=
+user.id` expressions across academics/approvals/dashboard/forecasting/grading/reports/accounts.
+
+**What moved to the Program Head** (all under a new "My Program" sidebar group, scoped — no
+program/major dropdowns to pick from, since there's only ever one correct choice):
+- **Sections** (`academics:ph_sections`) — create/edit for the active semester's academic year;
+  program/major pre-filled and locked to scope (or offered as a choice if the head covers more
+  than one). Section has no `is_active` field, so delete is a real delete with the same
+  `ProtectedError` → friendly-message handling as admin's own Sections page.
+- **Subjects** (`academics:ph_subjects`) — the subject catalog stays **shared**: subject codes
+  are unique school-wide (GE 2, PEd 202 are created once and reused), so a Program Head can use
+  *any* active subject when building a class. Creating a new subject tags it with their
+  program/major; **editing** one is only allowed when it's tagged to their own scope — a
+  shared/general subject with no program (`Subject.program = None`) stays admin-only to edit
+  (`academics.scoping.subjects_editable_by` excludes it by design).
+- **Classes** (`academics:program_head_classes`, now a full create/edit page, not just a teaching-
+  load manager) — subject (any active) + their own sections + schedule/room/instructor. A class
+  shared across programs (one Gen Ed class serving two majors' sections) can be **joined**
+  (`academics:ph_class_join` — pick an existing class with the same subject in the active
+  semester, add only their own in-scope sections to it, never a duplicate class) or **left**
+  (`academics:ph_class_leave` — removes only the acting head's own sections; if that was the
+  class's last section, it's auto-deactivated, logged with `details={"reason": "last section
+  removed"}`). A class is manageable by every head whose section is in it; instructor assignment
+  by any of them (teaching-load rules, section 3a, unchanged).
+- **Class Lists** (`academics:class_lists`) and **Import Class Offerings**
+  (`academics:offerings_import`) — same pages admin uses, scoped: a Program Head only sees/
+  manages classes with at least one of their own sections (`_can_manage_roster` in
+  `academics/views.py`); an import row resolving to a program/major outside scope is rejected in
+  preview with `"<program>[-<major>] is outside your scope."`, and `commit_offerings_import`
+  re-validates scope per row defensively at commit time too — the preview is session-stashed and
+  round-tripped through the browser, never trusted blindly.
+- **Teaching Loads** — unchanged (section 3a), now naturally including classes the Program Head
+  created themselves.
+
+**Admin's "Override" group** (sidebar, separate from "Academic Setup" which now only holds
+Academic Years & Semesters/Programs/Majors) keeps the same five entities — Sections, Subjects,
+Classes, Class Lists, Import Class Offerings, plus Teaching Loads — unscoped, with an amber banner
+("These are normally managed by each program's Program Head...") on every one of those pages.
+Every save there writes an `academics.AcademicSetupChangeLog` row (model, action, program/major
+scope at the time, actor, `is_admin_override`, a JSON `details` snapshot) — the Program-Head
+academic-setup equivalent of `TeachingAssignmentLog` (section 3a), one shared model rather than
+three per-domain ones since Section/Subject/Class go through near-identical CRUD flows. Combined
+into the admin Audit Log page as a new `"academic_setup"` source, labeled e.g. "Section updated
+(admin override)" when `is_admin_override=True`, plain "Section updated" for a Program Head's own
+edit.
+
+**Dashboard & empty states**: the Program Head dashboard (`dashboard:home`) shows the head's scope
+(`User.program_head_scope_label`, e.g. "BSED – English" or "BSIT (all majors)") under the page
+title and a linked setup checklist for the active semester — sections created, classes created,
+classes without an instructor, class lists still empty, grade sheets submitted — each scoped the
+same way and linking to the page that fixes it. Every Program Head page shows a clear, shared
+empty state (`partials/_no_active_semester.html`) when Admin hasn't activated a semester yet,
+rather than a confusing blank page.
+
+Admin assigns the Program Head role itself — Programs page (program-level) and Majors page
+(major-level), both pickers listing only active PROGRAM_HEAD users; assigning or changing one
+notifies the new head (`academics.services.notify_program_head_assignment`, no-op guarded against
+a re-save that doesn't actually change anything). The Users page shows each head's current scope
+next to their row.
 
 ---
 
@@ -936,7 +1038,12 @@ with live search, Mark as Dropped/Restore, Import class list from an .xlsx/.csv)
 list pages share one generic pattern — search + filters + pagination, HTMX-swapped table, Add/Edit
 via a modal form, Delete via a modal confirm that offers "Deactivate instead" when a `PROTECT` FK
 blocks it — implemented once in `core/crud.py` (`EntityListView`/`EntityFormView`/
-`EntityDeleteView`/`ToggleActiveView`) rather than per page.
+`EntityDeleteView`/`ToggleActiveView`) rather than per page. **Program Head scope redesign (built
+— see section 3b):** Sections/Subjects/Classes/Class Lists/Import Class Offerings/Teaching Loads
+move to a new sidebar "Override" group (Academic Setup keeps only Academic Years & Semesters/
+Programs/Majors) — each of those 5 pages now shows an amber "Override mode" banner, and every
+save on them logs an `academics.AcademicSetupChangeLog` row with `is_admin_override=True`
+(`SectionFormView`/`SubjectFormView`/`ClassFormView` in `academics/views.py`).
 
 **Admin — Users (built, Phase 2.2):** replaces the old read-only Students list. Tabs (All/Admins/
 Program Heads/Instructors/Students, each with a live count) + search (name/username/ID number) +
@@ -990,6 +1097,17 @@ logged), a by-class breakdown table with a per-class Recompute action, the same 
 list the instructor sees (read-only interventions, can add notes), and an Excel export. The
 dashboard's "At-Risk Students" stat card now shows a real count too. *(Dashboard's grade-distribution
 chart is still a placeholder.)*
+
+**Program Head scope redesign (built — see section 3b):** a new "My Program" sidebar group adds
+**Sections** (`academics:ph_sections`), **Subjects** (`academics:ph_subjects`, shared catalog —
+edit only within scope), and turns **Classes** (`academics:program_head_classes`) into a full
+create/edit/join/leave page, all scoped to `academics.scoping.scope_for(user)` with no program/
+major dropdowns (pre-filled and locked); **Class Lists** and **Import Class Offerings** are now
+also reachable here (same pages admin uses, scoped — out-of-scope rows rejected in preview with a
+reason). The dashboard's old placeholder stat cards were replaced with a linked setup checklist
+(sections/classes created, classes without an instructor, empty class lists, sheets submitted)
+and the head's scope (`User.program_head_scope_label`) shown under the page title; every page
+shows a shared empty state if Admin hasn't set an active semester yet.
 
 **Instructor (built, Phase 4 part 1):** My Classes (built, Phase 2 — card layout, active-semester
 classes; "Encode Grades" button links to the class grading page below) · Class Grading page
@@ -1515,6 +1633,21 @@ until the previous one passes its tests.
   URL. See the dated note at the top of this file for the full list and the judgment calls made
   along the way (new `StudentProfile.status`/`IncCompletion`/deadline fields, all confirmed with
   the user before building).
+- **Program Head scope redesign (not a numbered phase, done):** day-to-day academic setup moved
+  from Admin to each program's Program Head, scoped via the new `academics.scoping.scope_for`
+  helper (program-level or major-level assignment) — Sections, Subjects (shared catalog, scope-
+  restricted editing), Classes (including shared-class join/leave with auto-deactivation), Class
+  Lists, and Import Class Offerings all gained scoped Program-Head pages under a new "My Program"
+  sidebar group; Admin keeps the same five pages (plus Teaching Loads) as an audited "Override"
+  group (`academics.AcademicSetupChangeLog`, combined into the Audit Log page as a new
+  `academic_setup` source); the Program Head dashboard's placeholder stat cards became a linked
+  setup checklist. Also fixed along the way: a pre-existing query-count regression in
+  `forecasting`'s Program Head At-Risk page (`scope_for` was being recomputed 3x per request —
+  fixed by memoizing it on the user instance). See the dated note at the top of this file and
+  section 3b for the full rule set and the judgment calls made along the way (shared
+  `AcademicSetupChangeLog` model rather than three per-domain ones, hand-written Program-Head
+  views rather than a new `core.crud` scoping hook, auto-deactivating a shared class on its last
+  section leaving — all confirmed with the user before building).
 
 ---
 

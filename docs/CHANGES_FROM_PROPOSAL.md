@@ -260,3 +260,26 @@ was already complete (CLAUDE.md's 2026-11-07 dated note), each a standalone foll
 below the proposal's level of abstraction. If the final paper documents the system's full feature
 set (e.g. an updated screen inventory or use-case diagram), these 6 items should be added there as
 features delivered, not as corrections to anything previously stated.
+
+---
+
+## 12. Program Head scope redesign (addition — the Program Head role itself was already outside the proposal, item 2 above)
+
+Unlike sections 1–10, this is a refinement of a role the proposal never described at all (the
+Program Head/Chairperson role and its grade-approval/teaching-load workflows — see CLAUDE.md's
+dated note on the fourth role), not a correction to a proposed feature.
+
+**Confirmed CITCI practice (2026-11-09):** day-to-day academic setup — Sections, Subjects,
+Classes, Class Lists, Import Class Offerings — moves from Admin to each program's own Program
+Head, scoped to their program or major (`academics.scoping.scope_for`). Admin keeps the same five
+pages as a full, audited override (a new "Override" sidebar group, banner-marked, logged to a new
+`academics.AcademicSetupChangeLog` and the Audit Log page) — the same pattern already established
+for teaching-load assignment (item 2's "a fourth role the proposal never described"). A Program
+Head can now also be assigned per-major, not only per-program, and two Program Heads can share one
+class across programs (join/leave a shared class, auto-deactivating it once its last section
+leaves).
+
+**Revise:** None of §1–§3.13 require revision — same reasoning as item 11. If the final paper's
+screen inventory/use-case diagram documents the Program Head role at all (it should, per item 2),
+it should now show these scoped Program-Head pages and the Admin Override group as part of that
+role's description, not as a correction to anything the proposal stated.

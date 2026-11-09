@@ -188,6 +188,14 @@ building a sheet by hand. After confirming an import, download the `.xlsx` of te
 for newly-created accounts immediately — it's generated in memory from that request only and is
 never stored or shown again.
 
+## Program Head scope
+
+Day-to-day academic setup (Sections, Subjects, Classes, Class Lists, Import Class Offerings) is
+now each program's Program Head's own job, scoped to their program/major (see CLAUDE.md section
+3b) — reachable under a new "My Program" sidebar group. Admin keeps the same pages as an audited
+"Override" group (sidebar, banner-marked) for institution-wide changes; every admin edit there is
+logged to the Audit Log as an admin override, same pattern as teaching-load assignment.
+
 ## Grading rules
 
 Verified against `grading-system.xlsx` (CITCI's actual class record) to full Decimal precision —

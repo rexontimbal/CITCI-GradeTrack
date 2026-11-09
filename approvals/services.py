@@ -55,14 +55,9 @@ def _require_status(sheet, *allowed):
 
 
 def _program_heads_for(class_offering):
-    from accounts.models import User
+    from academics.scoping import heads_for_class
 
-    return list(
-        User.objects.filter(
-            role=User.Role.PROGRAM_HEAD,
-            headed_programs__sections__class_offerings=class_offering,
-        ).distinct()
-    )
+    return heads_for_class(class_offering)
 
 
 def missing_score_students(class_offering):
@@ -437,10 +432,12 @@ def decide_inc_completion(completion, user, approve, decision_remarks=""):
 
 
 def pending_inc_completions_for_program_head(user):
+    from academics.scoping import classes_in_scope
+
     return (
         IncCompletion.objects.filter(
             status=IncCompletionStatus.PENDING,
-            entry__sheet__class_offering__sections__program__program_head=user,
+            entry__sheet__class_offering__in=classes_in_scope(user),
         )
         .distinct()
         .select_related("entry__roster_entry__student", "entry__sheet__class_offering__subject")

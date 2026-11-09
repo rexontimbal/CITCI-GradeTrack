@@ -12,7 +12,8 @@ from collections import defaultdict
 
 from django.core.management.base import BaseCommand
 
-from academics.models import ClassRosterEntry, Program
+from academics.models import ClassRosterEntry
+from academics.scoping import heads_for_class
 from dashboard.services import notify
 from forecasting.services import recompute_and_notify
 
@@ -28,11 +29,8 @@ class Command(BaseCommand):
 
         by_program_head = defaultdict(set)
         for entry in newly_at_risk:
-            programs = Program.objects.filter(
-                sections__class_offerings=entry.class_offering, program_head__isnull=False
-            ).distinct()
-            for program in programs:
-                by_program_head[program.program_head].add(entry.pk)
+            for head in heads_for_class(entry.class_offering):
+                by_program_head[head].add(entry.pk)
 
         for program_head, entry_ids in by_program_head.items():
             count = len(entry_ids)

@@ -15,6 +15,7 @@ from accounts.models import User
 from core.crud import EntityDeleteView, EntityFormView, EntityListView, ToggleActiveView, trigger_response
 from core.htmx import is_htmx
 
+from . import scoping
 from .forms import (
     AcademicYearForm,
     BulkAssignInstructorForm,
@@ -457,7 +458,7 @@ def _get_class_offering_for_viewer(request, pk):
         pk=pk,
     )
     user = request.user
-    if user.is_program_head and not class_offering.sections.filter(program__program_head_id=user.id).exists():
+    if user.is_program_head and not class_offering.sections.filter(pk__in=scoping.sections_in_scope(user)).exists():
         raise PermissionDenied("This class is not under your program.")
     if user.is_instructor and class_offering.instructor_id != user.id:
         raise PermissionDenied("This class is not assigned to you.")
@@ -515,7 +516,7 @@ def _program_head_class_queryset(user, active):
     if active is None:
         return ClassOffering.objects.none()
     return (
-        ClassOffering.objects.filter(sections__program__program_head=user, semester=active)
+        scoping.classes_in_scope(user, semester=active)
         .select_related("subject", "instructor")
         .prefetch_related("sections")
         .annotate(
@@ -564,7 +565,7 @@ def program_head_classes(request):
 def _can_assign_instructor(user, class_offering):
     if user.is_admin_role:
         return True
-    return user.is_program_head and class_offering.sections.filter(program__program_head_id=user.id).exists()
+    return user.is_program_head and class_offering.sections.filter(pk__in=scoping.sections_in_scope(user)).exists()
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
@@ -630,7 +631,7 @@ def class_bulk_assign_instructor(request):
 
     classes = ClassOffering.objects.filter(pk__in=class_ids)
     if not is_admin_override:
-        classes = classes.filter(sections__program__program_head=request.user).distinct()
+        classes = classes.filter(pk__in=scoping.classes_in_scope(request.user))
 
     assigned, blocked = 0, 0
     for class_offering in classes:
@@ -659,7 +660,7 @@ def _scope_programs_for_teaching_loads(request):
         program_id = request.GET.get("program")
         qs = Program.objects.all()
         return qs.filter(pk=program_id) if program_id else qs
-    return Program.objects.filter(program_head=request.user)
+    return scoping.programs_in_scope(request.user)
 
 
 @role_required(ADMIN, PROGRAM_HEAD)

@@ -91,8 +91,10 @@ def _get_class_offering_for_grading(request, pk):
         ),
         pk=pk,
     )
+    from academics.scoping import sections_in_scope
+
     user = request.user
-    if user.is_program_head and not class_offering.sections.filter(program__program_head_id=user.id).exists():
+    if user.is_program_head and not class_offering.sections.filter(pk__in=sections_in_scope(user)).exists():
         raise PermissionDenied("This class is not under your program.")
     if user.is_instructor and class_offering.instructor_id != user.id:
         raise PermissionDenied("This class is not assigned to you.")

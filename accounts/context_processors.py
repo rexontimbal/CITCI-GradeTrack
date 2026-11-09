@@ -23,13 +23,12 @@ def _sidebar_badges(user):
     local import (accounts loads before approvals) to avoid a module-level
     import cycle."""
     if user.is_program_head:
+        from academics.scoping import classes_in_scope
         from approvals.models import GradeSheet, GradeSheetStatus
         from approvals.services import pending_inc_completions_for_program_head
 
         count = (
-            GradeSheet.objects.filter(
-                status=GradeSheetStatus.SUBMITTED, class_offering__sections__program__program_head=user
-            )
+            GradeSheet.objects.filter(status=GradeSheetStatus.SUBMITTED, class_offering__in=classes_in_scope(user))
             .distinct()
             .count()
         )

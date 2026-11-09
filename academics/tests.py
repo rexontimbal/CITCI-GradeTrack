@@ -1089,3 +1089,106 @@ class AYWizardPermissionTests(AYWizardTestBase):
         ):
             response = self.client.get(reverse(url_name))
             self.assertEqual(response.status_code, 403, url_name)
+
+
+class ScopeForHelperTests(TeachingAssignmentTestBase):
+    """academics.scoping.scope_for and its companion queryset helpers —
+    program-level head covers every major with no head of its own;
+    major-level head takes precedence over the program-level catch-all
+    for that one major; admin is unrestricted (None sentinel)."""
+
+    def setUp(self):
+        super().setUp()
+        self.major_eng = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        self.major_ss = Major.objects.create(program=self.program_b, code="SS", name="Social Studies")
+
+    def test_admin_scope_is_unrestricted_sentinel(self):
+        from .scoping import scope_for
+
+        self.assertIsNone(scope_for(self.admin))
+
+    def test_program_level_head_covers_every_major_with_no_head_of_its_own(self):
+        from .scoping import scope_for
+
+        scope = scope_for(self.head_b)
+        self.assertIn((self.program_b.id, None), scope)
+
+    def test_major_level_head_takes_precedence_for_their_major(self):
+        from .scoping import scope_for
+
+        major_head = make_user(User.Role.PROGRAM_HEAD, "sc_major_head")
+        self.major_eng.program_head = major_head
+        self.major_eng.save()
+
+        scope = scope_for(major_head)
+        self.assertEqual(scope, {(self.program_b.id, self.major_eng.id)})
+        # The program-level head (head_b) no longer implicitly covers this
+        # major once it has its own head — verified via sections_in_scope.
+        from .scoping import sections_in_scope
+
+        eng_section = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="A"
+        )
+        self.assertIn(eng_section, sections_in_scope(major_head))
+        self.assertNotIn(eng_section, sections_in_scope(self.head_b))
+
+    def test_program_head_with_both_program_and_major_assignment_keeps_both_tuples(self):
+        from .scoping import scope_for
+
+        self.major_eng.program_head = self.head_b
+        self.major_eng.save()
+
+        scope = scope_for(self.head_b)
+        self.assertIn((self.program_b.id, None), scope)
+        self.assertIn((self.program_b.id, self.major_eng.id), scope)
+
+    def test_sections_in_scope_includes_majorless_sections_for_program_level_head(self):
+        from .scoping import sections_in_scope
+
+        # section_b has no major — program_b's program-level head (head_b) must see it.
+        self.assertIn(self.section_b, sections_in_scope(self.head_b))
+
+    def test_non_program_head_user_has_empty_scope(self):
+        from .scoping import scope_for
+
+        self.assertEqual(scope_for(self.instructor1), set())
+
+    def test_unassigned_program_head_sees_nothing(self):
+        from .scoping import classes_in_scope, sections_in_scope
+
+        unassigned_head = make_user(User.Role.PROGRAM_HEAD, "sc_unassigned")
+        self.assertEqual(sections_in_scope(unassigned_head).count(), 0)
+        self.assertEqual(classes_in_scope(unassigned_head).count(), 0)
+
+    def test_classes_in_scope_matches_if_any_section_is_in_scope(self):
+        from .scoping import classes_in_scope
+
+        self.class_offering.sections.add(self.section_b)
+        self.assertIn(self.class_offering, classes_in_scope(self.head_b))
+
+    def test_is_in_scope_membership_check(self):
+        from .scoping import is_in_scope
+
+        self.assertTrue(is_in_scope(self.head_b, self.program_b.id, None))
+        self.assertFalse(is_in_scope(self.head_a, self.program_b.id, None))
+        self.assertTrue(is_in_scope(self.admin, self.program_b.id, None))
+
+    def test_heads_for_class_resolves_major_level_over_program_level(self):
+        from .scoping import heads_for_class
+
+        major_head = make_user(User.Role.PROGRAM_HEAD, "sc_heads_for_class")
+        self.major_eng.program_head = major_head
+        self.major_eng.save()
+        eng_section = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="A"
+        )
+        self.class_offering.sections.set([eng_section])
+
+        heads = heads_for_class(self.class_offering)
+        self.assertEqual(heads, [major_head])
+
+    def test_programs_in_scope_for_program_level_head(self):
+        from .scoping import programs_in_scope
+
+        self.assertIn(self.program_b, programs_in_scope(self.head_b))
+        self.assertNotIn(self.program_a, programs_in_scope(self.head_b))

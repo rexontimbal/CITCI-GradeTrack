@@ -40,7 +40,9 @@ INSTRUCTOR = User.Role.INSTRUCTOR
 
 
 def _program_head_owns(user, class_offering):
-    return class_offering.sections.filter(program__program_head_id=user.id).exists()
+    from academics.scoping import sections_in_scope
+
+    return class_offering.sections.filter(pk__in=sections_in_scope(user)).exists()
 
 
 def _get_sheet_for_reviewer(request, pk):
@@ -169,15 +171,17 @@ def submitted_sheets(request):
 
 @role_required(PROGRAM_HEAD)
 def index(request):
+    from academics.scoping import classes_in_scope, programs_in_scope
+
     status_filter = request.GET.get("status", GradeSheetStatus.SUBMITTED)
-    base_qs = GradeSheet.objects.filter(class_offering__sections__program__program_head=request.user).distinct()
+    base_qs = GradeSheet.objects.filter(class_offering__in=classes_in_scope(request.user)).distinct()
 
     counts = {status: base_qs.filter(status=status).count() for status, _ in GradeSheetStatus.choices}
     counts["INC_COMPLETIONS"] = pending_inc_completions_for_program_head(request.user).count()
 
     active = Semester.objects.filter(is_active=True).first()
     late_counts = (
-        late_or_unsubmitted_counts(active, Program.objects.filter(program_head=request.user)) if active else None
+        late_or_unsubmitted_counts(active, programs_in_scope(request.user)) if active else None
     )
 
     context = {
@@ -294,8 +298,10 @@ def release_all(request):
     if not active:
         messages.error(request, "No active semester is set.")
         return redirect("approvals:index")
+    from academics.scoping import programs_in_scope
+
     released = []
-    for program in Program.objects.filter(program_head=request.user):
+    for program in programs_in_scope(request.user):
         released.extend(release_all_approved(active, request.user, program=program))
     messages.success(request, f"{len(released)} grade sheet(s) released.")
     return redirect("approvals:index")

@@ -268,8 +268,10 @@ def _program_head_classes(user, active_semester):
     # part B query-count pass — this alone was ~84 of the 103 queries
     # measured before the fix, same N+1 already fixed on Admin Grade
     # Sheets in Phase 8 part A but not carried over to this page).
+    from academics.scoping import classes_in_scope
+
     return (
-        ClassOffering.objects.filter(sections__program__program_head=user, semester=active_semester)
+        classes_in_scope(user, semester=active_semester)
         .select_related("subject", "instructor")
         .prefetch_related("sections__program", "sections__major")
         .distinct()
@@ -379,10 +381,12 @@ def at_risk_export(request):
 
 
 def _owns_class_for_forecasting(user, class_offering):
+    from academics.scoping import sections_in_scope
+
     if user.is_instructor:
         return class_offering.instructor_id == user.id
     if user.is_program_head:
-        return class_offering.sections.filter(program__program_head_id=user.id).exists()
+        return class_offering.sections.filter(pk__in=sections_in_scope(user)).exists()
     return False
 
 
@@ -399,8 +403,11 @@ def recompute_class(request, pk):
 
 @role_required(PROGRAM_HEAD)
 def recompute_program(request, pk):
+    from academics.scoping import scope_for
+
     program = get_object_or_404(Program, pk=pk)
-    if program.program_head_id != request.user.id:
+    scope = scope_for(request.user)
+    if scope is not None and not any(program_id == program.id for program_id, _ in scope):
         raise PermissionDenied("This program is not under your headship.")
     active_semester = Semester.objects.filter(is_active=True).first()
     classes = ClassOffering.objects.filter(sections__program=program, semester=active_semester).distinct()

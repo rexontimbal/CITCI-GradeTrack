@@ -29,7 +29,9 @@ STUDENT = User.Role.STUDENT
 
 
 def _program_head_owns(user, class_offering):
-    return class_offering.sections.filter(program__program_head_id=user.id).exists()
+    from academics.scoping import sections_in_scope
+
+    return class_offering.sections.filter(pk__in=sections_in_scope(user)).exists()
 
 
 def _can_view_class_reports(user, class_offering):
@@ -244,7 +246,9 @@ def index(request):
     semesters = Semester.objects.select_related("academic_year").all()
 
     if user.is_program_head:
-        programs = Program.objects.filter(program_head=user)
+        from academics.scoping import programs_in_scope
+
+        programs = programs_in_scope(user)
     else:
         programs = Program.objects.all()
 
@@ -267,7 +271,9 @@ def _scope_programs(request):
         program_id = request.GET.get("program")
         qs = Program.objects.all()
         return qs.filter(pk=program_id) if program_id else qs
-    return Program.objects.filter(program_head=request.user)
+    from academics.scoping import programs_in_scope
+
+    return programs_in_scope(request.user)
 
 
 def _get_report_semester(request):
@@ -338,8 +344,11 @@ def failing_inc(request):
 
 @role_required(ADMIN, PROGRAM_HEAD)
 def program_grade_report_pdf(request, pk):
+    from academics.scoping import scope_for
+
     program = get_object_or_404(Program, pk=pk)
-    if request.user.is_program_head and program.program_head_id != request.user.id:
+    scope = scope_for(request.user)
+    if scope is not None and not any(program_id == program.id for program_id, _ in scope):
         raise PermissionDenied("This program is not under your headship.")
 
     semester = _get_report_semester(request)

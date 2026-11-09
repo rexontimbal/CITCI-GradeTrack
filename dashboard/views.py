@@ -43,14 +43,11 @@ def _admin_dashboard(request):
 
 
 def _program_head_dashboard(request):
+    from academics.scoping import classes_in_scope
     from forecasting.services import count_at_risk_watch
 
     active = _active_semester()
-    classes = (
-        ClassOffering.objects.filter(sections__program__program_head=request.user, semester=active).distinct()
-        if active
-        else ClassOffering.objects.none()
-    )
+    classes = classes_in_scope(request.user, semester=active) if active else ClassOffering.objects.none()
     context = {
         "at_risk_count": count_at_risk_watch(classes)["at_risk"],
         "unassigned_count": classes.filter(instructor__isnull=True).count() if active else 0,

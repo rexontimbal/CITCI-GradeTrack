@@ -93,6 +93,16 @@ class Major(TimeStampedModel):
     program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="majors")
     code = models.CharField(max_length=20, help_text="e.g. ENG, SS")
     name = models.CharField(max_length=150)
+    program_head = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={"role": User.Role.PROGRAM_HEAD, "is_active": True},
+        related_name="headed_majors",
+        help_text="Takes precedence over the program's own head for this one major. Leave blank "
+        "for this major to be covered by the program-level head.",
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -295,3 +305,50 @@ class TeachingAssignmentLog(TimeStampedModel):
         old = self.old_instructor.full_name if self.old_instructor else "Unassigned"
         new = self.new_instructor.full_name if self.new_instructor else "Unassigned"
         return f"{self.class_offering}: {old} → {new}"
+
+
+class AcademicSetupChangeLog(TimeStampedModel):
+    """One row per create/update/deactivate/reactivate on a Section,
+    Subject, or ClassOffering (plus the shared-class SECTION_JOINED/
+    SECTION_LEFT actions) — the Program Head academic-setup equivalent of
+    TeachingAssignmentLog above. A single shared model rather than three
+    per-domain ones: these three entities go through near-identical CRUD
+    flows and need an identical audit shape (who/role/scope/admin-override/
+    before-after), unlike ScoreChangeLog/TeachingAssignmentLog which each
+    capture a genuinely different kind of value change.
+
+    `object_id` is a plain integer, not a real FK, so a log row survives
+    the object's own deletion; `object_repr` snapshots its str() at the
+    time of the change for display once that's no longer possible to
+    recompute. `program`/`major` record the *scope* the changed object
+    belonged to at the time (SET_NULL — never blocks deleting a Program/
+    Major years later)."""
+
+    class ModelName(models.TextChoices):
+        SECTION = "SECTION", "Section"
+        SUBJECT = "SUBJECT", "Subject"
+        CLASS = "CLASS", "Class"
+
+    class Action(models.TextChoices):
+        CREATED = "CREATED", "Created"
+        UPDATED = "UPDATED", "Updated"
+        DEACTIVATED = "DEACTIVATED", "Deactivated"
+        REACTIVATED = "REACTIVATED", "Reactivated"
+        SECTION_JOINED = "SECTION_JOINED", "Section joined"
+        SECTION_LEFT = "SECTION_LEFT", "Section left"
+
+    model_name = models.CharField(max_length=10, choices=ModelName.choices)
+    object_id = models.PositiveIntegerField()
+    object_repr = models.CharField(max_length=255)
+    action = models.CharField(max_length=20, choices=Action.choices)
+    program = models.ForeignKey(Program, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    major = models.ForeignKey(Major, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    is_admin_override = models.BooleanField(default=False)
+    details = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_model_name_display()} {self.get_action_display()}: {self.object_repr}"

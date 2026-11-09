@@ -1407,3 +1407,135 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
         self.assertEqual(response.status_code, 204, response.content)
         subject.refresh_from_db()
         self.assertEqual(subject.title, "Updated Title")
+
+
+class ProgramHeadClassScopeTests(TeachingAssignmentTestBase):
+    def setUp(self):
+        super().setUp()
+        self.subject = Subject.objects.create(code="PEd300", title="Phys Ed 3", units=Decimal("2.0"), term=Term.FIRST)
+
+    def test_can_create_a_class_with_own_sections(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_class_create"),
+            {"subject": self.subject.pk, "sections": [self.section_b.pk], "schedule": "", "room": "", "instructor": "", "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        new_class = ClassOffering.objects.get(subject=self.subject)
+        self.assertIn(self.section_b, new_class.sections.all())
+        self.assertEqual(new_class.semester, self.semester)
+
+    def test_cannot_create_a_class_with_another_heads_section(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_class_create"),
+            {"subject": self.subject.pk, "sections": [self.section_a.pk], "schedule": "", "room": "", "instructor": "", "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 200)  # re-rendered with a validation error
+        self.assertFalse(ClassOffering.objects.filter(subject=self.subject).exists())
+
+    def test_cannot_edit_a_class_with_no_section_in_scope(self):
+        other_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        other_class.sections.set([self.section_a])
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_class_edit", args=[other_class.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_instructor_change_on_edit_is_logged_via_the_normal_mechanism(self):
+        from dashboard.models import Notification
+
+        self.class_offering.sections.set([self.section_b])
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_class_edit", args=[self.class_offering.pk]),
+            {"subject": self.subject.pk, "sections": [self.section_b.pk], "schedule": "", "room": "", "instructor": self.instructor1.pk, "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor, self.instructor1)
+        self.assertTrue(Notification.objects.filter(recipient=self.instructor1, title="New teaching assignment").exists())
+        log = self.class_offering.assignment_logs.get()
+        self.assertFalse(log.is_admin_override)
+
+    def test_class_create_logs_academic_setup_change(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.head_b)
+        self.client.post(
+            reverse("academics:ph_class_create"),
+            {"subject": self.subject.pk, "sections": [self.section_b.pk], "schedule": "", "room": "", "instructor": "", "is_active": "on"},
+        )
+        log = AcademicSetupChangeLog.objects.get(model_name=AcademicSetupChangeLog.ModelName.CLASS)
+        self.assertEqual(log.action, AcademicSetupChangeLog.Action.CREATED)
+        self.assertFalse(log.is_admin_override)
+
+
+class SharedClassJoinLeaveTests(TeachingAssignmentTestBase):
+    """Two Program Heads sharing one class (same subject, different
+    sections) — head_a creates it, head_b joins with their own section,
+    either can leave independently."""
+
+    def setUp(self):
+        super().setUp()
+        self.class_offering.sections.set([self.section_a])  # starts as head_a's alone
+
+    def test_other_head_can_join_with_their_own_section(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_class_join"),
+            {"class_offering": self.class_offering.pk, "sections": [self.section_b.pk]},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        self.class_offering.refresh_from_db()
+        self.assertIn(self.section_b, self.class_offering.sections.all())
+        self.assertIn(self.section_a, self.class_offering.sections.all())  # head_a's section untouched
+
+    def test_cannot_join_with_another_heads_section(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:ph_class_join"),
+            {"class_offering": self.class_offering.pk, "sections": [self.section_a.pk]},
+        )
+        self.assertEqual(response.status_code, 200)  # section_a isn't in head_b's own-sections queryset -> invalid choice
+        self.assertEqual(list(self.class_offering.sections.all()), [self.section_a])
+
+    def test_join_is_logged(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.head_b)
+        self.client.post(
+            reverse("academics:ph_class_join"),
+            {"class_offering": self.class_offering.pk, "sections": [self.section_b.pk]},
+        )
+        log = AcademicSetupChangeLog.objects.get(action=AcademicSetupChangeLog.Action.SECTION_JOINED)
+        self.assertEqual(log.actor, self.head_b)
+
+    def test_leaving_removes_only_own_sections(self):
+        self.class_offering.sections.add(self.section_b)
+        self.client.force_login(self.head_b)
+        response = self.client.post(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 204, response.content)
+        self.class_offering.refresh_from_db()
+        self.assertNotIn(self.section_b, self.class_offering.sections.all())
+        self.assertIn(self.section_a, self.class_offering.sections.all())  # head_a's stays
+        self.assertTrue(self.class_offering.is_active)  # still has head_a's section
+
+    def test_last_section_leaving_deactivates_the_class(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.head_a)
+        response = self.client.post(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 204, response.content)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.sections.count(), 0)
+        self.assertFalse(self.class_offering.is_active)
+        self.assertTrue(
+            AcademicSetupChangeLog.objects.filter(
+                action=AcademicSetupChangeLog.Action.DEACTIVATED, details__reason="last section removed"
+            ).exists()
+        )
+
+    def test_cannot_leave_a_class_with_no_own_section(self):
+        self.client.force_login(self.head_b)  # has no section in this class yet
+        response = self.client.get(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)

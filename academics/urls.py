@@ -65,6 +65,10 @@ urlpatterns = [
     # Read-only, role-specific class lists
     path("my-classes/", views.my_classes, name="my_classes"),
     path("program-head/classes/", views.program_head_classes, name="program_head_classes"),
+    path("program-head/classes/create/", views.ph_class_create, name="ph_class_create"),
+    path("program-head/classes/<int:pk>/edit/", views.ph_class_edit, name="ph_class_edit"),
+    path("program-head/classes/join/", views.ph_class_join, name="ph_class_join"),
+    path("program-head/classes/<int:pk>/leave/", views.ph_class_leave, name="ph_class_leave"),
 
     # Teaching assignment (Program Head; Admin as a logged override)
     path("classes/<int:pk>/assign-instructor/", views.class_assign_instructor, name="class_assign_instructor"),

@@ -20,8 +20,10 @@ from .forms import (
     AcademicYearForm,
     BulkAssignInstructorForm,
     ClassOfferingForm,
+    JoinClassForm,
     MajorForm,
     ProgramForm,
+    ProgramHeadClassOfferingForm,
     ProgramHeadSectionForm,
     ProgramHeadSubjectForm,
     SectionForm,
@@ -53,6 +55,7 @@ from .roster_import import RosterImportError, build_preview, commit_import, pars
 from .services import (
     assign_instructor,
     build_copy_preview,
+    check_instructor_change_allowed,
     commit_copy,
     default_source_semester,
     log_and_notify_instructor_change,
@@ -787,6 +790,143 @@ def program_head_classes(request):
             "bulk_form": BulkAssignInstructorForm(),
         },
     )
+
+
+@role_required(PROGRAM_HEAD)
+def ph_class_create(request):
+    active = Semester.objects.filter(is_active=True).first()
+    if active is None:
+        raise PermissionDenied("No active semester is set.")
+
+    if request.method != "POST":
+        form = ProgramHeadClassOfferingForm(user=request.user, academic_year=active.academic_year)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Class"})
+
+    form = ProgramHeadClassOfferingForm(request.POST, user=request.user, academic_year=active.academic_year)
+    if form.is_valid():
+        class_offering = form.save(commit=False)
+        class_offering.semester = active
+        class_offering.save()
+        form.save_m2m()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.CLASS,
+            class_offering,
+            AcademicSetupChangeLog.Action.CREATED,
+            request.user,
+            is_admin_override=False,
+        )
+        return trigger_response("refreshClasses", toast="Class created.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Class"})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_class_edit(request, pk):
+    class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not class_offering.sections.filter(pk__in=scoping.sections_in_scope(request.user)).exists():
+        raise PermissionDenied("This class is not under your program.")
+    active = Semester.objects.filter(is_active=True).first()
+
+    if request.method != "POST":
+        form = ProgramHeadClassOfferingForm(
+            instance=class_offering, user=request.user, academic_year=class_offering.semester.academic_year
+        )
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Class"})
+
+    old_instructor = class_offering.instructor
+    form = ProgramHeadClassOfferingForm(
+        request.POST, instance=class_offering, user=request.user, academic_year=class_offering.semester.academic_year
+    )
+    if not form.is_valid():
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Class"})
+
+    new_instructor = form.cleaned_data.get("instructor")
+    instructor_changed = (old_instructor.id if old_instructor else None) != (new_instructor.id if new_instructor else None)
+    if instructor_changed:
+        try:
+            check_instructor_change_allowed(class_offering)
+        except ValidationError as exc:
+            form.add_error(None, exc.messages[0])
+            return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Class"})
+
+    class_offering = form.save()
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.CLASS,
+        class_offering,
+        AcademicSetupChangeLog.Action.UPDATED,
+        request.user,
+        is_admin_override=False,
+    )
+    if instructor_changed:
+        log_and_notify_instructor_change(class_offering, old_instructor, new_instructor, request.user, is_admin_override=False)
+    return trigger_response("refreshClasses", toast="Class updated.")
+
+
+@role_required(PROGRAM_HEAD)
+def ph_class_join(request):
+    active = Semester.objects.filter(is_active=True).first()
+    if active is None:
+        raise PermissionDenied("No active semester is set.")
+
+    own_sections = scoping.sections_in_scope(request.user).filter(academic_year=active.academic_year)
+    candidate_classes = ClassOffering.objects.filter(semester=active).exclude(sections__in=own_sections).distinct()
+
+    if request.method != "POST":
+        form = JoinClassForm(class_queryset=candidate_classes, sections_queryset=own_sections)
+        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Join Existing Class"})
+
+    form = JoinClassForm(request.POST, class_queryset=candidate_classes, sections_queryset=own_sections)
+    if form.is_valid():
+        class_offering = form.cleaned_data["class_offering"]
+        sections = list(form.cleaned_data["sections"])
+        class_offering.sections.add(*sections)
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.CLASS,
+            class_offering,
+            AcademicSetupChangeLog.Action.SECTION_JOINED,
+            request.user,
+            is_admin_override=False,
+            section_ids=[s.pk for s in sections],
+        )
+        return trigger_response("refreshClasses", toast=f"Joined {class_offering}.")
+    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Join Existing Class"})
+
+
+@role_required(PROGRAM_HEAD)
+def ph_class_leave(request, pk):
+    class_offering = get_object_or_404(ClassOffering, pk=pk)
+    own_sections_in_class = class_offering.sections.filter(pk__in=scoping.sections_in_scope(request.user))
+    if not own_sections_in_class.exists():
+        raise PermissionDenied("You have no sections in this class.")
+
+    if request.method != "POST":
+        return render(
+            request,
+            "academics/_ph_class_leave_confirm.html",
+            {"class_offering": class_offering, "sections": own_sections_in_class},
+        )
+
+    section_ids = list(own_sections_in_class.values_list("pk", flat=True))
+    class_offering.sections.remove(*own_sections_in_class)
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.CLASS,
+        class_offering,
+        AcademicSetupChangeLog.Action.SECTION_LEFT,
+        request.user,
+        is_admin_override=False,
+        section_ids=section_ids,
+    )
+    if class_offering.sections.count() == 0:
+        class_offering.is_active = False
+        class_offering.save(update_fields=["is_active"])
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.CLASS,
+            class_offering,
+            AcademicSetupChangeLog.Action.DEACTIVATED,
+            request.user,
+            is_admin_override=False,
+            reason="last section removed",
+        )
+    return trigger_response("refreshClasses", toast=f"Left {class_offering}.")
 
 
 # ---------------------------------------------------------------------------

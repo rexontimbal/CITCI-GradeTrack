@@ -136,6 +136,55 @@ class ClassOfferingForm(StyledModelForm):
         return cleaned_data
 
 
+class ProgramHeadClassOfferingForm(StyledModelForm):
+    """Same model as ClassOfferingForm, but `sections` is restricted to the
+    acting Program Head's own in-scope sections for the active academic
+    year, `subject` is any active subject (the shared catalog — see
+    ProgramHeadSubjectForm), and there's no `semester` field — the view
+    locks it to the active semester server-side."""
+
+    subject = forms.ModelChoiceField(queryset=Subject.objects.filter(is_active=True))
+    instructor = forms.ModelChoiceField(
+        queryset=User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True),
+        required=False,
+        widget=SearchableSelectWidget(
+            search_url=reverse_lazy("academics:instructor_search"),
+            queryset=User.objects.filter(role=User.Role.INSTRUCTOR),
+        ),
+    )
+
+    class Meta:
+        model = ClassOffering
+        fields = ["subject", "sections", "schedule", "room", "instructor", "is_active"]
+
+    def __init__(self, *args, user=None, academic_year=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .scoping import sections_in_scope
+
+        qs = sections_in_scope(user)
+        if academic_year is not None:
+            qs = qs.filter(academic_year=academic_year)
+        self.fields["sections"].queryset = qs.select_related("program", "major")
+
+
+class JoinClassForm(forms.Form):
+    """"Join existing class" — add the acting head's own in-scope sections
+    to a class someone else already created for the same subject+semester,
+    instead of creating a duplicate class."""
+
+    class_offering = forms.ModelChoiceField(queryset=ClassOffering.objects.none(), label="Class to join")
+    sections = forms.ModelMultipleChoiceField(
+        queryset=Section.objects.none(), widget=forms.SelectMultiple(attrs={"size": 5}), label="Your section(s) to add"
+    )
+
+    def __init__(self, *args, class_queryset=None, sections_queryset=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["class_offering"].queryset = class_queryset
+        self.fields["sections"].queryset = sections_queryset
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+
+
 class TeachingAssignmentForm(forms.Form):
     """Not a ModelForm — academics.services.assign_instructor does the
     actual mutation + validation + logging + notifications; this form only

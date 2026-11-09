@@ -3,6 +3,7 @@
 {% block page_title %}Subjects{% endblock %}
 {% block content %}
 {% include "partials/_page_header.html" with title="Subjects" subtitle="The subject catalog used to build class offerings." %}
+{% include "partials/_override_banner.html" %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <form hx-get="{% url 'academics:subjects' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"

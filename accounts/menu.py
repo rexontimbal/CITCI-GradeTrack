@@ -21,6 +21,11 @@ MENUS = {
                 ("academics:terms", "Academic Years & Semesters", "calendar"),
                 ("academics:programs", "Programs", "folder"),
                 ("academics:majors", "Majors", "folder"),
+            ],
+        },
+        {
+            "label": "Override",
+            "items": [
                 ("academics:sections", "Sections", "grid"),
                 ("academics:subjects", "Subjects", "book"),
                 ("academics:classes", "Classes", "chalkboard"),
@@ -61,10 +66,19 @@ MENUS = {
             ],
         },
         {
-            "label": "Academics",
+            "label": "My Program",
             "items": [
+                ("academics:ph_sections", "Sections", "grid"),
+                ("academics:ph_subjects", "Subjects", "book"),
                 ("academics:program_head_classes", "Classes", "chalkboard"),
+                ("academics:class_lists", "Class Lists", "clipboard"),
                 ("academics:teaching_loads", "Teaching Loads", "chart"),
+                ("academics:offerings_import", "Import Class Offerings", "upload"),
+            ],
+        },
+        {
+            "label": "Grades",
+            "items": [
                 ("approvals:index", "Grade Approvals", "check-circle"),
                 ("forecasting:at_risk", "At-Risk Students", "alert"),
             ],

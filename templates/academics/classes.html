@@ -3,6 +3,7 @@
 {% block page_title %}Classes{% endblock %}
 {% block content %}
 {% include "partials/_page_header.html" with title="Classes" subtitle="Subject + section + instructor pairings for a semester." %}
+{% include "partials/_override_banner.html" %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <form hx-get="{% url 'academics:classes' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"

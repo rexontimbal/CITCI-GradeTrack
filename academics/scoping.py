@@ -24,17 +24,30 @@ def scope_for(user):
     major_id-or-None) tuples. major_id=None means "this program, every
     major that has no major-level head of its own" — a program-level and
     a major-level assignment for the same user are both kept, since they
-    mean different things downstream."""
+    mean different things downstream.
+
+    Memoized on the user instance: a single request's `request.user` is
+    one resolved instance shared by every context processor and view that
+    touches it, and this scope used to be recomputed (2 queries each) up
+    to 3x per request — once for the sidebar badge count, once for the
+    INC-completions badge, once for the page's own class list. A fresh
+    request always gets a freshly-queried `User` instance, so caching here
+    never leaks across requests or users."""
     if user.is_admin_role:
         return None
     if not user.is_program_head:
         return set()
+
+    cached = getattr(user, "_gradetrack_scope_cache", None)
+    if cached is not None:
+        return cached
 
     scope = set()
     for program_id in Program.objects.filter(program_head=user).values_list("id", flat=True):
         scope.add((program_id, None))
     for program_id, major_id in Major.objects.filter(program_head=user).values_list("program_id", "id"):
         scope.add((program_id, major_id))
+    user._gradetrack_scope_cache = scope
     return scope
 
 

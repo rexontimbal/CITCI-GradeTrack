@@ -284,12 +284,33 @@ class SectionListView(RoleRequiredMixin, EntityListView):
 
 
 class SectionFormView(RoleRequiredMixin, EntityFormView):
+    """Admin's Sections CRUD — normally the Program Head's own job (see
+    academics:ph_sections); every save here is logged as an admin
+    override."""
+
     allowed_roles = (ADMIN,)
     model = Section
     form_class = SectionForm
     refresh_event = "refreshSections"
     modal_title_create = "Add Section"
     modal_title_edit = "Edit Section"
+
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        is_create = obj is None
+        form = self.form_class(request.POST, instance=obj)
+        if not form.is_valid():
+            return render(request, self.form_template, self.get_context(request, form, obj))
+        saved = form.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SECTION,
+            saved,
+            AcademicSetupChangeLog.Action.CREATED if is_create else AcademicSetupChangeLog.Action.UPDATED,
+            request.user,
+            is_admin_override=True,
+        )
+        verb = "updated" if obj else "created"
+        return trigger_response(self.refresh_event, toast=f"Section {verb}.")
 
 
 class SectionDeleteView(RoleRequiredMixin, EntityDeleteView):
@@ -475,12 +496,35 @@ class SubjectListView(RoleRequiredMixin, EntityListView):
 
 
 class SubjectFormView(RoleRequiredMixin, EntityFormView):
+    """Admin's Subjects CRUD — a shared-catalog subject (program=None) is
+    admin-only by design (see academics.scoping.subjects_editable_by); a
+    program/major-tagged subject is normally the owning Program Head's own
+    job (see academics:ph_subjects). Every save here is logged as an
+    admin override regardless of which case it is."""
+
     allowed_roles = (ADMIN,)
     model = Subject
     form_class = SubjectForm
     refresh_event = "refreshSubjects"
     modal_title_create = "Add Subject"
     modal_title_edit = "Edit Subject"
+
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        is_create = obj is None
+        form = self.form_class(request.POST, instance=obj)
+        if not form.is_valid():
+            return render(request, self.form_template, self.get_context(request, form, obj))
+        saved = form.save()
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.SUBJECT,
+            saved,
+            AcademicSetupChangeLog.Action.CREATED if is_create else AcademicSetupChangeLog.Action.UPDATED,
+            request.user,
+            is_admin_override=True,
+        )
+        verb = "updated" if obj else "created"
+        return trigger_response(self.refresh_event, toast=f"Subject {verb}.")
 
 
 class SubjectDeleteView(RoleRequiredMixin, EntityDeleteView):
@@ -634,6 +678,7 @@ class ClassFormView(RoleRequiredMixin, EntityFormView):
 
     def post(self, request, pk=None):
         obj = self.get_object(pk)
+        is_create = obj is None
         old_instructor = obj.instructor if obj else None
         form = self.form_class(request.POST, instance=obj)
         if not form.is_valid():
@@ -652,10 +697,18 @@ class ClassFormView(RoleRequiredMixin, EntityFormView):
                 form.add_error(None, exc.messages[0])
                 return render(request, self.form_template, self.get_context(request, form, obj))
 
-        form.save()
+        saved = form.save()
 
         if instructor_changed:
             log_and_notify_instructor_change(obj, old_instructor, new_instructor, request.user, is_admin_override=True)
+
+        _log_academic_setup_change(
+            AcademicSetupChangeLog.ModelName.CLASS,
+            saved,
+            AcademicSetupChangeLog.Action.CREATED if is_create else AcademicSetupChangeLog.Action.UPDATED,
+            request.user,
+            is_admin_override=True,
+        )
 
         verb = "updated" if obj else "created"
         return trigger_response(self.refresh_event, toast=f"Class {verb}.")
@@ -683,8 +736,16 @@ class ClassToggleActiveView(RoleRequiredMixin, ToggleActiveView):
 
 
 def _can_manage_roster(user, class_offering):
-    """ADMIN can manage any class's roster; an INSTRUCTOR only their own."""
-    return user.is_admin_role or (user.is_instructor and class_offering.instructor_id == user.id)
+    """ADMIN can manage any class's roster; an INSTRUCTOR only their own;
+    a PROGRAM_HEAD only a class with at least one of their own in-scope
+    sections (shared classes are manageable by every head sharing them)."""
+    if user.is_admin_role:
+        return True
+    if user.is_instructor:
+        return class_offering.instructor_id == user.id
+    if user.is_program_head:
+        return class_offering.sections.filter(pk__in=scoping.sections_in_scope(user)).exists()
+    return False
 
 
 def _get_class_offering_for_viewer(request, pk):
@@ -1093,16 +1154,20 @@ def _roster_context(class_offering):
     return {"class_offering": class_offering, "roster_entries": roster_entries}
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_lists_home(request):
     active = Semester.objects.filter(is_active=True).first()
+    scoped_classes = (
+        ClassOffering.objects.all() if request.user.is_admin_role else scoping.classes_in_scope(request.user)
+    )
+
     class_id = request.GET.get("class")
     class_offering = None
     if class_id:
-        class_offering = get_object_or_404(ClassOffering, pk=class_id)
+        class_offering = get_object_or_404(scoped_classes, pk=class_id)
     elif active:
         class_offering = (
-            ClassOffering.objects.filter(semester=active)
+            scoped_classes.filter(semester=active)
             .order_by("-semester__academic_year__start_year", "subject__code")
             .first()
         )
@@ -1120,9 +1185,11 @@ def class_lists_home(request):
     return render(request, "academics/class_lists.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_add_section(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not _can_manage_roster(request.user, class_offering):
+        raise PermissionDenied("You can only manage your own classes' class lists.")
     section_id = request.POST.get("section")
     section = get_object_or_404(class_offering.sections, pk=section_id)
     students = User.objects.filter(role=User.Role.STUDENT, student_profile__section=section)
@@ -1141,9 +1208,11 @@ def class_list_add_section(request, pk):
     return render(request, "academics/_class_list_roster.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_add_students_form(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not _can_manage_roster(request.user, class_offering):
+        raise PermissionDenied("You can only manage your own classes' class lists.")
     already_listed_ids = class_offering.roster_entries.values_list("student_id", flat=True)
     available_students = (
         User.objects.filter(role=User.Role.STUDENT)
@@ -1162,9 +1231,11 @@ def class_list_add_students_form(request, pk):
     return render(request, "academics/_class_list_add_students_modal.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_add_students_submit(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not _can_manage_roster(request.user, class_offering):
+        raise PermissionDenied("You can only manage your own classes' class lists.")
     student_ids = request.POST.getlist("student_ids")
     for student_id in student_ids:
         ClassRosterEntry.objects.get_or_create(
@@ -1174,9 +1245,11 @@ def class_list_add_students_submit(request, pk):
     return trigger_response("refreshRoster", toast=f"Added {count} student{'s' if count != 1 else ''} to the class list.")
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_mark_dropped(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
+    if not _can_manage_roster(request.user, entry.class_offering):
+        raise PermissionDenied("You can only manage your own classes' class lists.")
     entry.status = ClassRosterEntry.Status.DROPPED
     entry.date_dropped = date.today()
     entry.save(update_fields=["status", "date_dropped"])
@@ -1184,9 +1257,11 @@ def class_list_mark_dropped(request, pk):
     return render(request, "academics/_class_list_roster.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_restore(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
+    if not _can_manage_roster(request.user, entry.class_offering):
+        raise PermissionDenied("You can only manage your own classes' class lists.")
     entry.status = ClassRosterEntry.Status.ACTIVE
     entry.date_dropped = None
     entry.save(update_fields=["status", "date_dropped"])
@@ -1203,7 +1278,7 @@ def class_list_restore(request, pk):
 _IMPORT_SESSION_KEY = "class_list_import_preview"
 
 
-@role_required(ADMIN, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_import_template(request):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -1222,7 +1297,7 @@ def class_list_import_template(request):
     return response
 
 
-@role_required(ADMIN, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_import_upload(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -1264,7 +1339,7 @@ def class_list_import_upload(request, pk):
     )
 
 
-@role_required(ADMIN, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_import_confirm(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -1303,7 +1378,7 @@ def class_list_import_confirm(request, pk):
 _OFFERINGS_IMPORT_SESSION_KEY = "offerings_import_preview"
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def offerings_import_template(request):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -1322,7 +1397,7 @@ def offerings_import_template(request):
     return response
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def offerings_import(request):
     context = {
         "page_title": "Import Class Offerings",
@@ -1332,8 +1407,9 @@ def offerings_import(request):
     return render(request, "academics/offerings_import.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def offerings_import_upload(request):
+    scope_user = None if request.user.is_admin_role else request.user
     semester_id = request.POST.get("semester")
     target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
     if target_semester is None:
@@ -1352,10 +1428,10 @@ def offerings_import_upload(request):
     name = uploaded_file.name.lower()
     try:
         if name.endswith(".docx"):
-            preview = parse_offerings_docx_for_preview(uploaded_file, target_semester)
+            preview = parse_offerings_docx_for_preview(uploaded_file, target_semester, user=scope_user)
         else:
             index, data_rows = parse_offerings_xlsx(uploaded_file)
-            preview = build_offerings_preview(index, data_rows, target_semester)
+            preview = build_offerings_preview(index, data_rows, target_semester, user=scope_user)
     except SpreadsheetImportError as exc:
         return render(
             request,
@@ -1368,8 +1444,9 @@ def offerings_import_upload(request):
     return render(request, "academics/_offerings_import_preview.html", context)
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def offerings_import_confirm(request):
+    scope_user = None if request.user.is_admin_role else request.user
     semester_id = request.POST.get("semester")
     target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
 
@@ -1381,7 +1458,15 @@ def offerings_import_confirm(request):
             {"error": "Your preview expired — upload the file again."},
         )
 
-    counts = commit_offerings_import(stashed["classes"], target_semester)
+    try:
+        counts = commit_offerings_import(stashed["classes"], target_semester, user=scope_user)
+    except PermissionDenied:
+        del request.session[_OFFERINGS_IMPORT_SESSION_KEY]
+        return render(
+            request,
+            "academics/_offerings_import_result.html",
+            {"error": "One or more rows are outside your scope — upload the file again."},
+        )
     del request.session[_OFFERINGS_IMPORT_SESSION_KEY]
     return render(
         request,
@@ -1626,10 +1711,13 @@ def instructor_search(request):
     return render(request, "partials/_searchable_select_options.html", {"options": options})
 
 
-@role_required(ADMIN)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_search(request):
     query = request.GET.get("q", "").strip()
-    qs = ClassOffering.objects.select_related("subject").prefetch_related("sections")
+    if request.user.is_admin_role:
+        qs = ClassOffering.objects.select_related("subject").prefetch_related("sections")
+    else:
+        qs = scoping.classes_in_scope(request.user).select_related("subject").prefetch_related("sections")
     if query:
         qs = qs.filter(Q(subject__code__icontains=query) | Q(subject__title__icontains=query))
     options = [(c.pk, str(c)) for c in qs.order_by("-semester__academic_year__start_year", "subject__code")[:20]]

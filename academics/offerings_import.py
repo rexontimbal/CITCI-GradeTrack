@@ -11,11 +11,13 @@ instructor account."""
 
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
 from accounts.models import User
 from core.importing import SpreadsheetImportError, get_cell, parse_spreadsheet_file  # noqa: F401 (re-exported)
 
+from . import scoping
 from .management.commands.import_offerings_docx import normalize_instructor, normalize_space, parse_docx
 from .models import ClassOffering, Major, Program, Section, Subject
 
@@ -77,7 +79,7 @@ def _resolve_section(program, major, year_level, academic_year):
 
 
 def _classify_row(row_number, semester_label, program_code, major_code, year_level_raw, code, description, units_raw,
-                   room, schedule, instructor_name, target_semester):
+                   room, schedule, instructor_name, target_semester, user=None):
     entry = {
         "row_number": row_number,
         "semester_label": semester_label,
@@ -117,6 +119,11 @@ def _classify_row(row_number, semester_label, program_code, major_code, year_lev
     if error:
         entry["kind"] = "invalid"
         entry["reason"] = error
+        return entry
+
+    if user is not None and not scoping.is_in_scope(user, program.id, major.id if major else None):
+        entry["kind"] = "invalid"
+        entry["reason"] = f'{program.code}{"-" + major.code if major else ""} is outside your scope.'
         return entry
 
     section, error = _resolve_section(program, major, year_level, target_semester.academic_year)
@@ -175,10 +182,11 @@ def _group_into_classes(valid_rows):
     return [groups[k] for k in order]
 
 
-def build_offerings_preview(index, data_rows, target_semester):
+def build_offerings_preview(index, data_rows, target_semester, user=None):
     """Classifies every row, never writing anything. Returns a dict with
     the raw per-row results (for an error table) plus grouped `classes`
-    ready for commit_offerings_import."""
+    ready for commit_offerings_import. When `user` is a scoped Program
+    Head (not None/admin), rows outside their scope are marked invalid."""
     rows = []
     for row_number, row in enumerate(data_rows, start=2):  # row 1 is the header
         if row is None or not any(row):
@@ -197,6 +205,7 @@ def build_offerings_preview(index, data_rows, target_semester):
                 get_cell(row, index, "schedule"),
                 get_cell(row, index, "instructor"),
                 target_semester,
+                user=user,
             )
         )
     return _finalize_preview(rows)
@@ -232,7 +241,7 @@ _DOCX_PROGRAM_CODE = {False: None, True: "TCP"}  # is_tcp -> program code; non-T
 _DOCX_MAJOR_NAME_TO_CODE = {"English": "ENG", "Social Studies": "SS"}
 
 
-def parse_offerings_docx_for_preview(uploaded_file, target_semester):
+def parse_offerings_docx_for_preview(uploaded_file, target_semester, user=None):
     """Reuses import_offerings_docx.parse_docx, reshapes its rows into the
     same preview-row shape build_offerings_preview produces, filtered to
     this target semester's term (the docx covers both 1st and 2nd sem in
@@ -258,17 +267,21 @@ def parse_offerings_docx_for_preview(uploaded_file, target_semester):
                 docx_row["schedule"],
                 docx_row["instructor"],
                 target_semester,
+                user=user,
             )
         )
     return _finalize_preview(rows)
 
 
-def commit_offerings_import(classes, target_semester):
+def commit_offerings_import(classes, target_semester, user=None):
     """One atomic transaction. `classes` is the grouped list from a
     preview's "classes" key — never re-parses the uploaded file. An
     instructor is only ever set when matched by exact name; otherwise the
     class is created Unassigned, per spec ("never auto-create or
-    auto-merge instructors")."""
+    auto-merge instructors"). When `user` is a scoped Program Head, every
+    row's program/major is re-checked against scope_for(user) here too —
+    the preview is session-stashed and round-tripped through the browser,
+    never trusted blindly at commit time."""
     subjects_created = 0
     classes_created = 0
     shared_classes_detected = 0
@@ -276,6 +289,10 @@ def commit_offerings_import(classes, target_semester):
 
     with transaction.atomic():
         for cls in classes:
+            if user is not None:
+                for section in Section.objects.filter(pk__in=cls["section_ids"]):
+                    if not scoping.is_in_scope(user, section.program_id, section.major_id):
+                        raise PermissionDenied("One or more rows are outside your scope.")
             subject = Subject.objects.filter(code=cls["code"]).first()
             if subject is None:
                 program_ids = set(cls["program_ids"])

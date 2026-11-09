@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+from django.core.exceptions import PermissionDenied
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -1539,3 +1540,196 @@ class SharedClassJoinLeaveTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)  # has no section in this class yet
         response = self.client.get(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 403)
+
+
+class ProgramHeadClassListsScopeTests(TeachingAssignmentTestBase):
+    """Class Lists page + roster actions, scoped via _can_manage_roster."""
+
+    def setUp(self):
+        super().setUp()
+        self.class_offering.sections.set([self.section_a])
+        self.student = make_user(User.Role.STUDENT, "ph_cl_student")
+        self.entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
+
+    def test_head_can_view_class_lists_for_own_class(self):
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:class_lists") + f"?class={self.class_offering.pk}")
+        self.assertEqual(response.status_code, 200)
+
+    def test_other_head_gets_404_picking_class_outside_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:class_lists") + f"?class={self.class_offering.pk}")
+        self.assertEqual(response.status_code, 404)
+
+    def test_other_head_cannot_mark_dropped_outside_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(reverse("academics:class_list_mark_dropped", args=[self.entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_other_head_cannot_add_section_outside_scope(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:class_list_add_section", args=[self.class_offering.pk]),
+            {"section": self.section_a.pk},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_own_head_can_mark_dropped(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(reverse("academics:class_list_mark_dropped", args=[self.entry.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.status, ClassRosterEntry.Status.DROPPED)
+
+    def test_class_search_scoped_to_own_classes(self):
+        other_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        other_class.sections.set([self.section_b])
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:class_search"))
+        self.assertContains(response, str(self.class_offering))
+        self.assertNotContains(response, str(other_class))
+
+
+class ProgramHeadImportOfferingsScopeTests(TestCase):
+    """Import Class Offerings — rows outside a Program Head's scope are
+    rejected in preview with a reason; admin stays unrestricted."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
+        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
+        Section.objects.create(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="")
+        self.other_program = Program.objects.create(code="BSIT", name="BS IT")
+        Section.objects.create(program=self.other_program, academic_year=self.ay, year_level=1, name="")
+
+        self.head = make_user(User.Role.PROGRAM_HEAD, "ph_import_head")
+        self.major.program_head = self.head
+        self.major.save()
+
+    def _index(self):
+        return {
+            "semester": 0, "program": 1, "major": 2, "year level": 3, "course code": 4,
+            "description": 5, "units": 6, "room": 7, "schedule": 8, "instructor": 9,
+        }
+
+    def test_row_outside_scope_is_rejected_with_reason(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [("FIRST", "BSIT", "", "1", "IT101", "Programming 1", "3", "", "", "")]
+        preview = build_offerings_preview(self._index(), rows, self.semester, user=self.head)
+        self.assertEqual(preview["invalid_count"], 1)
+        self.assertIn("outside your scope", preview["rows"][0]["reason"])
+
+    def test_row_in_scope_is_accepted(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [("FIRST", "BSED", "ENG", "1", "ENG201", "Lit 201", "3", "", "", "")]
+        preview = build_offerings_preview(self._index(), rows, self.semester, user=self.head)
+        self.assertEqual(preview["invalid_count"], 0)
+        self.assertEqual(preview["new_class_count"], 1)
+
+    def test_admin_unrestricted_by_default(self):
+        from .offerings_import import build_offerings_preview
+
+        rows = [("FIRST", "BSIT", "", "1", "IT102", "Programming 2", "3", "", "", "")]
+        preview = build_offerings_preview(self._index(), rows, self.semester)
+        self.assertEqual(preview["invalid_count"], 0)
+
+    def test_commit_rejects_out_of_scope_rows_defensively(self):
+        from .offerings_import import commit_offerings_import
+
+        other_section = Section.objects.get(program=self.other_program)
+        classes = [
+            {
+                "code": "IT103", "description": "Programming 3", "units": "3", "room": "", "schedule": "",
+                "instructor_name": "", "program_ids": [self.other_program.id], "section_ids": [other_section.id],
+                "matched_instructor_id": None,
+            },
+        ]
+        with self.assertRaises(PermissionDenied):
+            commit_offerings_import(classes, self.semester, user=self.head)
+        self.assertFalse(Subject.objects.filter(code="IT103").exists())
+
+    def test_non_admin_can_reach_import_page(self):
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("academics:offerings_import"))
+        self.assertEqual(response.status_code, 200)
+
+
+class AdminOverrideAuditTests(TeachingAssignmentTestBase):
+    """Admin editing Sections/Subjects/Classes through the Override menu
+    group is logged as an admin override; a Program Head editing their
+    own scope is not. Both surface, correctly labeled, on the Audit Log
+    page (accounts.audit.collect_audit_rows)."""
+
+    def test_admin_section_edit_logs_override(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:section_edit", args=[self.section_a.pk]),
+            {"program": self.program_a.pk, "major": "", "academic_year": self.ay.pk, "year_level": "2", "name": "A"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        log = AcademicSetupChangeLog.objects.get(
+            model_name=AcademicSetupChangeLog.ModelName.SECTION, object_id=self.section_a.pk
+        )
+        self.assertTrue(log.is_admin_override)
+        self.assertEqual(log.actor, self.admin)
+
+    def test_program_head_section_edit_is_not_an_override(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.head_a)
+        self.client.post(
+            reverse("academics:ph_section_edit", args=[self.section_a.pk]),
+            {"program": self.program_a.pk, "major": "", "year_level": "2", "name": "A"},
+        )
+        log = AcademicSetupChangeLog.objects.get(
+            model_name=AcademicSetupChangeLog.ModelName.SECTION, object_id=self.section_a.pk
+        )
+        self.assertFalse(log.is_admin_override)
+
+    def test_admin_subject_edit_logs_override(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:subject_edit", args=[self.subject.pk]),
+            {
+                "code": self.subject.code, "title": self.subject.title, "units": "2.0",
+                "program": "", "major": "", "year_level": "", "term": self.subject.term, "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        log = AcademicSetupChangeLog.objects.get(
+            model_name=AcademicSetupChangeLog.ModelName.SUBJECT, object_id=self.subject.pk
+        )
+        self.assertTrue(log.is_admin_override)
+
+    def test_admin_class_edit_logs_override(self):
+        from .models import AcademicSetupChangeLog
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:class_edit", args=[self.class_offering.pk]),
+            {
+                "subject": self.subject.pk, "sections": [self.section_a.pk], "semester": self.semester.pk,
+                "instructor": "", "schedule": "", "room": "", "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        log = AcademicSetupChangeLog.objects.get(
+            model_name=AcademicSetupChangeLog.ModelName.CLASS, object_id=self.class_offering.pk
+        )
+        self.assertTrue(log.is_admin_override)
+
+    def test_override_shows_correctly_labeled_on_audit_log_page(self):
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("academics:section_edit", args=[self.section_a.pk]),
+            {"program": self.program_a.pk, "major": "", "academic_year": self.ay.pk, "year_level": "2", "name": "A"},
+        )
+        response = self.client.get(reverse("accounts:audit_log"))
+        self.assertContains(response, "admin override")

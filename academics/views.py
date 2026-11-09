@@ -53,6 +53,7 @@ from .services import (
     commit_copy,
     default_source_semester,
     log_and_notify_instructor_change,
+    notify_program_head_assignment,
     teaching_load_rows,
 )
 
@@ -164,6 +165,17 @@ class ProgramFormView(RoleRequiredMixin, EntityFormView):
     modal_title_create = "Add Program"
     modal_title_edit = "Edit Program"
 
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        old_head = obj.program_head if obj else None
+        form = self.form_class(request.POST, instance=obj)
+        if form.is_valid():
+            program = form.save()
+            notify_program_head_assignment(program, old_head, program.program_head)
+            verb = "updated" if obj else "created"
+            return trigger_response(self.refresh_event, toast=f"Program {verb}.")
+        return render(request, self.form_template, self.get_context(request, form, obj))
+
 
 class ProgramDeleteView(RoleRequiredMixin, EntityDeleteView):
     allowed_roles = (ADMIN,)
@@ -196,7 +208,7 @@ class MajorListView(RoleRequiredMixin, EntityListView):
     refresh_event = "refreshMajors"
 
     def apply_filters(self, request, qs):
-        qs = qs.select_related("program")
+        qs = qs.select_related("program", "program_head")
         program = request.GET.get("program")
         if program:
             qs = qs.filter(program_id=program)
@@ -213,6 +225,17 @@ class MajorFormView(RoleRequiredMixin, EntityFormView):
     refresh_event = "refreshMajors"
     modal_title_create = "Add Major"
     modal_title_edit = "Edit Major"
+
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        old_head = obj.program_head if obj else None
+        form = self.form_class(request.POST, instance=obj)
+        if form.is_valid():
+            major = form.save()
+            notify_program_head_assignment(major, old_head, major.program_head)
+            verb = "updated" if obj else "created"
+            return trigger_response(self.refresh_event, toast=f"Major {verb}.")
+        return render(request, self.form_template, self.get_context(request, form, obj))
 
 
 class MajorDeleteView(RoleRequiredMixin, EntityDeleteView):

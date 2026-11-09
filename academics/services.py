@@ -127,6 +127,29 @@ def teaching_load_rows(semester, programs, program_id=None, instructor_id=None):
 
 
 # ---------------------------------------------------------------------------
+# Program Head assignment notification — Admin assigns a head on the
+# Programs/Majors pages; the new head is notified. Modeled directly on
+# log_and_notify_instructor_change's no-op guard (re-saving the same head
+# is never notified twice).
+# ---------------------------------------------------------------------------
+
+
+def notify_program_head_assignment(entity, old_head, new_head):
+    from dashboard.services import notify
+
+    old_id = old_head.id if old_head else None
+    new_id = new_head.id if new_head else None
+    if old_id == new_id or new_head is None:
+        return
+    notify(
+        new_head,
+        "You've been assigned as Program Head",
+        f"You now manage {entity}.",
+        link="/academics/my-program/sections/",
+    )
+
+
+# ---------------------------------------------------------------------------
 # "Copy classes from previous semester" — admin picks a source semester
 # (defaults to the same term, previous A.Y.), previews the classes that
 # would be created for the active/target semester, then confirms. The

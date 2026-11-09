@@ -56,7 +56,7 @@
                     <th class="px-4 py-3">Name</th>
                     <th class="px-4 py-3">Username</th>
                     <th class="px-4 py-3">Role</th>
-                    <th class="px-4 py-3">Program/Section</th>
+                    <th class="px-4 py-3">Program/Section/Scope</th>
                     <th class="px-4 py-3">Status</th>
                     <th class="px-4 py-3">Last Login</th>
                     <th class="px-4 py-3 text-right">Actions</th>
@@ -74,6 +74,8 @@
                     <td class="px-4 py-3 text-gray-700">
                         {% if u.role == "STUDENT" and u.student_profile %}
                             {{ u.student_profile.section|default:"—" }}
+                        {% elif u.role == "PROGRAM_HEAD" %}
+                            {{ u.program_head_scope_label|default:"—" }}
                         {% else %}—{% endif %}
                     </td>
                     <td class="px-4 py-3">

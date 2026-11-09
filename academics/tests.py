@@ -1192,3 +1192,89 @@ class ScopeForHelperTests(TeachingAssignmentTestBase):
 
         self.assertIn(self.program_b, programs_in_scope(self.head_b))
         self.assertNotIn(self.program_a, programs_in_scope(self.head_b))
+
+
+class MajorFormProgramHeadFieldTests(TeachingAssignmentTestBase):
+    def test_admin_can_assign_a_major_level_head_via_the_majors_page(self):
+        major = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        major_head = make_user(User.Role.PROGRAM_HEAD, "major_form_head")
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("academics:major_edit", args=[major.pk]),
+            {"program": self.program_b.pk, "code": "ENG", "name": "English", "program_head": major_head.pk, "is_active": "on"},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        major.refresh_from_db()
+        self.assertEqual(major.program_head, major_head)
+
+    def test_majors_table_renders_program_head_column(self):
+        major_head = make_user(User.Role.PROGRAM_HEAD, "major_table_head")
+        Major.objects.create(program=self.program_b, code="SS", name="Social Studies", program_head=major_head)
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("academics:majors"))
+        self.assertContains(response, major_head.full_name)
+
+
+class ProgramHeadAssignmentNotificationTests(TeachingAssignmentTestBase):
+    def test_assigning_a_program_head_notifies_once(self):
+        from dashboard.models import Notification
+
+        new_program = Program.objects.create(code="BSCS", name="BS Computer Science")
+        unassigned_head = make_user(User.Role.PROGRAM_HEAD, "notif_unassigned_head")
+        self.client.force_login(self.admin)
+
+        self.client.post(
+            reverse("academics:program_edit", args=[new_program.pk]),
+            {"code": "BSCS", "name": "BS Computer Science", "program_head": unassigned_head.pk, "is_active": "on"},
+        )
+        self.assertEqual(
+            Notification.objects.filter(recipient=unassigned_head, title="You've been assigned as Program Head").count(), 1
+        )
+
+        # Re-saving with the SAME head must not notify again (no-op guard).
+        self.client.post(
+            reverse("academics:program_edit", args=[new_program.pk]),
+            {"code": "BSCS", "name": "BS Computer Science", "program_head": unassigned_head.pk, "is_active": "on"},
+        )
+        self.assertEqual(
+            Notification.objects.filter(recipient=unassigned_head, title="You've been assigned as Program Head").count(), 1
+        )
+
+    def test_assigning_a_major_level_head_notifies(self):
+        from dashboard.models import Notification
+
+        major = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        major_head = make_user(User.Role.PROGRAM_HEAD, "notif_major_head")
+        self.client.force_login(self.admin)
+
+        self.client.post(
+            reverse("academics:major_edit", args=[major.pk]),
+            {"program": self.program_b.pk, "code": "ENG", "name": "English", "program_head": major_head.pk, "is_active": "on"},
+        )
+        self.assertTrue(
+            Notification.objects.filter(recipient=major_head, title="You've been assigned as Program Head").exists()
+        )
+
+
+class UsersPageScopeDisplayTests(TeachingAssignmentTestBase):
+    def test_program_level_head_scope_label(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("accounts:users"), {"role": "PROGRAM_HEAD"})
+        self.assertContains(response, "BSED (all majors)")
+
+    def test_major_level_head_scope_label(self):
+        major = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        major_head = make_user(User.Role.PROGRAM_HEAD, "scope_label_major_head")
+        major.program_head = major_head
+        major.save()
+
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("accounts:users"), {"role": "PROGRAM_HEAD"})
+        self.assertContains(response, "BSED – English")
+
+    def test_unassigned_head_shows_unassigned(self):
+        make_user(User.Role.PROGRAM_HEAD, "scope_label_unassigned")
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("accounts:users"), {"role": "PROGRAM_HEAD"})
+        self.assertContains(response, "Unassigned")

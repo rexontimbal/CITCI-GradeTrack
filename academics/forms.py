@@ -34,7 +34,7 @@ class ProgramForm(StyledModelForm):
 class MajorForm(StyledModelForm):
     class Meta:
         model = Major
-        fields = ["program", "code", "name", "is_active"]
+        fields = ["program", "code", "name", "program_head", "is_active"]
 
 
 class SectionForm(StyledModelForm):

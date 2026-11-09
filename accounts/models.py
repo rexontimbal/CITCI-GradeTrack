@@ -58,6 +58,34 @@ class User(AbstractUser):
         letters = (self.first_name[:1] + self.last_name[:1]).upper()
         return letters or self.username[:2].upper()
 
+    @property
+    def program_head_scope_label(self):
+        """"BSED – English, BSED – Social Studies" / "BSIT (all majors)" —
+        formats academics.scoping.scope_for(self) for display (Users page,
+        Program Head dashboard). Empty string for anyone not a Program
+        Head, or one with no assignment yet. Lazy import — academics
+        depends on accounts, not the other way around."""
+        if not self.is_program_head:
+            return ""
+        from academics.models import Program
+        from academics.scoping import scope_for
+
+        scope = scope_for(self)
+        if not scope:
+            return "Unassigned"
+        programs = {p.id: p for p in Program.objects.filter(pk__in={program_id for program_id, _ in scope})}
+        labels = []
+        for program_id, major_id in sorted(scope, key=lambda t: (t[0], t[1] or 0)):
+            program = programs.get(program_id)
+            if program is None:
+                continue
+            if major_id is None:
+                labels.append(f"{program.code} (all majors)")
+            else:
+                major = next((m for m in program.majors.all() if m.id == major_id), None)
+                labels.append(f"{program.code} – {major.name}" if major else program.code)
+        return ", ".join(labels)
+
     def __str__(self):
         return f"{self.full_name} ({self.get_role_display()})"
 

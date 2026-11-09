@@ -61,6 +61,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "accounts.middleware.ForceFirstLoginStepsMiddleware",
+    "accounts.middleware.HtmxLoginRedirectMiddleware",
     "axes.middleware.AxesMiddleware",
 ]
 

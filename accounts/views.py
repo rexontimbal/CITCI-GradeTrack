@@ -110,7 +110,7 @@ def force_password_change(request):
             return redirect("dashboard:home")
     else:
         form = ForcedPasswordChangeForm(request.user)
-    return render(request, "accounts/force_password_change.html", {"form": form})
+    return render(request, "accounts/force_password_change.html", {"form": form, "suppress_polling": True})
 
 
 @login_required
@@ -124,7 +124,9 @@ def privacy_consent(request):
         request.user.save(update_fields=["privacy_consent_at"])
         return redirect("dashboard:home")
     return render(
-        request, "accounts/privacy_consent.html", {"institution_settings": InstitutionSettings.get_solo()}
+        request,
+        "accounts/privacy_consent.html",
+        {"institution_settings": InstitutionSettings.get_solo(), "suppress_polling": True},
     )
 
 

@@ -136,6 +136,102 @@ class ForcedPasswordChangeAfterAdminActionTests(TestCase):
         self.assertRedirects(dashboard_response, reverse("accounts:force_password_change"))
 
 
+class HtmxAwareRedirectTests(TestCase):
+    """Regression tests for the nested-layout bug: the topbar's
+    notification bell polls dashboard:bell every 60s via HTMX
+    (hx-trigger="load, every 60s") — a bare 302 from a forced-step
+    redirect, or from an expired-session login_required redirect, used to
+    get followed and *swapped into the bell's own small fragment* by
+    htmx, nesting a whole second sidebar/topbar layout inside the page.
+    Every one of these must come back as HX-Redirect (204, no body)
+    instead, so the browser does a real navigation."""
+
+    def _htmx_get(self, url, current_url=None):
+        headers = {"HTTP_HX-Request": "true"}
+        if current_url:
+            headers["HTTP_HX-Current-URL"] = current_url
+        return self.client.get(url, **headers)
+
+    def test_htmx_aware_redirect_helper_returns_hx_redirect_for_htmx(self):
+        from django.test import RequestFactory
+
+        from core.htmx import htmx_aware_redirect
+
+        request = RequestFactory().get("/", HTTP_HX_REQUEST="true")
+        response = htmx_aware_redirect(request, "/somewhere/")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], "/somewhere/")
+        self.assertEqual(response.content, b"")
+
+    def test_htmx_aware_redirect_helper_is_a_normal_redirect_otherwise(self):
+        from django.test import RequestFactory
+
+        from core.htmx import htmx_aware_redirect
+
+        request = RequestFactory().get("/")
+        response = htmx_aware_redirect(request, "/somewhere/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/somewhere/")
+
+    def test_privacy_consent_pending_bell_poll_gets_hx_redirect_not_nested_layout(self):
+        user = make_user(User.Role.INSTRUCTOR, "htmx_privacy_pending")
+        user.privacy_consent_at = None
+        user.save(update_fields=["privacy_consent_at"])
+        self.client.force_login(user)
+
+        response = self._htmx_get(reverse("dashboard:bell"))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], reverse("accounts:privacy_consent"))
+        self.assertNotIn(b"<aside", response.content)
+
+    def test_must_change_password_bell_poll_gets_hx_redirect(self):
+        user = make_user(User.Role.INSTRUCTOR, "htmx_must_change")
+        user.must_change_password = True
+        user.save(update_fields=["must_change_password"])
+        self.client.force_login(user)
+
+        response = self._htmx_get(reverse("dashboard:bell"))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], reverse("accounts:force_password_change"))
+        self.assertNotIn(b"<aside", response.content)
+
+    def test_expired_session_bell_poll_gets_hx_redirect_to_login_with_next(self):
+        # No login at all — same end state as an expired session once
+        # AuthenticationMiddleware sees no valid session.
+        response = self._htmx_get(
+            reverse("dashboard:bell"), current_url="http://testserver/dashboard/"
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], f"{reverse('accounts:login')}?next=/dashboard/")
+        self.assertNotIn(b"<aside", response.content)
+
+    def test_expired_session_bell_poll_without_current_url_still_redirects(self):
+        """No HX-Current-URL header at all (e.g. an older htmx version, or
+        a non-browser client) — must still HX-Redirect, just without a
+        meaningful ?next=."""
+        response = self._htmx_get(reverse("dashboard:bell"))
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(response["HX-Redirect"].startswith(reverse("accounts:login")))
+
+    def test_normal_non_htmx_requests_still_get_a_real_redirect(self):
+        user = make_user(User.Role.INSTRUCTOR, "htmx_normal_redirect")
+        user.must_change_password = True
+        user.save(update_fields=["must_change_password"])
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertRedirects(response, reverse("accounts:force_password_change"))
+
+    def test_forced_step_pages_do_not_poll_the_bell(self):
+        user = make_user(User.Role.INSTRUCTOR, "htmx_suppress_polling")
+        user.must_change_password = True
+        user.save(update_fields=["must_change_password"])
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("accounts:force_password_change"))
+        self.assertNotContains(response, 'id="notification-bell"')
+
+
 class ProfileEditRestrictionTests(TestCase):
     """Students (and every non-admin role) can only ever edit their own
     email from the Profile page — name/ID/role changes are admin-only, so

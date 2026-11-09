@@ -98,7 +98,9 @@ readers without moving focus.
                 </div>
             </div>
 
+            {% if not suppress_polling %}
             <div id="notification-bell" hx-get="{% url 'dashboard:bell' %}" hx-trigger="load, every 60s" hx-swap="innerHTML"></div>
+            {% endif %}
         </header>
 
         <main class="flex-1 p-4 md:p-6">

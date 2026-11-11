@@ -48,6 +48,7 @@ urlpatterns = [
     path("subjects/", views.subjects_home, name="subjects"),
     path("subjects/add/", views.subject_add, name="subject_add"),
     path("subjects/<int:pk>/edit/", views.subject_edit, name="subject_edit"),
+    path("subjects/<int:pk>/correct-code/", views.subject_correct_code, name="subject_correct_code"),
     path("subjects/<int:pk>/toggle-active/", views.SubjectToggleActiveView.as_view(), name="subject_toggle_active"),
     path(
         "curriculum-entries/<int:pk>/remove/",

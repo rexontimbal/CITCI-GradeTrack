@@ -1,0 +1,34 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Correct code for {{ subject.code }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{% url 'academics:subject_correct_code' subject.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        This subject already appears in released grades. Correcting its code is an admin override and is logged.
+    </p>
+    <div>
+        <label for="{{ form.code.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">New code</label>
+        {{ form.code }}
+        {% for error in form.code.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div>
+        <label for="{{ form.reason.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Reason</label>
+        {{ form.reason }}
+        {% for error in form.reason.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Correct code
+        </button>
+    </div>
+</form>

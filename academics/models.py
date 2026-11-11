@@ -176,9 +176,23 @@ class CurriculumEntry(TimeStampedModel):
 
     class Meta:
         constraints = [
+            # A subject sits ONCE in a given program/major's curriculum,
+            # period — not once per year-level/term slot. Two constraints,
+            # not one: Postgres (and SQL generally) never treats two NULLs
+            # as equal in a unique index, so a plain (program, major,
+            # subject) constraint would silently fail to catch a TCP-style
+            # duplicate (major always NULL there) — the `condition=`
+            # partial-index split handles both cases correctly.
             models.UniqueConstraint(
-                fields=["program", "major", "year_level", "term", "subject"], name="unique_curriculum_slot"
-            )
+                fields=["program", "major", "subject"],
+                condition=models.Q(major__isnull=False),
+                name="unique_subject_per_program_major",
+            ),
+            models.UniqueConstraint(
+                fields=["program", "subject"],
+                condition=models.Q(major__isnull=True),
+                name="unique_subject_per_program_no_major",
+            ),
         ]
         ordering = ["program__code", "major__code", "year_level", "term"]
 
@@ -354,6 +368,7 @@ class AcademicSetupChangeLog(TimeStampedModel):
         SECTION_LEFT = "SECTION_LEFT", "Section left"
         ADDED_TO_CURRICULUM = "ADDED_TO_CURRICULUM", "Added to curriculum"
         REMOVED_FROM_CURRICULUM = "REMOVED_FROM_CURRICULUM", "Removed from curriculum"
+        CODE_CORRECTED = "CODE_CORRECTED", "Code corrected"
 
     model_name = models.CharField(max_length=10, choices=ModelName.choices)
     object_id = models.PositiveIntegerField()

@@ -23,7 +23,6 @@ from .forms import (
     AdminSubjectForm,
     BulkAssignInstructorForm,
     ClassOfferingForm,
-    CurriculumEntryExistingSubjectForm,
     JoinClassForm,
     MajorForm,
     ProgramForm,
@@ -31,10 +30,12 @@ from .forms import (
     ProgramHeadSectionForm,
     SectionForm,
     SemesterForm,
+    SubjectAddForm,
+    SubjectCodeCorrectionForm,
     SubjectEditForm,
-    SubjectQuickCreateForm,
     TeachingAssignmentForm,
 )
+from . import services
 from .models import (
     AcademicSetupChangeLog,
     AcademicYear,
@@ -384,6 +385,35 @@ def _log_academic_setup_change(model_name, obj, action, actor, is_admin_override
     )
 
 
+def _selected_sections_from_request(request, section_queryset):
+    """The sections multi-select's live/in-progress value, carried via
+    `?sections=<pk>&sections=<pk>` on the hx-get re-render that fires
+    when the field changes — None (not an empty list) when no `sections`
+    param is present at all, so callers can tell "nothing selected yet"
+    apart from "the field was submitted empty"."""
+    ids = request.GET.getlist("sections") or request.POST.getlist("sections")
+    if not ids:
+        return None
+    return list(section_queryset.filter(pk__in=ids))
+
+
+def _wire_live_subject_regroup(form, url):
+    """Re-renders the whole modal (recomputing the subject field's
+    curriculum-aware grouping) whenever the sections field changes —
+    same re-render-on-change mechanic as the User form's role-dependent
+    fields (templates/accounts/_user_form_modal.html)."""
+    if "sections" in form.fields:
+        form.fields["sections"].widget.attrs.update(
+            {
+                "hx-get": url,
+                "hx-include": "[name='sections']",
+                "hx-target": "#modal-content",
+                "hx-swap": "innerHTML",
+                "hx-trigger": "change",
+            }
+        )
+
+
 @role_required(PROGRAM_HEAD)
 def ph_sections(request):
     academic_year = _active_academic_year()
@@ -517,12 +547,34 @@ class SubjectToggleActiveView(RoleRequiredMixin, ToggleActiveView):
     refresh_event = "refreshSubjects"
 
 
-def _resolve_program_major_from_request(request, user):
+def _build_pills(user):
+    """One pill per major in the user's scope ("English", "Social
+    Studies" — display names, not codes); a program with no majors at
+    all (e.g. TCP) gets one pill for the program itself instead. The
+    program-level "every major with no head of its own" scope tuple
+    never gets its own pill once the program actually has majors — that
+    would be an always-empty view (no CurriculumEntry can have
+    major=None under a program that has majors)."""
+    scope = scoping.scope_for(user)
+    pills = []
+    for program_id in sorted({p for p, _ in scope}):
+        program = Program.objects.get(pk=program_id)
+        majors = list(Major.objects.filter(program=program, is_active=True).order_by("code"))
+        if majors:
+            for major in majors:
+                if scoping.is_in_scope(user, program_id, major.id):
+                    pills.append({"label": major.name, "program": program, "major": major})
+        else:
+            pills.append({"label": program.code, "program": program, "major": None})
+    return pills
+
+
+def _resolve_program_major_from_request(request, user, pills=None):
     """Resolves the (program, major-or-None) pair a Subjects prospectus
     request is showing. Admin: any program/major from ?program=/?major=
-    (or the first active program if neither given). Program Head: must be
-    within scope_for(user) — 403 otherwise — defaulting to the first scope
-    tuple if neither param is given."""
+    (or the first active program if neither given). Program Head: must
+    match one of their own pills — 403 otherwise — defaulting to the
+    first pill if neither param is given."""
     program_id = request.GET.get("program") or request.POST.get("program")
     major_id = request.GET.get("major") or request.POST.get("major")
 
@@ -535,9 +587,6 @@ def _resolve_program_major_from_request(request, user):
         major = get_object_or_404(Major, pk=major_id) if major_id else None
         return program, major
 
-    scope = scoping.scope_for(user)
-    if not scope:
-        return None, None
     if program_id:
         program = get_object_or_404(Program, pk=program_id)
         major = get_object_or_404(Major, pk=major_id) if major_id else None
@@ -545,23 +594,42 @@ def _resolve_program_major_from_request(request, user):
             raise PermissionDenied("This program/major is not under your scope.")
         return program, major
 
-    first_program_id, first_major_id = sorted(scope, key=lambda t: (t[0], t[1] or 0))[0]
-    program = Program.objects.get(pk=first_program_id)
-    major = Major.objects.get(pk=first_major_id) if first_major_id else None
-    return program, major
+    if pills is None:
+        pills = _build_pills(user)
+    if not pills:
+        return None, None
+    first = pills[0]
+    return first["program"], first["major"]
 
 
-def _subject_prospectus_context(program, major, query=""):
+def _subject_prospectus_context(program, major, query="", term_filter="ALL", year_level_filter="ALL"):
     """One card per year level (plus one no-year-level card for a TCP-
     style major/program) each with a 1st/2nd Sem[/Summer] sub-table of
     CurriculumEntry rows, a per-sub-table unit total, and a "Shared"
     badge listing any OTHER program/major that also places the same
     subject — all computed in a small, fixed number of queries rather
-    than per-row."""
-    entries = CurriculumEntry.objects.filter(program=program, major=major).select_related("subject")
+    than per-row. `term_filter`/`year_level_filter` narrow which rows
+    render; `has_summer`/`available_year_levels` are computed from the
+    UNFILTERED set so the filter controls themselves don't disappear
+    once a narrowing choice is made."""
+    base_qs = CurriculumEntry.objects.filter(program=program, major=major).select_related("subject")
     if query:
-        entries = entries.filter(Q(subject__code__icontains=query) | Q(subject__title__icontains=query))
-    entries = list(entries.order_by("year_level", "term", "subject__code"))
+        base_qs = base_qs.filter(Q(subject__code__icontains=query) | Q(subject__title__icontains=query))
+    all_entries = list(base_qs)
+
+    has_summer = any(e.term == Term.SUMMER for e in all_entries)
+    available_year_levels = sorted({e.year_level for e in all_entries if e.year_level is not None})
+
+    entries = all_entries
+    if term_filter and term_filter != "ALL":
+        entries = [e for e in entries if e.term == term_filter]
+    if year_level_filter and year_level_filter != "ALL":
+        yl = int(year_level_filter)
+        entries = [e for e in entries if e.year_level == yl]
+    entries.sort(key=lambda e: (e.year_level or 0, e.term, e.subject.code))
+
+    subject_count = len({e.subject_id for e in entries})
+    total_units = sum((e.subject.units for e in entries), Decimal("0"))
 
     subject_ids = [e.subject_id for e in entries]
     other_placements = (
@@ -581,6 +649,8 @@ def _subject_prospectus_context(program, major, query=""):
         group = [e for e in entries if e.year_level == year_level]
         tables = []
         for term_value, term_label in Term.choices:
+            if term_filter and term_filter != "ALL" and term_value != term_filter:
+                continue
             rows = [e for e in group if e.term == term_value]
             if not rows and term_value == Term.SUMMER:
                 continue
@@ -598,22 +668,45 @@ def _subject_prospectus_context(program, major, query=""):
     if has_no_year_level_rows or not year_levels:
         cards.append({"year_level": None, "term_tables": term_tables(None)})
 
-    return cards, shared_labels
+    summary = {
+        "has_summer": has_summer,
+        "available_year_levels": available_year_levels,
+        "subject_count": subject_count,
+        "total_units": total_units,
+    }
+    return cards, shared_labels, summary
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
 def subjects_home(request):
     is_admin = request.user.is_admin_role
-    program, major = _resolve_program_major_from_request(request, request.user)
+    pills = None if is_admin else _build_pills(request.user)
+    program, major = _resolve_program_major_from_request(request, request.user, pills=pills)
 
     context = {"page_title": "Subjects", "is_admin": is_admin, "program": program, "major": major}
     if program is None:
         context["no_scope"] = True
         return render(request, "academics/subjects.html", context)
 
+    active_semester = Semester.objects.filter(is_active=True).first()
+    term_filter = request.GET.get("term") or (active_semester.term if active_semester else "ALL")
+    year_level_filter = request.GET.get("year_level", "ALL")
     query = request.GET.get("q", "").strip()
-    cards, shared_labels = _subject_prospectus_context(program, major, query)
-    context.update({"cards": cards, "shared_labels": shared_labels, "query": query})
+
+    cards, shared_labels, summary = _subject_prospectus_context(
+        program, major, query, term_filter=term_filter, year_level_filter=year_level_filter
+    )
+    context.update(
+        {
+            "cards": cards,
+            "shared_labels": shared_labels,
+            "query": query,
+            "term_filter": term_filter,
+            "year_level_filter": year_level_filter,
+            "term_choices": Term.choices,
+            **summary,
+        }
+    )
 
     if is_admin:
         context["programs"] = Program.objects.filter(is_active=True).order_by("code")
@@ -622,17 +715,9 @@ def subjects_home(request):
         context["editable_subject_ids"] = set(
             scoping.subjects_editable_by(request.user).values_list("id", flat=True)
         )
-        scope = scoping.scope_for(request.user)
-        pills = []
-        for program_id, major_id in sorted(scope, key=lambda t: (t[0], t[1] or 0)):
-            label = Major.objects.get(pk=major_id).name if major_id else Program.objects.get(pk=program_id).code
-            pills.append(
-                {
-                    "label": label,
-                    "program_id": program_id,
-                    "major_id": major_id or "",
-                    "active": program.id == program_id and (major.id if major else None) == major_id,
-                }
+        for pill in pills:
+            pill["active"] = program.id == pill["program"].id and (
+                (major.id if major else None) == (pill["major"].id if pill["major"] else None)
             )
         context["pills"] = pills
 
@@ -650,14 +735,71 @@ def subject_search(request):
     return render(request, "partials/_searchable_select_options.html", {"options": options})
 
 
-def _subject_add_context(program, major, year_level, term, existing_form=None, create_form=None):
+def _subject_add_search_results(query, program, major, limit=8):
+    """Ordered/tagged dropdown rows for the Add Subject modal's typeahead:
+    subjects already placed in THIS program/major first, then subjects
+    shared across more than one program (GE/PEd/Theo/NSTP/PATHFit-style),
+    then everything else. A row already placed in this exact program/
+    major is tagged with where, and disabled (can't be re-added — it
+    would violate CurriculumEntry's one-slot-per-program/major rule)."""
+    qs = Subject.objects.filter(is_active=True)
+    if query:
+        qs = qs.filter(Q(code__icontains=query) | Q(title__icontains=query))
+    candidates = list(qs.order_by("code")[:50])
+    candidate_ids = [s.id for s in candidates]
+
+    same_scope_ids = set(
+        CurriculumEntry.objects.filter(program=program, major=major, subject_id__in=candidate_ids).values_list(
+            "subject_id", flat=True
+        )
+    )
+    program_sets = {}
+    for subject_id, program_id in CurriculumEntry.objects.filter(subject_id__in=candidate_ids).values_list(
+        "subject_id", "program_id"
+    ):
+        program_sets.setdefault(subject_id, set()).add(program_id)
+    existing_entries = {
+        e.subject_id: e
+        for e in CurriculumEntry.objects.filter(program=program, major=major, subject_id__in=candidate_ids)
+    }
+
+    def sort_key(s):
+        in_scope = 0 if s.id in same_scope_ids else 1
+        shared = 0 if len(program_sets.get(s.id, set())) > 1 else 1
+        return (in_scope, shared, s.code)
+
+    candidates.sort(key=sort_key)
+    results = []
+    for s in candidates[:limit]:
+        entry = existing_entries.get(s.id)
+        results.append(
+            {
+                "subject": s,
+                "disabled": entry is not None,
+                "already_in": services.slot_label(entry.year_level, entry.term) if entry else None,
+            }
+        )
+    return results
+
+
+def _subject_add_context(program, major, year_level, term, form=None):
+    form = form or SubjectAddForm()
+    code_input = (form.data.get("code", "") if form.is_bound else "").strip()
+    matched_subject = services.find_subject_by_normalized_code(code_input) if code_input else None
+    mode = "existing" if matched_subject else ("new" if code_input else None)
+    search_results = _subject_add_search_results(code_input, program, major) if mode == "new" else []
     return {
-        "existing_form": existing_form or CurriculumEntryExistingSubjectForm(),
-        "create_form": create_form or SubjectQuickCreateForm(),
+        "form": form,
         "program": program,
         "major": major,
         "year_level": year_level,
         "term": term,
+        "slot_label": services.slot_label(year_level, term),
+        "scope_label": services.scope_label(program, major),
+        "code_input": code_input,
+        "matched_subject": matched_subject,
+        "mode": mode,
+        "search_results": search_results,
     }
 
 
@@ -672,74 +814,138 @@ def subject_add(request):
     term = request.GET.get("term") or request.POST.get("term") or Term.FIRST
 
     if request.method != "POST":
+        form = SubjectAddForm(request.GET) if "code" in request.GET else None
         return render(
-            request, "academics/_subject_add_modal.html", _subject_add_context(program, major, year_level, term)
+            request, "academics/_subject_add_modal.html", _subject_add_context(program, major, year_level, term, form)
         )
 
+    form = SubjectAddForm(request.POST)
+    if not form.is_valid():
+        return render(
+            request, "academics/_subject_add_modal.html", _subject_add_context(program, major, year_level, term, form)
+        )
+
+    matched = form.cleaned_data["matched_subject"]
     is_admin_override = request.user.is_admin_role
-    mode = request.POST.get("mode")
-    if mode == "existing":
-        form = CurriculumEntryExistingSubjectForm(request.POST)
-        if not form.is_valid():
-            return render(
-                request,
-                "academics/_subject_add_modal.html",
-                _subject_add_context(program, major, year_level, term, existing_form=form),
-            )
-        subject = form.cleaned_data["subject"]
-    else:
-        form = SubjectQuickCreateForm(request.POST)
-        if not form.is_valid():
-            return render(
-                request,
-                "academics/_subject_add_modal.html",
-                _subject_add_context(program, major, year_level, term, create_form=form),
-            )
-        subject = form.save()
 
-    entry, created = CurriculumEntry.objects.get_or_create(
-        program=program, major=major, year_level=year_level, term=term, subject=subject
-    )
-    if created:
-        _log_academic_setup_change(
-            AcademicSetupChangeLog.ModelName.SUBJECT,
-            subject,
-            AcademicSetupChangeLog.Action.ADDED_TO_CURRICULUM,
-            request.user,
-            is_admin_override=is_admin_override,
-            program=program,
-            major=major,
-        )
-        toast = f"{subject.code} added to the curriculum."
+    if matched is not None:
+        duplicate_error = services.subject_duplicate_error(matched, program, major, year_level, term)
+        if duplicate_error:
+            form.add_error(None, duplicate_error)
+            return render(
+                request,
+                "academics/_subject_add_modal.html",
+                _subject_add_context(program, major, year_level, term, form),
+            )
+        subject = matched
+        verb = "added to the curriculum"
     else:
-        toast = f"{subject.code} is already in this curriculum slot."
-    return trigger_response("refreshSubjects", toast=toast)
+        subject = Subject.objects.create(
+            code=form.cleaned_data["code"].strip(), title=form.cleaned_data["title"], units=form.cleaned_data["units"]
+        )
+        verb = "created and added"
+
+    CurriculumEntry.objects.create(program=program, major=major, year_level=year_level, term=term, subject=subject)
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.SUBJECT,
+        subject,
+        AcademicSetupChangeLog.Action.ADDED_TO_CURRICULUM,
+        request.user,
+        is_admin_override=is_admin_override,
+        program=program,
+        major=major,
+    )
+    return trigger_response("refreshSubjects", toast=f"{subject.code} {verb}.")
+
+
+def _find_code_conflict(code, exclude_pk):
+    """Any OTHER subject whose code normalizes to the same value — None
+    if there's no conflict."""
+    target = services.normalize_code(code)
+    for other in Subject.objects.exclude(pk=exclude_pk):
+        if services.normalize_code(other.code) == target:
+            return other
+    return None
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
 def subject_edit(request, pk):
     subject = get_object_or_404(Subject, pk=pk)
+    original_code = subject.code  # ModelForm.is_valid() mutates form.instance (== subject) in place
     is_admin = request.user.is_admin_role
     if not is_admin and not scoping.subjects_editable_by(request.user).filter(pk=subject.pk).exists():
         raise PermissionDenied("This subject is shared — ask the Admin to edit it.")
 
     form_class = AdminSubjectForm if is_admin else SubjectEditForm
+    code_locked = services.subject_used_in_released_grades(subject)
+
+    def _context(form):
+        return {"form": form, "subject": subject, "is_admin": is_admin, "code_locked": code_locked}
+
     if request.method != "POST":
         form = form_class(instance=subject)
-        return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Subject"})
+        if code_locked:
+            form.fields["code"].disabled = True
+        return render(request, "academics/_subject_edit_modal.html", _context(form))
 
     form = form_class(request.POST, instance=subject)
-    if form.is_valid():
-        subject = form.save()
-        _log_academic_setup_change(
-            AcademicSetupChangeLog.ModelName.SUBJECT,
-            subject,
-            AcademicSetupChangeLog.Action.UPDATED,
-            request.user,
-            is_admin_override=is_admin,
-        )
-        return trigger_response("refreshSubjects", toast="Subject updated.")
-    return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Subject"})
+    if code_locked:
+        form.fields["code"].disabled = True
+    if not form.is_valid():
+        return render(request, "academics/_subject_edit_modal.html", _context(form))
+
+    code_changed = services.normalize_code(original_code) != services.normalize_code(form.cleaned_data["code"])
+    if code_changed:
+        conflict = _find_code_conflict(form.cleaned_data["code"], subject.pk)
+        if conflict is not None:
+            form.add_error("code", f"A subject with code {conflict.code} already exists.")
+            return render(request, "academics/_subject_edit_modal.html", _context(form))
+
+    subject = form.save()
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.SUBJECT,
+        subject,
+        AcademicSetupChangeLog.Action.UPDATED,
+        request.user,
+        is_admin_override=is_admin,
+    )
+    return trigger_response("refreshSubjects", toast="Subject updated.")
+
+
+@role_required(ADMIN)
+def subject_correct_code(request, pk):
+    """Admin-only escape hatch past subject_edit's released-grades code
+    lock — requires a reason, always logged as an admin override."""
+    subject = get_object_or_404(Subject, pk=pk)
+
+    if request.method != "POST":
+        form = SubjectCodeCorrectionForm(initial={"code": subject.code})
+        return render(request, "academics/_subject_correct_code_modal.html", {"form": form, "subject": subject})
+
+    form = SubjectCodeCorrectionForm(request.POST)
+    if not form.is_valid():
+        return render(request, "academics/_subject_correct_code_modal.html", {"form": form, "subject": subject})
+
+    new_code = form.cleaned_data["code"].strip()
+    conflict = _find_code_conflict(new_code, subject.pk)
+    if conflict is not None:
+        form.add_error("code", f"A subject with code {conflict.code} already exists.")
+        return render(request, "academics/_subject_correct_code_modal.html", {"form": form, "subject": subject})
+
+    old_code = subject.code
+    subject.code = new_code
+    subject.save(update_fields=["code"])
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.SUBJECT,
+        subject,
+        AcademicSetupChangeLog.Action.CODE_CORRECTED,
+        request.user,
+        is_admin_override=True,
+        old_code=old_code,
+        new_code=new_code,
+        reason=form.cleaned_data["reason"],
+    )
+    return trigger_response("refreshSubjects", toast=f"Code corrected: {old_code} → {new_code}.")
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
@@ -844,12 +1050,25 @@ class ClassFormView(RoleRequiredMixin, EntityFormView):
     modal_title_create = "Add Class"
     modal_title_edit = "Edit Class"
 
+    def _url(self, pk):
+        return reverse("academics:class_edit", args=[pk]) if pk else reverse("academics:class_create")
+
+    def get(self, request, pk=None):
+        obj = self.get_object(pk)
+        selected_sections = _selected_sections_from_request(request, Section.objects.all())
+        form = self.form_class(instance=obj, selected_sections=selected_sections)
+        if selected_sections is not None:
+            form.initial["sections"] = [s.pk for s in selected_sections]
+        _wire_live_subject_regroup(form, self._url(pk))
+        return render(request, self.form_template, self.get_context(request, form, obj))
+
     def post(self, request, pk=None):
         obj = self.get_object(pk)
         is_create = obj is None
         old_instructor = obj.instructor if obj else None
         form = self.form_class(request.POST, instance=obj)
         if not form.is_valid():
+            _wire_live_subject_regroup(form, self._url(pk))
             return render(request, self.form_template, self.get_context(request, form, obj))
 
         new_instructor = form.cleaned_data.get("instructor")
@@ -1026,12 +1245,24 @@ def ph_class_create(request):
     active = Semester.objects.filter(is_active=True).first()
     if active is None:
         raise PermissionDenied("No active semester is set.")
+    url = reverse("academics:ph_class_create")
 
     if request.method != "POST":
-        form = ProgramHeadClassOfferingForm(user=request.user, academic_year=active.academic_year)
+        selected_sections = _selected_sections_from_request(request, scoping.sections_in_scope(request.user))
+        form = ProgramHeadClassOfferingForm(
+            user=request.user,
+            academic_year=active.academic_year,
+            selected_sections=selected_sections,
+            term=active.term,
+        )
+        if selected_sections is not None:
+            form.initial["sections"] = [s.pk for s in selected_sections]
+        _wire_live_subject_regroup(form, url)
         return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Class"})
 
-    form = ProgramHeadClassOfferingForm(request.POST, user=request.user, academic_year=active.academic_year)
+    form = ProgramHeadClassOfferingForm(
+        request.POST, user=request.user, academic_year=active.academic_year, term=active.term
+    )
     if form.is_valid():
         class_offering = form.save(commit=False)
         class_offering.semester = active
@@ -1045,6 +1276,7 @@ def ph_class_create(request):
             is_admin_override=False,
         )
         return trigger_response("refreshClasses", toast="Class created.")
+    _wire_live_subject_regroup(form, url)
     return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Class"})
 
 
@@ -1054,18 +1286,32 @@ def ph_class_edit(request, pk):
     if not class_offering.sections.filter(pk__in=scoping.sections_in_scope(request.user)).exists():
         raise PermissionDenied("This class is not under your program.")
     active = Semester.objects.filter(is_active=True).first()
+    url = reverse("academics:ph_class_edit", args=[pk])
 
     if request.method != "POST":
+        selected_sections = _selected_sections_from_request(request, scoping.sections_in_scope(request.user))
         form = ProgramHeadClassOfferingForm(
-            instance=class_offering, user=request.user, academic_year=class_offering.semester.academic_year
+            instance=class_offering,
+            user=request.user,
+            academic_year=class_offering.semester.academic_year,
+            selected_sections=selected_sections,
+            term=class_offering.semester.term,
         )
+        if selected_sections is not None:
+            form.initial["sections"] = [s.pk for s in selected_sections]
+        _wire_live_subject_regroup(form, url)
         return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Class"})
 
     old_instructor = class_offering.instructor
     form = ProgramHeadClassOfferingForm(
-        request.POST, instance=class_offering, user=request.user, academic_year=class_offering.semester.academic_year
+        request.POST,
+        instance=class_offering,
+        user=request.user,
+        academic_year=class_offering.semester.academic_year,
+        term=class_offering.semester.term,
     )
     if not form.is_valid():
+        _wire_live_subject_regroup(form, url)
         return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Edit Class"})
 
     new_instructor = form.cleaned_data.get("instructor")

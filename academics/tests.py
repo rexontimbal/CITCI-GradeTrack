@@ -1634,7 +1634,7 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST",
-            {"mode": "new", "code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
+            {"code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
         )
         self.assertEqual(response.status_code, 204, response.content)
         subject = Subject.objects.get(code="ENG101")
@@ -1646,7 +1646,7 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_a.pk}&year_level=1&term=FIRST",
-            {"mode": "new", "code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
+            {"code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
         )
         self.assertEqual(response.status_code, 403)
 
@@ -1659,7 +1659,7 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST",
-            {"mode": "existing", "subject": subject.pk},
+            {"code": subject.code},
         )
         self.assertEqual(response.status_code, 204, response.content)
         self.assertTrue(CurriculumEntry.objects.filter(subject=subject, program=self.program_b).exists())
@@ -1710,7 +1710,7 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_edit", args=[subject.pk]),
-            {"title": "Updated Title", "units": "3.0"},
+            {"code": "INSCOPE", "title": "Updated Title", "units": "3.0"},
         )
         self.assertEqual(response.status_code, 204, response.content)
         subject.refresh_from_db()
@@ -2071,13 +2071,32 @@ class LoadCitciCurriculumCommandTests(TestCase):
     from parse_docx's row shape, conflict/near-duplicate/unit-jump
     detection, never auto-merging. Patches parse_docx itself rather than
     needing a real .docx fixture — the row shape is the documented
-    contract both this command and import_offerings_docx.py share."""
+    contract both this command and import_offerings_docx.py share.
+
+    BASE_DIR is overridden to a scratch temp directory for every test
+    here — `_write_data_issues` writes to a REAL file
+    (`<BASE_DIR>/docs/source/DATA_ISSUES.md`), not something Django's
+    TestCase's database-only isolation touches; without this override,
+    running this test class would clobber the project's actual
+    DATA_ISSUES.md with test-fixture content every time the suite runs
+    (caught the hard way — it happened to the real file this session)."""
 
     def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from django.test import override_settings
+
         self.bsed = Program.objects.create(code="BSED", name="BS Secondary Education", is_active=True)
         self.tcp = Program.objects.create(code="TCP", name="Teacher Certificate Program", is_active=True)
         self.eng = Major.objects.create(program=self.bsed, code="ENG", name="English")
         self.tmp_path = None
+
+        self._tmp_base_dir = tempfile.mkdtemp()
+        (Path(self._tmp_base_dir) / "docs" / "source").mkdir(parents=True)
+        self._override = override_settings(BASE_DIR=self._tmp_base_dir)
+        self._override.enable()
+        self.addCleanup(self._override.disable)
 
     def _dummy_docx_path(self):
         import tempfile
@@ -2201,7 +2220,7 @@ class AdminSubjectsProspectusTests(TeachingAssignmentTestBase):
         self.client.force_login(self.admin)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_a.pk}&year_level=1&term=FIRST",
-            {"mode": "new", "code": "ADMINNEW1", "title": "X", "units": "3.0"},
+            {"code": "ADMINNEW1", "title": "X", "units": "3.0"},
         )
         self.assertEqual(response.status_code, 204, response.content)
         log = AcademicSetupChangeLog.objects.get(object_repr="ADMINNEW1")
@@ -2234,3 +2253,248 @@ class CurriculumAwareSubjectSuggestionTests(TeachingAssignmentTestBase):
         Subject.objects.create(code="ANY1", title="X", units=Decimal("3.0"))
         choices = _grouped_subject_choices([])
         self.assertTrue(all(isinstance(c[0], int) for c in choices))
+
+    def test_live_regroup_on_class_create_get_with_sections_param(self):
+        matched = Subject.objects.create(code="LIVEMATCH1", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(
+            program=self.section_b.program, major=self.section_b.major, year_level=self.section_b.year_level,
+            term="FIRST", subject=matched,
+        )
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_class_create") + f"?sections={self.section_b.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "From the curriculum")
+        self.assertContains(response, "hx-get")
+
+
+class SubjectsFilterTests(TeachingAssignmentTestBase):
+    """Subjects prospectus: major-only pills (program-level pill dropped
+    once a program has majors), semester + year-level segmented filters,
+    URL persistence, and the subject-count/total-units summary."""
+
+    def setUp(self):
+        super().setUp()
+        self.major_eng = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        self.major_eng.program_head = self.head_b
+        self.major_eng.save()
+
+    def test_program_with_majors_hides_program_level_pill(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subjects"))
+        self.assertContains(response, "English")
+        self.assertNotContains(response, f">{self.program_b.code}<")
+
+    def test_program_without_majors_shows_program_pill(self):
+        self.client.force_login(self.head_a)  # program_a has no majors
+        response = self.client.get(reverse("academics:ph_subjects"))
+        self.assertContains(response, self.program_a.code)
+
+    def test_semester_filter_defaults_to_active_semester_term(self):
+        first_subject = Subject.objects.create(code="SEMFIRST1", title="X", units=Decimal("3.0"))
+        second_subject = Subject.objects.create(code="SEMSECOND1", title="Y", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=first_subject)
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="SECOND", subject=second_subject)
+
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subjects") + f"?major={self.major_eng.pk}")
+        self.assertContains(response, "SEMFIRST1")
+        self.assertNotContains(response, "SEMSECOND1")
+
+    def test_semester_filter_all_shows_everything(self):
+        first_subject = Subject.objects.create(code="SEMFIRST2", title="X", units=Decimal("3.0"))
+        second_subject = Subject.objects.create(code="SEMSECOND2", title="Y", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=first_subject)
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="SECOND", subject=second_subject)
+
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subjects") + f"?major={self.major_eng.pk}&term=ALL")
+        self.assertContains(response, "SEMFIRST2")
+        self.assertContains(response, "SEMSECOND2")
+
+    def test_year_level_filter_hidden_when_no_year_levels(self):
+        subject = Subject.objects.create(code="NOYRLVL1", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_a, year_level=None, term="FIRST", subject=subject)
+        self.client.force_login(self.head_a)
+        response = self.client.get(reverse("academics:ph_subjects") + f"?program={self.program_a.pk}")
+        self.assertNotContains(response, "All Years")
+
+    def test_year_level_filter_narrows_cards(self):
+        year1_subject = Subject.objects.create(code="YR1SUBJ1", title="X", units=Decimal("3.0"))
+        year2_subject = Subject.objects.create(code="YR2SUBJ1", title="Y", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=year1_subject)
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=2, term="FIRST", subject=year2_subject)
+
+        self.client.force_login(self.head_b)
+        response = self.client.get(
+            reverse("academics:ph_subjects") + f"?major={self.major_eng.pk}&term=FIRST&year_level=1"
+        )
+        self.assertContains(response, "YR1SUBJ1")
+        self.assertNotContains(response, "YR2SUBJ1")
+
+    def test_subject_count_and_total_units_summary(self):
+        s1 = Subject.objects.create(code="SUMUNITS1", title="X", units=Decimal("3.0"))
+        s2 = Subject.objects.create(code="SUMUNITS2", title="Y", units=Decimal("2.0"))
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=s1)
+        CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=s2)
+
+        self.client.force_login(self.head_b)
+        response = self.client.get(
+            reverse("academics:ph_subjects") + f"?major={self.major_eng.pk}&term=FIRST&year_level=1"
+        )
+        self.assertContains(response, "2 subjects")
+        self.assertContains(response, "5.0 units")
+
+    def test_filters_persist_across_pill_switch(self):
+        major_ss = Major.objects.create(program=self.program_b, code="SS", name="Social Studies")
+        major_ss.program_head = self.head_b
+        major_ss.save()
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_subjects") + "?term=SECOND&year_level=2")
+        self.assertContains(response, f"term=SECOND")
+        self.assertContains(response, f"year_level=2")
+
+
+class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
+    """Add Subject modal: single form, server-side duplicate blocking
+    (a subject can only sit once per program/major, period — not once
+    per year/term slot), case/spacing-insensitive code matching, and the
+    search dropdown's ordering/tagging."""
+
+    def _add(self, user, program, year_level, term, **data):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse("academics:subject_add") + f"?program={program.pk}&year_level={year_level}&term={term}",
+            data,
+        )
+
+    def test_duplicate_in_exact_same_slot_blocked(self):
+        subject = Subject.objects.create(code="DUP1", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="DUP1")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already in 1st Year")
+
+    def test_duplicate_elsewhere_in_same_program_blocked(self):
+        subject = Subject.objects.create(code="DUP2", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        response = self._add(self.head_b, self.program_b, 2, "SECOND", code="DUP2")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Remove it there first")
+        self.assertEqual(CurriculumEntry.objects.filter(subject=subject).count(), 1)
+
+    def test_case_and_spacing_insensitive_code_match_reuses_existing_subject(self):
+        Subject.objects.create(code="EL 100", title="Original Title", units=Decimal("3.0"))
+        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="el100", title="Different", units="5.0")
+        self.assertEqual(response.status_code, 204, response.content)
+        self.assertEqual(Subject.objects.filter(code__iexact="EL 100").count(), 1)
+        subject = Subject.objects.get(code="EL 100")
+        self.assertEqual(subject.title, "Original Title")  # not overwritten by the (ignored) new-mode fields
+        self.assertEqual(subject.units, Decimal("3.0"))
+
+    def test_new_subject_created_when_no_match(self):
+        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="BRANDNEW1", title="Brand New", units="4.0")
+        self.assertEqual(response.status_code, 204, response.content)
+        subject = Subject.objects.get(code="BRANDNEW1")
+        self.assertEqual(subject.title, "Brand New")
+
+    def test_new_subject_without_title_units_is_rejected(self):
+        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="BRANDNEW2")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Required for a new subject")
+        self.assertFalse(Subject.objects.filter(code="BRANDNEW2").exists())
+
+    def test_search_results_tag_already_added_subject_as_disabled(self):
+        subject = Subject.objects.create(code="TAGGED1", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        self.client.force_login(self.head_b)
+        response = self.client.get(
+            reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=2&term=FIRST&code=TAGGED"
+        )
+        self.assertContains(response, "Already in 1st Year")
+
+    def test_search_results_order_same_scope_first(self):
+        same_scope = Subject.objects.create(code="ORDERA1", title="Same scope", units=Decimal("3.0"))
+        other_scope = Subject.objects.create(code="ORDERA2", title="Other scope", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=2, term="FIRST", subject=same_scope)
+        CurriculumEntry.objects.create(program=self.program_a, year_level=1, term="FIRST", subject=other_scope)
+        self.client.force_login(self.head_b)
+        response = self.client.get(
+            reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST&code=ORDERA"
+        )
+        content = response.content.decode()
+        self.assertLess(content.index("ORDERA1"), content.index("ORDERA2"))
+
+
+class EditSubjectCodeTests(TeachingAssignmentTestBase):
+    """Edit Subject: code is now editable (title/units too), gated by
+    the same scope rule, with uniqueness checking and a released-grades
+    block that only Admin can bypass (via "Correct code", logged)."""
+
+    def test_code_edit_uniqueness_blocked(self):
+        Subject.objects.create(code="TAKEN1", title="X", units=Decimal("3.0"))
+        subject = Subject.objects.create(code="FREE1", title="Y", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:subject_edit", args=[subject.pk]),
+            {"code": "taken1", "title": "Y", "units": "3.0"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already exists")
+        subject.refresh_from_db()
+        self.assertEqual(subject.code, "FREE1")
+
+    def test_code_edit_blocked_when_used_in_released_grades(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        subject = Subject.objects.create(code="RELEASED1", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester)
+        class_offering.sections.set([self.section_b])
+        GradeSheet.objects.create(class_offering=class_offering, status=GradeSheetStatus.RELEASED)
+
+        self.client.force_login(self.head_b)
+        get_response = self.client.get(reverse("academics:subject_edit", args=[subject.pk]))
+        self.assertContains(get_response, "already appears in released grades")
+
+        response = self.client.post(
+            reverse("academics:subject_edit", args=[subject.pk]),
+            {"code": "NEWCODE1", "title": "X", "units": "3.0"},
+        )
+        # The code field is server-side disabled once locked -- a posted
+        # change to it is silently ignored (title/units still save fine)
+        # rather than erroring, since the warning is already shown
+        # up-front on the form before any submission is attempted.
+        self.assertEqual(response.status_code, 204, response.content)
+        subject.refresh_from_db()
+        self.assertEqual(subject.code, "RELEASED1")
+
+    def test_admin_correct_code_bypasses_block_and_is_logged(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        from .models import AcademicSetupChangeLog
+
+        subject = Subject.objects.create(code="RELEASED2", title="X", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
+        class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester)
+        class_offering.sections.set([self.section_b])
+        GradeSheet.objects.create(class_offering=class_offering, status=GradeSheetStatus.LOCKED)
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:subject_correct_code", args=[subject.pk]),
+            {"code": "CORRECTED1", "reason": "Typo in the original Registrar sheet."},
+        )
+        self.assertEqual(response.status_code, 204, response.content)
+        subject.refresh_from_db()
+        self.assertEqual(subject.code, "CORRECTED1")
+        log = AcademicSetupChangeLog.objects.get(action=AcademicSetupChangeLog.Action.CODE_CORRECTED)
+        self.assertTrue(log.is_admin_override)
+        self.assertEqual(log.details["old_code"], "RELEASED2")
+        self.assertEqual(log.details["new_code"], "CORRECTED1")
+
+    def test_non_admin_cannot_reach_correct_code(self):
+        subject = Subject.objects.create(code="RELEASED3", title="X", units=Decimal("3.0"))
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:subject_correct_code", args=[subject.pk]))
+        self.assertEqual(response.status_code, 403)

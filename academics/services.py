@@ -11,7 +11,18 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 
-from .models import AcademicYear, ClassOffering, ClassRosterEntry, Section, Semester, TeachingAssignmentLog
+import re
+
+from .models import (
+    AcademicYear,
+    ClassOffering,
+    ClassRosterEntry,
+    CurriculumEntry,
+    Section,
+    Semester,
+    Subject,
+    TeachingAssignmentLog,
+)
 
 
 def check_instructor_change_allowed(class_offering):
@@ -229,3 +240,80 @@ def commit_copy(preview_rows, target_semester):
             new_class.sections.set(row["target_section_ids"])
             created += 1
     return {"created": created, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# Add/Edit Subject — the subject catalog is school-wide, so a new code
+# must never silently duplicate an existing one that's merely spelled or
+# spaced differently ("EL 100" vs "el100"); a code match always wins over
+# creating a new row. A subject also sits in a given program/major's
+# curriculum AT MOST ONCE, period (see CurriculumEntry's Meta constraints)
+# — not once per year-level/term slot.
+# ---------------------------------------------------------------------------
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def normalize_code(code):
+    """Case/spacing-insensitive canonical form of a subject code, used
+    only for matching — never stored or displayed (the original casing
+    a human typed is what's saved)."""
+    return _WHITESPACE_RE.sub(" ", (code or "").strip()).upper()
+
+
+def find_subject_by_normalized_code(code):
+    """Exact match against the catalog, ignoring case and whitespace
+    differences. The catalog is small (low hundreds of rows at most) so
+    a Python-side scan is simpler and plenty fast — no need for a
+    generated/indexed normalized-code column."""
+    target = normalize_code(code)
+    if not target:
+        return None
+    for subject in Subject.objects.all():
+        if normalize_code(subject.code) == target:
+            return subject
+    return None
+
+
+def slot_label(year_level, term):
+    """"1st Year · 1st Semester" / "1st Semester" (no year level, e.g.
+    TCP) — display label for one curriculum slot."""
+    term_labels = {"FIRST": "1st Semester", "SECOND": "2nd Semester", "SUMMER": "Summer"}
+    term_label = term_labels.get(term, term)
+    if not year_level:
+        return term_label
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(year_level, "th")
+    return f"{year_level}{suffix} Year · {term_label}"
+
+
+def scope_label(program, major):
+    return f"{program.code} – {major.name}" if major else program.code
+
+
+def subject_duplicate_error(subject, program, major, year_level, term):
+    """None if `subject` isn't already in this program/major's curriculum
+    anywhere; else a user-facing message — worded differently depending
+    on whether the existing placement happens to be the exact slot being
+    added to, or elsewhere in the same program/major (a subject can only
+    ever sit once per program/major, so these are the only two cases)."""
+    existing = CurriculumEntry.objects.filter(program=program, major=major, subject=subject).first()
+    if existing is None:
+        return None
+    if existing.year_level == year_level and existing.term == term:
+        return f"{subject.code} is already in {slot_label(year_level, term)}."
+    return (
+        f"{subject.code} is already in {slot_label(existing.year_level, existing.term)} of "
+        f"{scope_label(program, major)}. Remove it there first."
+    )
+
+
+def subject_used_in_released_grades(subject):
+    """True if any class using this subject has a RELEASED/LOCKED grade
+    sheet — changing the subject's code at that point would alter what
+    reads as an official record, so a code change is blocked (admin can
+    still force it through the explicit "Correct code" action)."""
+    from approvals.models import GradeSheetStatus
+
+    return ClassOffering.objects.filter(
+        subject=subject, grade_sheets__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
+    ).exists()

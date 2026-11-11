@@ -203,12 +203,11 @@
 > keeps the Override banner and logs every change as an admin override, same pattern as Sections/
 > Classes. "Remove from curriculum" deletes only the `CurriculumEntry`, never the `Subject`, and is
 > blocked while an active-semester class still uses that placement. The Class-creation subject
-> picker (`academics.forms._grouped_subject_choices`) now groups "From the curriculum" subjects
-> ahead of "All subjects" once a section is chosen (full live re-grouping on changing the selected
-> sections mid-form was **not** built this pass — the suggestion is computed from an already-saved
-> class's sections on edit, and degrades to one ungrouped list on create, which was judged good
-> enough for this pass; a follow-up could wire an htmx re-render on the sections field the same way
-> `_user_form_modal.html` already re-renders on a role change). A new `load_citci_curriculum`
+> picker (`academics.forms._grouped_subject_choices`) groups "From the curriculum" subjects ahead
+> of "All subjects" once a section is chosen, live — an htmx re-render fires on the sections field
+> the same way `_user_form_modal.html` already re-renders on a role change (same-day follow-up,
+> see below; the first pass only computed this from an already-saved class's sections on edit). A
+> new `load_citci_curriculum`
 > management command (dev-only, `python-docx`) loads CITCI's real curriculum from the Registrar's
 > `docs/source/all_subject_per_major.docx` — it turned out to be the exact same table shape
 > `import_offerings_docx.py` already parses, so it reuses `parse_docx` directly and just ignores
@@ -219,6 +218,70 @@
 > pairs. See the "Curriculum mapping" bullet under "Build Phases" for the exact findings from the
 > real file (duplicate-code list, near-duplicates, a unit-count oddity) and the counts from running
 > it against the dev database.
+>
+> **2026-11-11 (same-day follow-up — Subjects filters, live curriculum suggestions, loader name
+> matching):** the Program Head Subjects pills are now one per **major** ("English", "Social
+> Studies" — display names, not codes), never a program-level pill once the program actually has
+> majors (that scope tuple only ever covers majors with no head of their own, which can never be
+> the SAME program-level pill shown alongside its own majors — showing it was always an empty
+> view). A program with no majors at all (e.g. TCP) still gets one pill, labeled with the
+> program's code. Two more segmented filters sit alongside the pills: **Semester** (All / 1st Sem /
+> 2nd Sem / Summer — Summer only shown if any entry actually uses it; defaults to the active
+> semester's term, not "All") and **Year Level** (All / 1st–4th — hidden entirely for a TCP-style
+> selection with no year-level entries). All three filters (`program`/`major` via the pill,
+> `term`, `year_level`) plus the search box stay in the URL, so a filtered view is bookmarkable/
+> shareable; a subject-count + total-units line reflects whatever's currently filtered. Admin's
+> Subjects page gained the same two segmented filters alongside its existing program/major
+> selector (also switched to display names).
+>
+> The Class-creation subject-picker suggestion (see above) now re-renders live: changing the
+> `sections` field fires an htmx `hx-get` back to the same create/edit URL
+> (`academics.views._wire_live_subject_regroup`), re-rendering the whole modal with the `subject`
+> field's curriculum-matched grouping recomputed from whatever sections are now selected — wired
+> for both the Program Head and Admin Class forms, closing the gap the first pass had disclosed.
+>
+> `load_citci_curriculum`'s program/major resolution now matches by **code OR name**, case-
+> insensitive (`academics.management.commands.load_citci_curriculum._resolve_program_major`) — a
+> hand-created Program/Major doesn't have to use the docx's exact short code to be found.
+>
+> **2026-11-11 (same-day follow-up — Add/Edit Subject redesign):** the Add-to-curriculum modal
+> dropped its "use existing / create new" tab switch for **one field-driven form**
+> (`academics.forms.SubjectAddForm`): the `code` field doubles as a live lookup (an htmx `hx-get`
+> fires on every keystroke) — typing a code that matches the catalog, case/spacing-insensitive
+> (`academics.services.normalize_code`/`find_subject_by_normalized_code`), locks `title`/`units`
+> read-only with "Existing subject — it will be added…"; a non-matching code leaves them editable
+> with "New subject — it will be created and added." Submitting never creates a duplicate Subject
+> row for a differently-cased/spaced version of an existing code — it silently reuses the match.
+> The code field's dropdown (shown while typing, hidden once an exact match locks the form) orders
+> results — subjects already in this exact program/major first, then ones shared across more than
+> one program, then the rest — and tags/disables a result already placed in this program/major
+> with where ("Already in 1st Year · 1st Semester").
+>
+> **`CurriculumEntry`'s uniqueness tightened** (migration `0011_subject_once_per_program_major`,
+> with a defensive dedup pass first): a subject now sits **once per program/major, period** — not
+> once per year-level/term slot as before. Two conditional `UniqueConstraint`s, not one plain
+> `(program, major, subject)` constraint: SQL never treats two NULLs as equal in a unique index, so
+> a plain constraint would silently fail to catch a TCP-style duplicate (`major` is always NULL
+> there) — `condition=Q(major__isnull=False)` / `condition=Q(major__isnull=True)` handles both
+> cases. `academics.services.subject_duplicate_error` gives the two user-facing messages (exact
+> slot already used / already elsewhere in this program-major, "remove it there first") that this
+> rule implies — there's no third case, since a subject can only ever be in one slot per program/
+> major now.
+>
+> **Edit Subject gained code editing** (title/units already were) for both Admin and a scope-
+> restricted Program Head (`academics.views.subject_edit`) — normalized-uniqueness-checked against
+> the whole catalog, and blocked once the subject is used in a RELEASED/LOCKED grade sheet
+> (`academics.services.subject_used_in_released_grades`) by disabling the field server-side (a
+> posted change to a disabled field is simply ignored by Django's ModelForm, not an error — title/
+> units still save normally). Admin gets an explicit escape hatch, **"Correct code"**
+> (`academics.views.subject_correct_code`, a separate action requiring a reason), logged as an
+> admin override with the old/new code and reason in `AcademicSetupChangeLog.details`
+> (`Action.CODE_CORRECTED`). A genuine Django footgun was caught and fixed while building this:
+> comparing `subject.code` against the posted value *after* calling `form.is_valid()` silently
+> compared the ALREADY-mutated value against itself, since `ModelForm.is_valid()`/`_post_clean()`
+> writes cleaned field values onto `form.instance` in place — the same object as `subject` here,
+> not a copy — so the "did the code actually change" check now captures `subject.code` *before*
+> binding the form to it.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -1709,9 +1772,7 @@ until the previous one passes its tests.
   `CurriculumEntry` rows, not a field on `Subject` — implemented as a count comparison after a real
   Django ORM bug surfaced (negating a `Q()` with multiple conditions on a to-many relation lets
   different rows each satisfy one condition). The Class-creation subject picker
-  (`academics.forms._grouped_subject_choices`) suggests curriculum-matched subjects first; full
-  live re-grouping as sections change mid-form was not built this pass (works on edit, degrades to
-  one ungrouped list on create — a deliberate, disclosed scope cut, not a bug).
+  (`academics.forms._grouped_subject_choices`) suggests curriculum-matched subjects first.
 
   A new `load_citci_curriculum` management command loads CITCI's real curriculum from
   `docs/source/all_subject_per_major.docx` — it turned out to be the exact same table shape
@@ -1720,6 +1781,13 @@ until the previous one passes its tests.
   Run against the dev database: see the summary counts and the exact `DATA_ISSUES.md` findings
   (duplicate-code conflicts resolved BSED-wins, near-duplicate codes flagged but never auto-merged,
   the PATHFit 1–3-vs-4 unit-count oddity) reported to the user when this landed.
+
+  **Same-day follow-up:** the Subjects pages gained a Semester + Year Level segmented filter
+  alongside the major pills (all three — program/major, term, year_level — persisted in the URL),
+  pills switched to one-per-major (no program-level pill once a program has majors), and the
+  Class-creation subject suggestion got the live htmx re-grouping the first pass had deliberately
+  deferred (`academics.views._wire_live_subject_regroup`). `load_citci_curriculum`'s program/major
+  resolution also now matches by code OR name, case-insensitive.
 
 ---
 

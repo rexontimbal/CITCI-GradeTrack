@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.db.models import Q
 from django.urls import reverse_lazy
@@ -114,51 +116,90 @@ class ProgramHeadSectionForm(StyledModelForm):
         _restrict_program_major_fields(self, user)
 
 
+_UNITS_WIDGET_ATTRS = {"type": "number", "step": "0.5", "min": "0.5", "max": "9.0", "class": "no-spinner"}
+
+
 class AdminSubjectForm(StyledModelForm):
     """Admin can edit any subject's code/title/units/active flag directly
     — used by the admin prospectus page's edit action. Unlike a Program
     Head, admin isn't restricted to subjects used solely within one scope
-    (see SubjectEditForm)."""
+    (see SubjectEditForm). Code-change restrictions (uniqueness, blocked
+    once released grades reference it) are enforced in the view, not
+    here, since they depend on request context (is this a "Correct code"
+    action, who's asking)."""
 
     class Meta:
         model = Subject
         fields = ["code", "title", "units", "is_active"]
+        widgets = {"units": forms.NumberInput(attrs=_UNITS_WIDGET_ATTRS)}
 
 
 class SubjectEditForm(StyledModelForm):
-    """A Program Head may only edit title/units of a subject used solely
-    within their own scope — never its code (that's admin-only, since a
-    code change could affect other programs sharing the subject, even
-    though *this* subject happens not to be shared right now)."""
-
-    class Meta:
-        model = Subject
-        fields = ["title", "units"]
-
-
-class SubjectQuickCreateForm(StyledModelForm):
-    """The "create a new subject" path of the Add-to-curriculum modal —
-    code/title/units only; the new subject is immediately attached to one
-    CurriculumEntry by the view, never left unplaced."""
+    """A Program Head may edit title/units/code of a subject used solely
+    within their own scope — a code change is still subject to the same
+    view-level uniqueness/released-grades checks as admin's."""
 
     class Meta:
         model = Subject
         fields = ["code", "title", "units"]
+        widgets = {"units": forms.NumberInput(attrs=_UNITS_WIDGET_ATTRS)}
 
 
-class CurriculumEntryExistingSubjectForm(forms.Form):
-    """The "use an existing subject" path of the Add-to-curriculum modal
-    — program/major/year_level/term come from the page's current filter
-    context server-side, never from this form."""
+class SubjectAddForm(forms.Form):
+    """The Add Subject modal's single form — one `code` field doubles as
+    a lookup: if it matches an existing catalog subject (case/spacing-
+    insensitive), `title`/`units` are ignored and the existing subject is
+    reused; otherwise they're required and a new Subject is created.
+    `matched_subject` is stashed on `cleaned_data` by `clean()` for the
+    view to act on without re-querying."""
 
-    subject = forms.ModelChoiceField(
-        queryset=Subject.objects.filter(is_active=True),
-        label="Subject",
-        widget=SearchableSelectWidget(
-            search_url=reverse_lazy("academics:subject_search"),
-            queryset=Subject.objects.filter(is_active=True),
+    code = forms.CharField(
+        max_length=20,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "off",
+                "hx-get": reverse_lazy("academics:subject_add"),
+                "hx-include": "closest form",
+                "hx-target": "#modal-content",
+                "hx-swap": "innerHTML",
+                "hx-trigger": "keyup changed delay:300ms",
+            }
         ),
     )
+    title = forms.CharField(max_length=200, required=False)
+    units = forms.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        min_value=Decimal("0.5"),
+        max_value=Decimal("9.0"),
+        required=False,
+        widget=forms.NumberInput(attrs=_UNITS_WIDGET_ATTRS),
+    )
+
+    def clean(self):
+        from .services import find_subject_by_normalized_code
+
+        cleaned = super().clean()
+        code = (cleaned.get("code") or "").strip()
+        if not code:
+            return cleaned
+        matched = find_subject_by_normalized_code(code)
+        cleaned["matched_subject"] = matched
+        if matched is None:
+            if not cleaned.get("title"):
+                self.add_error("title", "Required for a new subject.")
+            if cleaned.get("units") is None:
+                self.add_error("units", "Required for a new subject.")
+        return cleaned
+
+
+class SubjectCodeCorrectionForm(forms.Form):
+    """Admin-only "Correct code" action — bypasses the normal released-
+    grades block (`subject_edit` applies that to everyone else), but
+    requires a reason and is always logged as an admin override."""
+
+    code = forms.CharField(max_length=20)
+    reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
 
 
 def _grouped_subject_choices(sections, term=None, base_queryset=None):

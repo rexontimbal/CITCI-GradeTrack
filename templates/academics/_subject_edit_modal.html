@@ -1,0 +1,56 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Edit Subject</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div>
+        <label for="{{ form.code.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Code</label>
+        {{ form.code }}
+        {% for error in form.code.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        {% if code_locked %}
+        <p class="mt-1 text-xs text-amber-700">
+            {{ subject.code }} already appears in released grades; changing its code would alter official records.
+            {% if is_admin %}
+            <a href="#" hx-get="{% url 'academics:subject_correct_code' subject.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+               class="font-medium underline">Correct code instead</a>
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+    <div>
+        <label for="{{ form.title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Title</label>
+        {{ form.title }}
+        {% for error in form.title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    <div>
+        <label for="{{ form.units.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Units</label>
+        {{ form.units }}
+        {% for error in form.units.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    {% if is_admin %}
+    <div class="flex items-center gap-2">
+        {{ form.is_active }}
+        <label for="{{ form.is_active.id_for_label }}" class="text-sm text-gray-700">Active</label>
+    </div>
+    {% endif %}
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Save
+        </button>
+    </div>
+</form>
+
+<style>
+    .no-spinner::-webkit-outer-spin-button, .no-spinner::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .no-spinner { -moz-appearance: textfield; }
+</style>

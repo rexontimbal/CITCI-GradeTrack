@@ -1,5 +1,5 @@
 {% load sidebar_icons %}
-<div x-data="{ mode: 'existing' }">
+<div x-data="{ highlighted: -1 }">
     <div class="flex items-center justify-between border-b border-gray-200 pb-3">
         <h3 id="modal-title" class="text-base font-semibold text-gray-900">Add Subject</h3>
         <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
@@ -7,18 +7,9 @@
         </button>
     </div>
 
-    <div class="mt-4 flex gap-2">
-        <button type="button" @click="mode = 'existing'"
-                :class="mode === 'existing' ? 'bg-brand-primary-700 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                class="rounded-lg px-3 py-1.5 text-sm font-medium">
-            Use an existing subject
-        </button>
-        <button type="button" @click="mode = 'new'"
-                :class="mode === 'new' ? 'bg-brand-primary-700 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                class="rounded-lg px-3 py-1.5 text-sm font-medium">
-            Create a new subject
-        </button>
-    </div>
+    <p class="mt-3 inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+        {{ scope_label }} · {{ slot_label }}
+    </p>
 
     <form method="post" hx-post="{% url 'academics:subject_add' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
         {% csrf_token %}
@@ -26,42 +17,81 @@
         <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
         <input type="hidden" name="year_level" value="{{ year_level|default:'' }}">
         <input type="hidden" name="term" value="{{ term }}">
-        <p class="text-xs text-gray-600">
-            Adding to: <strong>{{ program.code }}{% if major %}-{{ major.code }}{% endif %}</strong>
-            {% if year_level %}, Year {{ year_level }}{% endif %}, {{ term }}
-        </p>
 
-        <div x-show="mode === 'existing'" x-cloak>
-            {% if existing_form.non_field_errors %}
-            <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ existing_form.non_field_errors }}</div>
-            {% endif %}
-            <label for="{{ existing_form.subject.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Subject</label>
-            {{ existing_form.subject }}
-            {% for error in existing_form.subject.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
-        </div>
+        {% if form.non_field_errors %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+        {% endif %}
 
-        <div x-show="mode === 'new'" x-cloak class="space-y-4">
-            {% if create_form.non_field_errors %}
-            <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ create_form.non_field_errors }}</div>
-            {% endif %}
-            {% for field in create_form %}
-            <div>
-                <label for="{{ field.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ field.label }}</label>
-                {{ field }}
-                {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        <div class="relative">
+            <label for="{{ form.code.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Subject code</label>
+            {{ form.code }}
+            {% for error in form.code.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+
+            {% if search_results %}
+            <div class="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                {% for row in search_results %}
+                {% if row.disabled %}
+                <div class="flex items-center justify-between px-3 py-2 text-sm text-gray-400">
+                    <span><strong>{{ row.subject.code }}</strong> — {{ row.subject.title }} ({{ row.subject.units }})</span>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">Already in {{ row.already_in }}</span>
+                </div>
+                {% else %}
+                <button type="button"
+                        @click="document.getElementById('{{ form.code.id_for_label }}').value = '{{ row.subject.code|escapejs }}'; htmx.trigger(document.getElementById('{{ form.code.id_for_label }}'), 'keyup')"
+                        :class="highlighted === {{ forloop.counter0 }} ? 'bg-gray-100' : ''"
+                        class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100">
+                    <strong>{{ row.subject.code }}</strong> — {{ row.subject.title }} <span class="text-gray-500">({{ row.subject.units }})</span>
+                </button>
+                {% endif %}
+                {% endfor %}
             </div>
-            {% endfor %}
+            {% endif %}
         </div>
 
-        <input type="hidden" name="mode" x-bind:value="mode">
+        {% if mode == "existing" %}
+        <p class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Existing subject — it will be added to this semester's curriculum.
+        </p>
+        {% elif mode == "new" %}
+        <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            New subject — it will be created and added.
+        </p>
+        {% endif %}
+
+        <div>
+            <label for="{{ form.title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Title</label>
+            {% if mode == "existing" %}
+            <input type="text" value="{{ matched_subject.title }}" disabled class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <input type="hidden" name="title" value="{{ matched_subject.title }}">
+            {% else %}
+            {{ form.title }}
+            {% for error in form.title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+            {% endif %}
+        </div>
+
+        <div>
+            <label for="{{ form.units.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Units</label>
+            {% if mode == "existing" %}
+            <input type="text" value="{{ matched_subject.units }}" disabled class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <input type="hidden" name="units" value="{{ matched_subject.units }}">
+            {% else %}
+            {{ form.units }}
+            {% for error in form.units.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+            {% endif %}
+        </div>
 
         <div class="flex justify-end gap-2 pt-2">
             <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Cancel
             </button>
             <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-                Add
+                {% if mode == "existing" %}Add to curriculum{% else %}Create and add{% endif %}
             </button>
         </div>
     </form>
 </div>
+
+<style>
+    .no-spinner::-webkit-outer-spin-button, .no-spinner::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .no-spinner { -moz-appearance: textfield; }
+</style>

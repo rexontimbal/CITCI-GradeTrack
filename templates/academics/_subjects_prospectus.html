@@ -1,22 +1,27 @@
 {% load sidebar_icons core_extras %}
+{% url 'academics:subjects' as base_url %}
+{% if not is_admin %}{% url 'academics:ph_subjects' as base_url %}{% endif %}
+
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     {% if is_admin %}
-    <form hx-get="{% url 'academics:subjects' %}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+    <form hx-get="{{ base_url }}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
           class="flex flex-wrap items-center gap-2">
         <select name="program" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Program">
-            {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.code }}</option>{% endfor %}
+            {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
         </select>
         <select name="major" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Major">
             <option value="">(no major — TCP-style)</option>
-            {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.code }} — {{ m.name }}</option>{% endfor %}
+            {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
         </select>
+        <input type="hidden" name="term" value="{{ term_filter }}">
+        <input type="hidden" name="year_level" value="{{ year_level_filter }}">
         <input type="hidden" name="q" value="{{ query }}">
     </form>
     {% else %}
     <div class="flex flex-wrap gap-2">
         {% for pill in pills %}
-        <a href="?program={{ pill.program_id }}&major={{ pill.major_id }}"
-           hx-get="{% url 'academics:ph_subjects' %}?program={{ pill.program_id }}&major={{ pill.major_id }}"
+        <a href="?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&term={{ term_filter }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
+           hx-get="{{ base_url }}?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&term={{ term_filter }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
            hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
            class="rounded-lg px-3 py-1.5 text-sm font-medium {% if pill.active %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
             {{ pill.label }}
@@ -28,21 +33,67 @@
     <div class="flex items-center gap-2" id="subjects-search-wrap">
         <input type="hidden" id="subjects-search-program" value="{{ program.pk }}">
         <input type="hidden" id="subjects-search-major" value="{{ major.pk|default:'' }}">
+        <input type="hidden" id="subjects-search-term" value="{{ term_filter }}">
+        <input type="hidden" id="subjects-search-year-level" value="{{ year_level_filter }}">
         <div class="relative">
             {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
             <input type="text" name="q" value="{{ query }}" placeholder="Search code or title"
-                   hx-get="{% url 'academics:subjects' %}" hx-include="#subjects-search-program,#subjects-search-major"
+                   hx-get="{{ base_url }}" hx-include="#subjects-search-program,#subjects-search-major,#subjects-search-term,#subjects-search-year-level"
                    hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-trigger="keyup changed delay:400ms"
                    class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
         </div>
     </div>
 </div>
 
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-4">
+        <div class="flex flex-wrap gap-1">
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term=ALL&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term=ALL&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
+               hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if term_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                All
+            </a>
+            {% for value, label in term_choices %}
+            {% if value != "SUMMER" or has_summer %}
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ value }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ value }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}"
+               hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if term_filter == value %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                {{ label }}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        {% if available_year_levels %}
+        <div class="flex flex-wrap gap-1">
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level=ALL&q={{ query|urlencode }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level=ALL&q={{ query|urlencode }}"
+               hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if year_level_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                All Years
+            </a>
+            {% for yl in available_year_levels %}
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level={{ yl }}&q={{ query|urlencode }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level={{ yl }}&q={{ query|urlencode }}"
+               hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if year_level_filter == yl|stringformat:'s' %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                {{ yl }}{% if yl == 1 %}st{% elif yl == 2 %}nd{% elif yl == 3 %}rd{% else %}th{% endif %} Year
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <p class="text-xs font-medium text-gray-600">{{ subject_count }} subject{{ subject_count|pluralize }} · {{ total_units }} units</p>
+</div>
+
 {% if cards %}
 {% for card in cards %}
 <div class="mb-6 rounded-2xl border border-gray-200 bg-white p-5">
     <h3 class="mb-3 text-sm font-semibold text-gray-900">
-        {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}{{ program.code }}{% if major %}-{{ major.code }}{% endif %}{% endif %}
+        {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}{{ major.name|default:program.code }}{% endif %}
     </h3>
     {% for table in card.term_tables %}
     <div class="mb-4 last:mb-0">

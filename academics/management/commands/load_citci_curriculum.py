@@ -24,6 +24,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
 from academics.management.commands.import_offerings_docx import parse_docx
 from academics.models import CurriculumEntry, Major, Program, Subject
@@ -34,13 +35,21 @@ _CODE_FAMILY_RE = re.compile(r"^([A-Za-z]+)\s*(\d+)$")
 
 
 def _resolve_program_major(program_code, major_name):
-    program = Program.objects.filter(code=program_code, is_active=True).first()
+    """Matches a Program/Major by code OR name, case-insensitive -- a
+    hand-created record doesn't have to use the docx's exact short code
+    (e.g. a Program named "Teacher Certificate Program" or coded
+    differently from "TCP" still matches)."""
+    program = Program.objects.filter(
+        Q(code__iexact=program_code) | Q(name__iexact=program_code), is_active=True
+    ).first()
     if program is None:
         return None, None, f'Unknown program code "{program_code}".'
     if major_name is None:
         return program, None, None
     major_code = _DOCX_MAJOR_NAME_TO_CODE.get(major_name, major_name)
-    major = Major.objects.filter(program=program, code=major_code, is_active=True).first()
+    major = Major.objects.filter(
+        Q(code__iexact=major_code) | Q(name__iexact=major_name), program=program, is_active=True
+    ).first()
     if major is None:
         return program, None, f'Unknown major "{major_name}" ({major_code}) for program {program_code}.'
     return program, major, None

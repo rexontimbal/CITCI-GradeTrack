@@ -14,13 +14,17 @@ from django.db.models import Count, Q
 import re
 
 from .models import (
+    AcademicSetupChangeLog,
     AcademicYear,
     ClassOffering,
     ClassRosterEntry,
     CurriculumEntry,
     Section,
     Semester,
+    SemesterStatus,
+    StudentProfile,
     Subject,
+    SubjectOffering,
     TeachingAssignmentLog,
 )
 
@@ -29,8 +33,13 @@ def check_instructor_change_allowed(class_offering):
     """Raises ValidationError if this class's grade sheet has already been
     submitted — once grades are in the approval pipeline, who taught the
     class shouldn't change out from under it. Allowed while the sheet is
-    still DRAFT/RETURNED, or doesn't exist yet."""
+    still DRAFT/RETURNED, or doesn't exist yet. Also blocked once the
+    class's semester is CLOSED (read-only everywhere except admin grade
+    corrections)."""
     from approvals.services import is_class_editable
+
+    if is_semester_locked(class_offering.semester):
+        raise ValidationError("This semester is closed — the instructor can no longer be changed.")
 
     if not is_class_editable(class_offering):
         raise ValidationError(
@@ -322,3 +331,283 @@ def subject_used_in_released_grades(subject):
     return ClassOffering.objects.filter(
         subject=subject, grade_sheets__status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
     ).exists()
+
+
+# ---------------------------------------------------------------------------
+# Subject Offering — a Program Head checks a box next to a curriculum
+# subject to "offer" it for the active (or an upcoming) semester; offering
+# creates one ClassOffering per active section of that program/major/
+# year_level and fills its roster from the section's active students.
+# Preview (read-only) → commit (one atomic transaction) — same shape as
+# offerings_import's/the AY wizard's existing preview-then-confirm flows.
+# ---------------------------------------------------------------------------
+
+
+def is_semester_locked(semester):
+    """CLOSED semesters are read-only everywhere except admin grade
+    corrections (which have their own RELEASED/LOCKED-only gate already,
+    independent of this)."""
+    return semester is not None and semester.status == SemesterStatus.CLOSED
+
+
+def offering_allowed(semester):
+    """Offering (and everything that follows from it -- classes, roster,
+    instructor assignment) is allowed for ACTIVE and UPCOMING semesters,
+    so the next semester can be planned ahead; never for CLOSED."""
+    return semester is not None and semester.status != SemesterStatus.CLOSED
+
+
+def offerable_subjects_for(program, major, semester):
+    """Curriculum subjects for this program/major, for `semester`'s own
+    term, that don't already have a SubjectOffering this semester."""
+    entries = (
+        CurriculumEntry.objects.filter(program=program, major=major, term=semester.term)
+        .select_related("subject")
+        .order_by("year_level", "subject__code")
+    )
+    offered_subject_ids = set(
+        SubjectOffering.objects.filter(semester=semester, program=program, major=major).values_list(
+            "subject_id", flat=True
+        )
+    )
+    return [entry for entry in entries if entry.subject_id not in offered_subject_ids]
+
+
+def preview_subject_offerings(curriculum_entry_ids, semester):
+    """Read-only. For each requested CurriculumEntry: resolves the active
+    section(s) of its program/major/year_level in the semester's academic
+    year (one plan row per section — "one class per active section", per
+    spec), flags a "shared subject" conflict when another program/major
+    already has a class for the same subject+semester+year_level, and
+    reports (separately) any entry with no matching section at all, and
+    any entry already offered this semester (defense in depth — the UI
+    disables an already-offered checkbox, but a stale page shouldn't be
+    trusted blindly). Returns a dict of plain dicts holding live model
+    instances — the view is responsible for whatever session-safe id-only
+    serialization it needs for its own preview→confirm round trip."""
+    entries = CurriculumEntry.objects.filter(pk__in=curriculum_entry_ids).select_related(
+        "subject", "program", "major"
+    )
+    already_offered_keys = set(
+        SubjectOffering.objects.filter(semester=semester).values_list("program_id", "major_id", "year_level", "subject_id")
+    )
+
+    plan_rows = []
+    missing_section_rows = []
+    already_offered_rows = []
+
+    for entry in entries:
+        key = (entry.program_id, entry.major_id, entry.year_level, entry.subject_id)
+        if key in already_offered_keys:
+            already_offered_rows.append({"curriculum_entry": entry, "subject": entry.subject})
+            continue
+
+        sections = Section.objects.filter(
+            program=entry.program, major=entry.major, year_level=entry.year_level, academic_year=semester.academic_year
+        )
+        if not sections.exists():
+            missing_section_rows.append(
+                {
+                    "curriculum_entry": entry,
+                    "subject": entry.subject,
+                    "program": entry.program,
+                    "major": entry.major,
+                    "year_level": entry.year_level,
+                }
+            )
+            continue
+
+        for section in sections:
+            conflict_class = (
+                ClassOffering.objects.filter(
+                    subject=entry.subject, semester=semester, sections__year_level=entry.year_level
+                )
+                .exclude(sections=section)
+                .exclude(sections__program=entry.program, sections__major=entry.major)
+                .distinct()
+                .first()
+            )
+            plan_rows.append(
+                {
+                    "curriculum_entry": entry,
+                    "subject": entry.subject,
+                    "program": entry.program,
+                    "major": entry.major,
+                    "year_level": entry.year_level,
+                    "section": section,
+                    "conflict_class": conflict_class,
+                }
+            )
+
+    return {
+        "plan_rows": plan_rows,
+        "missing_section_rows": missing_section_rows,
+        "already_offered_rows": already_offered_rows,
+    }
+
+
+def fill_roster_from_section(class_offering, section):
+    """Adds every active student of `section` to `class_offering`'s roster
+    (idempotent — safe to call again, e.g. when Combine adds a section to
+    an already-populated class). Returns how many roster entries were
+    newly created. Modeled directly on roster_import.commit_import's
+    identical ClassRosterEntry.objects.get_or_create(...) call."""
+    added = 0
+    profiles = StudentProfile.objects.filter(section=section, status=StudentProfile.Status.ACTIVE).select_related("user")
+    for profile in profiles:
+        _, created = ClassRosterEntry.objects.get_or_create(
+            student=profile.user, class_offering=class_offering, defaults={"status": ClassRosterEntry.Status.ACTIVE}
+        )
+        if created:
+            added += 1
+    return added
+
+
+def commit_subject_offerings(plan_rows, decisions, semester, actor, is_admin_override=False):
+    """One atomic transaction. `decisions` is {str(conflict_class_id):
+    "combine"|"separate"} — a conflicting row with no decision defaults to
+    "combine" per spec. Returns counts for the summary toast. Logs one
+    AcademicSetupChangeLog row per newly-created SubjectOffering (not per
+    class — the classes it spawns are an implicit detail of the offering,
+    recorded in that row's `details`, to avoid doubling up with the
+    existing per-class CREATED logging used by manual class creation)."""
+    offerings_created = 0
+    classes_created = 0
+    students_added = 0
+    offering_by_key = {}
+
+    with transaction.atomic():
+        for row in plan_rows:
+            subject = row["subject"]
+            program = row["program"]
+            major = row["major"]
+            year_level = row["year_level"]
+            section = row["section"]
+            conflict_class = row["conflict_class"]
+
+            key = (program.id, major.id if major else None, year_level, subject.id)
+            subject_offering = offering_by_key.get(key)
+            is_new_offering = subject_offering is None
+            if is_new_offering:
+                subject_offering = SubjectOffering.objects.create(
+                    semester=semester, program=program, major=major, year_level=year_level, subject=subject, created_by=actor
+                )
+                offering_by_key[key] = subject_offering
+                offerings_created += 1
+
+            decision = decisions.get(str(conflict_class.id), "combine") if conflict_class else None
+            combine = conflict_class is not None and decision != "separate"
+
+            if combine:
+                class_offering = conflict_class
+                if not class_offering.sections.filter(pk=section.pk).exists():
+                    class_offering.sections.add(section)
+                if class_offering.offering_id is None:
+                    class_offering.offering = subject_offering
+                    class_offering.save(update_fields=["offering"])
+            else:
+                class_offering = ClassOffering.objects.create(subject=subject, semester=semester, offering=subject_offering)
+                class_offering.snapshot_subject()
+                class_offering.save(
+                    update_fields=["subject_code_snapshot", "subject_title_snapshot", "subject_units_snapshot"]
+                )
+                class_offering.sections.add(section)
+                classes_created += 1
+
+            students_added += fill_roster_from_section(class_offering, section)
+
+            if is_new_offering:
+                AcademicSetupChangeLog.objects.create(
+                    model_name=AcademicSetupChangeLog.ModelName.OFFERING,
+                    object_id=subject_offering.pk,
+                    object_repr=str(subject_offering),
+                    action=AcademicSetupChangeLog.Action.OFFERED,
+                    program=program,
+                    major=major,
+                    actor=actor,
+                    is_admin_override=is_admin_override,
+                )
+
+    return {"offerings_created": offerings_created, "classes_created": classes_created, "students_added": students_added}
+
+
+def withdraw_offering(offering, actor):
+    """Deletes `offering` and every class it created, but only if none of
+    those classes has a score encoded or a submitted-or-later grade sheet.
+    Returns (True, None) on success, or (False, reason) if blocked — never
+    partially deletes."""
+    from approvals.services import is_class_editable
+    from grading.models import Score
+
+    classes = list(offering.class_offerings.all())
+    blocking = [
+        class_offering
+        for class_offering in classes
+        if Score.objects.filter(roster_entry__class_offering=class_offering, score__isnull=False).exists()
+        or not is_class_editable(class_offering)
+    ]
+    if blocking:
+        names = ", ".join(str(c) for c in blocking)
+        return False, f"Can't withdraw — {names} already has scores or a submitted grade sheet."
+
+    with transaction.atomic():
+        AcademicSetupChangeLog.objects.create(
+            model_name=AcademicSetupChangeLog.ModelName.OFFERING,
+            object_id=offering.pk,
+            object_repr=str(offering),
+            action=AcademicSetupChangeLog.Action.WITHDRAWN,
+            program=offering.program,
+            major=offering.major,
+            actor=actor,
+            is_admin_override=False,
+            details={"classes_deleted": len(classes)},
+        )
+        for class_offering in classes:
+            # ClassRosterEntry.class_offering is PROTECT -- clear the
+            # roster first, or the class delete below raises ProtectedError.
+            class_offering.roster_entries.all().delete()
+            class_offering.delete()
+        offering.delete()
+
+    return True, None
+
+
+def close_semester(semester, actor):
+    """Closes `semester` (status=CLOSED, is_active=False) once every one
+    of its classes' grade sheets is LOCKED, or its end_date has already
+    passed. Returns (True, None) or (False, reason)."""
+    from django.utils import timezone
+
+    from approvals.models import GradeSheet, GradeSheetStatus
+
+    end_date_passed = bool(semester.end_date and semester.end_date <= timezone.localdate())
+    all_locked = not GradeSheet.objects.filter(class_offering__semester=semester).exclude(
+        status=GradeSheetStatus.LOCKED
+    ).exists()
+
+    if not (all_locked or end_date_passed):
+        return False, "Not every grade sheet is locked yet, and the semester's end date hasn't passed."
+
+    semester.status = SemesterStatus.CLOSED
+    semester.is_active = False
+    semester.save(update_fields=["status", "is_active"])
+
+    AcademicSetupChangeLog.objects.create(
+        model_name=AcademicSetupChangeLog.ModelName.SEMESTER,
+        object_id=semester.pk,
+        object_repr=str(semester),
+        action=AcademicSetupChangeLog.Action.CLOSED,
+        actor=actor,
+        is_admin_override=True,
+    )
+    return True, None
+
+
+def class_status_chip(class_offering):
+    """"needs_instructor" / "needs_schedule" / "ready" — drives the Classes
+    page's status chip and filter."""
+    if class_offering.instructor_id is None:
+        return "needs_instructor"
+    if not class_offering.schedule:
+        return "needs_schedule"
+    return "ready"

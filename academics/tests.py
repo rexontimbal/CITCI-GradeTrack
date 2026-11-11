@@ -21,8 +21,10 @@ from .models import (
     Program,
     Section,
     Semester,
+    SemesterStatus,
     StudentProfile,
     Subject,
+    SubjectOffering,
     Term,
 )
 
@@ -2498,3 +2500,265 @@ class EditSubjectCodeTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.get(reverse("academics:subject_correct_code", args=[subject.pk]))
         self.assertEqual(response.status_code, 403)
+
+
+class SubjectOfferingTestBase(TestCase):
+    """One program (BSED) with two majors (English, Social Studies), each
+    with one 1st-Year section, sharing a General Education subject in
+    their curricula -- the "shared subject" scenario the spec describes
+    (offering GE 2 for one major while it's already offered for the
+    other)."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+
+        self.program = Program.objects.create(code="BSED", name="BS Education")
+        self.major_eng = Major.objects.create(program=self.program, code="ENG", name="English")
+        self.major_ss = Major.objects.create(program=self.program, code="SS", name="Social Studies")
+
+        self.section_eng = Section.objects.create(
+            program=self.program, major=self.major_eng, academic_year=self.ay, year_level=1, name="A"
+        )
+        self.section_ss = Section.objects.create(
+            program=self.program, major=self.major_ss, academic_year=self.ay, year_level=1, name="A"
+        )
+
+        self.ge_subject = Subject.objects.create(code="GE 2", title="Purposive Communication", units=Decimal("3.0"))
+        self.entry_eng = CurriculumEntry.objects.create(
+            program=self.program, major=self.major_eng, year_level=1, term=Term.FIRST, subject=self.ge_subject
+        )
+        self.entry_ss = CurriculumEntry.objects.create(
+            program=self.program, major=self.major_ss, year_level=1, term=Term.FIRST, subject=self.ge_subject
+        )
+
+        self.admin = make_user(User.Role.ADMIN, "offering_admin", is_staff=True, is_superuser=True)
+
+        self.active_students_eng = [self._make_active_student(f"eng_stud{i}", self.section_eng) for i in range(2)]
+        self.active_students_ss = [self._make_active_student(f"ss_stud{i}", self.section_ss) for i in range(1)]
+        self.completed_student_ss = self._make_active_student(
+            "ss_completed", self.section_ss, status=StudentProfile.Status.COMPLETED
+        )
+
+    def _make_active_student(self, username, section, status=StudentProfile.Status.ACTIVE):
+        user = make_user(User.Role.STUDENT, username)
+        profile = user.student_profile
+        profile.program = section.program
+        profile.major = section.major
+        profile.year_level = section.year_level
+        profile.section = section
+        profile.status = status
+        profile.save()
+        return user
+
+
+class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
+    def test_offer_creates_one_class_per_section_and_fills_roster_with_active_students_only(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        self.assertEqual(len(preview["plan_rows"]), 1)
+        self.assertEqual(preview["missing_section_rows"], [])
+        self.assertIsNone(preview["plan_rows"][0]["conflict_class"])
+
+        result = commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        self.assertEqual(result, {"offerings_created": 1, "classes_created": 1, "students_added": 2})
+
+        offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+        class_offering = ClassOffering.objects.get(offering=offering)
+        self.assertEqual(list(class_offering.sections.all()), [self.section_eng])
+        roster_student_ids = set(
+            class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).values_list(
+                "student_id", flat=True
+            )
+        )
+        self.assertEqual(roster_student_ids, {u.id for u in self.active_students_eng})
+
+    def test_no_section_for_year_level_reports_missing_and_creates_nothing(self):
+        from .services import preview_subject_offerings
+
+        other_major = Major.objects.create(program=self.program, code="MATH", name="Mathematics")
+        entry_no_section = CurriculumEntry.objects.create(
+            program=self.program, major=other_major, year_level=2, term=Term.FIRST, subject=self.ge_subject
+        )
+
+        preview = preview_subject_offerings([entry_no_section.pk], self.semester)
+        self.assertEqual(preview["plan_rows"], [])
+        self.assertEqual(len(preview["missing_section_rows"]), 1)
+        self.assertEqual(preview["missing_section_rows"][0]["major"], other_major)
+        self.assertEqual(SubjectOffering.objects.count(), 0)
+        self.assertEqual(ClassOffering.objects.count(), 0)
+
+    def test_shared_subject_combine_adds_section_to_existing_class(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        first_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(first_preview["plan_rows"], {}, self.semester, self.admin)
+
+        second_preview = preview_subject_offerings([self.entry_ss.pk], self.semester)
+        self.assertEqual(len(second_preview["plan_rows"]), 1)
+        conflict_class = second_preview["plan_rows"][0]["conflict_class"]
+        self.assertIsNotNone(conflict_class)
+
+        result = commit_subject_offerings(second_preview["plan_rows"], {}, self.semester, self.admin)
+        self.assertEqual(result["classes_created"], 0)
+        self.assertEqual(result["offerings_created"], 1)
+
+        self.assertEqual(ClassOffering.objects.count(), 1)
+        class_offering = ClassOffering.objects.get()
+        self.assertEqual(set(class_offering.sections.all()), {self.section_eng, self.section_ss})
+        roster_student_ids = set(
+            class_offering.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).values_list(
+                "student_id", flat=True
+            )
+        )
+        expected = {u.id for u in self.active_students_eng} | {u.id for u in self.active_students_ss}
+        self.assertEqual(roster_student_ids, expected)
+        self.assertNotIn(self.completed_student_ss.id, roster_student_ids)
+
+    def test_shared_subject_separate_creates_second_class(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        first_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(first_preview["plan_rows"], {}, self.semester, self.admin)
+
+        second_preview = preview_subject_offerings([self.entry_ss.pk], self.semester)
+        conflict_class = second_preview["plan_rows"][0]["conflict_class"]
+
+        commit_subject_offerings(second_preview["plan_rows"], {str(conflict_class.id): "separate"}, self.semester, self.admin)
+
+        self.assertEqual(ClassOffering.objects.count(), 2)
+        new_class = ClassOffering.objects.exclude(pk=conflict_class.pk).get()
+        self.assertEqual(list(new_class.sections.all()), [self.section_ss])
+
+    def test_duplicate_offering_skipped_by_preview_and_blocked_by_constraint(self):
+        from django.db import IntegrityError
+
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+
+        second_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        self.assertEqual(second_preview["plan_rows"], [])
+        self.assertEqual(len(second_preview["already_offered_rows"]), 1)
+
+        with self.assertRaises(IntegrityError):
+            SubjectOffering.objects.create(
+                semester=self.semester, program=self.program, major=self.major_eng, year_level=1, subject=self.ge_subject
+            )
+
+
+class WithdrawOfferingTests(SubjectOfferingTestBase):
+    def _offer_eng(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        return SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+
+    def test_withdraw_succeeds_when_no_scores_or_submitted_sheet(self):
+        from .services import withdraw_offering
+
+        offering = self._offer_eng()
+        ok, reason = withdraw_offering(offering, self.admin)
+        self.assertTrue(ok)
+        self.assertIsNone(reason)
+        self.assertEqual(SubjectOffering.objects.count(), 0)
+        self.assertEqual(ClassOffering.objects.count(), 0)
+
+    def test_withdraw_blocked_when_scores_exist(self):
+        from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, Score
+        from grading.services import ensure_default_grading_template
+
+        from .services import withdraw_offering
+
+        ensure_default_grading_template()
+        offering = self._offer_eng()
+        class_offering = ClassOffering.objects.get(offering=offering)
+        scheme = ClassGradingScheme.get_or_create_default(class_offering)
+        component = scheme.components.first()
+        item = AssessmentItem.objects.create(
+            class_offering=class_offering, component=component, title="Quiz 1", max_score=10, term=AssessmentTerm.PRELIM
+        )
+        roster_entry = class_offering.roster_entries.first()
+        Score.objects.create(roster_entry=roster_entry, item=item, score=8)
+
+        ok, reason = withdraw_offering(offering, self.admin)
+        self.assertFalse(ok)
+        self.assertIn("scores", reason)
+        self.assertEqual(SubjectOffering.objects.count(), 1)
+
+    def test_withdraw_blocked_when_grade_sheet_submitted(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        from .services import withdraw_offering
+
+        offering = self._offer_eng()
+        class_offering = ClassOffering.objects.get(offering=offering)
+        GradeSheet.objects.create(class_offering=class_offering, status=GradeSheetStatus.SUBMITTED)
+
+        ok, reason = withdraw_offering(offering, self.admin)
+        self.assertFalse(ok)
+        self.assertEqual(SubjectOffering.objects.count(), 1)
+
+
+class ClassOfferingSnapshotTests(SubjectOfferingTestBase):
+    def test_subject_edit_after_class_created_does_not_change_past_class_display(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        class_offering = ClassOffering.objects.get()
+        self.assertEqual(class_offering.display_code, "GE 2")
+        self.assertEqual(class_offering.display_title, "Purposive Communication")
+
+        self.ge_subject.code = "GE 2-REVISED"
+        self.ge_subject.title = "Communication Skills"
+        self.ge_subject.save()
+        class_offering.refresh_from_db()
+
+        self.assertEqual(class_offering.display_code, "GE 2")
+        self.assertEqual(class_offering.display_title, "Purposive Communication")
+        self.assertEqual(class_offering.subject.code, "GE 2-REVISED")
+
+
+class SemesterStatusTests(TestCase):
+    def test_setting_active_sets_status_active(self):
+        ay = AcademicYear.objects.create(start_year=2027)
+        semester = Semester.objects.create(academic_year=ay, term=Term.FIRST, is_active=True)
+        self.assertEqual(semester.status, SemesterStatus.ACTIVE)
+
+    def test_close_semester_clears_is_active(self):
+        from .services import close_semester
+
+        ay = AcademicYear.objects.create(start_year=2027)
+        semester = Semester.objects.create(
+            academic_year=ay, term=Term.FIRST, is_active=True, end_date=date(2020, 1, 1)
+        )
+        admin = make_user(User.Role.ADMIN, "close_sem_admin", is_staff=True, is_superuser=True)
+        ok, reason = close_semester(semester, admin)
+        self.assertTrue(ok)
+        semester.refresh_from_db()
+        self.assertEqual(semester.status, SemesterStatus.CLOSED)
+        self.assertFalse(semester.is_active)
+
+    def test_close_semester_blocked_before_end_date_with_unlocked_sheets(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+
+        from .services import close_semester
+
+        ay = AcademicYear.objects.create(start_year=2028)
+        semester = Semester.objects.create(academic_year=ay, term=Term.FIRST, is_active=True)
+        program = Program.objects.create(code="BSIT2", name="BS Information Technology")
+        section = Section.objects.create(program=program, academic_year=ay, year_level=1, name="A")
+        subject = Subject.objects.create(code="SUBX", title="X", units=Decimal("3.0"))
+        class_offering = ClassOffering.objects.create(subject=subject, semester=semester)
+        class_offering.sections.set([section])
+        GradeSheet.objects.create(class_offering=class_offering, status=GradeSheetStatus.SUBMITTED)
+        admin = make_user(User.Role.ADMIN, "close_sem_admin2", is_staff=True, is_superuser=True)
+
+        ok, reason = close_semester(semester, admin)
+        self.assertFalse(ok)
+        semester.refresh_from_db()
+        self.assertEqual(semester.status, SemesterStatus.ACTIVE)

@@ -38,12 +38,27 @@ class AcademicYear(TimeStampedModel):
         return f"A.Y. {self.start_year}–{self.end_year}"
 
 
+class SemesterStatus(models.TextChoices):
+    UPCOMING = "UPCOMING", "Upcoming"
+    ACTIVE = "ACTIVE", "Active"
+    CLOSED = "CLOSED", "Closed"
+
+
 class Semester(TimeStampedModel):
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.PROTECT, related_name="semesters")
     term = models.CharField(max_length=10, choices=Term.choices)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=10,
+        choices=SemesterStatus.choices,
+        default=SemesterStatus.UPCOMING,
+        help_text="UPCOMING can be planned ahead (offerings allowed); ACTIVE is the one is_active=True "
+        "semester; CLOSED is read-only everywhere except admin grade corrections. Kept alongside "
+        "is_active (not replacing it) so every existing is_active=True query keeps working unchanged — "
+        "save() keeps the two fields consistent (ACTIVE implies is_active=True, CLOSED implies False).",
+    )
     submission_deadline = models.DateTimeField(
         null=True,
         blank=True,
@@ -59,7 +74,10 @@ class Semester(TimeStampedModel):
     def save(self, *args, **kwargs):
         with transaction.atomic():
             if self.is_active:
+                self.status = SemesterStatus.ACTIVE
                 Semester.objects.exclude(pk=self.pk).filter(is_active=True).update(is_active=False)
+            if self.status == SemesterStatus.CLOSED:
+                self.is_active = False
             super().save(*args, **kwargs)
 
     def __str__(self):
@@ -201,6 +219,48 @@ class CurriculumEntry(TimeStampedModel):
         return f"{self.subject.code} — {scope}"
 
 
+class SubjectOffering(TimeStampedModel):
+    """A curriculum subject actually being taught in a given semester —
+    what a Program Head checks a box for on the Subjects page. Creating
+    one is what spins up the matching ClassOffering(s) (one per active
+    section of this program/major/year_level) and fills their rosters;
+    `academics.services.commit_subject_offerings`/`withdraw_offering` are
+    the only places that should create/delete these rows."""
+
+    semester = models.ForeignKey(Semester, on_delete=models.PROTECT, related_name="subject_offerings")
+    program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="subject_offerings")
+    major = models.ForeignKey(
+        Major, on_delete=models.PROTECT, null=True, blank=True, related_name="subject_offerings"
+    )
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="offerings")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        constraints = [
+            # Same NULL-safe two-constraint split as CurriculumEntry (see
+            # its Meta for why a plain (semester, program, major, ...)
+            # constraint would miss a TCP-style duplicate).
+            models.UniqueConstraint(
+                fields=["semester", "program", "major", "year_level", "subject"],
+                condition=models.Q(major__isnull=False),
+                name="unique_offering_per_program_major",
+            ),
+            models.UniqueConstraint(
+                fields=["semester", "program", "year_level", "subject"],
+                condition=models.Q(major__isnull=True),
+                name="unique_offering_per_program_no_major",
+            ),
+        ]
+        ordering = ["-semester__academic_year__start_year", "semester__term", "subject__code"]
+
+    def __str__(self):
+        scope = f"{self.program.code}-{self.major.code}" if self.major else self.program.code
+        return f"{self.subject.code} offered for {scope} ({self.semester})"
+
+
 class StudentProfile(TimeStampedModel):
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Active"
@@ -255,6 +315,24 @@ class ClassOffering(TimeStampedModel):
     schedule = models.CharField(max_length=150, blank=True)
     room = models.CharField(max_length=50, blank=True)
     is_active = models.BooleanField(default=True)
+    offering = models.ForeignKey(
+        SubjectOffering,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="class_offerings",
+        help_text="Set when this class was created by offering a curriculum subject (vs. created "
+        "manually or via spreadsheet import) — SET_NULL so withdrawing the offering never "
+        "cascade-deletes a class someone decided to keep.",
+    )
+    subject_code_snapshot = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Subject code as of class creation -- never updated afterward, so a later "
+        "curriculum edit can't silently rewrite a past semester's grade sheets/reports.",
+    )
+    subject_title_snapshot = models.CharField(max_length=200, blank=True)
+    subject_units_snapshot = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
 
     class Meta:
         ordering = ["-semester__academic_year__start_year", "semester__term", "subject__code"]
@@ -265,13 +343,33 @@ class ClassOffering(TimeStampedModel):
             if mismatched.exists():
                 raise ValidationError("Every section's academic year must match the semester's academic year.")
 
+    def snapshot_subject(self):
+        """Call once, right after creation, to freeze this class's subject
+        code/title/units. Never call again afterward -- the whole point is
+        that these fields stop tracking the live Subject."""
+        self.subject_code_snapshot = self.subject.code
+        self.subject_title_snapshot = self.subject.title
+        self.subject_units_snapshot = self.subject.units
+
+    @property
+    def display_code(self):
+        return self.subject_code_snapshot or self.subject.code
+
+    @property
+    def display_title(self):
+        return self.subject_title_snapshot or self.subject.title
+
+    @property
+    def display_units(self):
+        return self.subject_units_snapshot if self.subject_units_snapshot is not None else self.subject.units
+
     @property
     def roster_count(self):
         return self.roster_entries.filter(status=ClassRosterEntry.Status.ACTIVE).count()
 
     def __str__(self):
         section_names = ", ".join(str(s) for s in self.sections.all())
-        return f"{self.subject.code} – {section_names}" if section_names else self.subject.code
+        return f"{self.display_code} – {section_names}" if section_names else self.display_code
 
 
 class ClassRosterEntry(TimeStampedModel):
@@ -358,6 +456,8 @@ class AcademicSetupChangeLog(TimeStampedModel):
         SECTION = "SECTION", "Section"
         SUBJECT = "SUBJECT", "Subject"
         CLASS = "CLASS", "Class"
+        OFFERING = "OFFERING", "Subject offering"
+        SEMESTER = "SEMESTER", "Semester"
 
     class Action(models.TextChoices):
         CREATED = "CREATED", "Created"
@@ -369,6 +469,9 @@ class AcademicSetupChangeLog(TimeStampedModel):
         ADDED_TO_CURRICULUM = "ADDED_TO_CURRICULUM", "Added to curriculum"
         REMOVED_FROM_CURRICULUM = "REMOVED_FROM_CURRICULUM", "Removed from curriculum"
         CODE_CORRECTED = "CODE_CORRECTED", "Code corrected"
+        OFFERED = "OFFERED", "Offered"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+        CLOSED = "CLOSED", "Closed"
 
     model_name = models.CharField(max_length=10, choices=ModelName.choices)
     object_id = models.PositiveIntegerField()

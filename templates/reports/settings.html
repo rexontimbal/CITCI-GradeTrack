@@ -2,7 +2,7 @@
 {% block page_title %}Institution Settings{% endblock %}
 {% block content %}
 <div class="mx-auto max-w-2xl">
-    {% include "partials/_page_header.html" with title="Institution Settings" subtitle="Header and signatory info used on every PDF and Excel report. Nothing here is hardcoded in templates." %}
+    {% include "partials/_page_subtitle.html" with subtitle="Header and signatory info used on every PDF and Excel report. Nothing here is hardcoded in templates." %}
 
     <form method="post" enctype="multipart/form-data" class="space-y-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         {% csrf_token %}

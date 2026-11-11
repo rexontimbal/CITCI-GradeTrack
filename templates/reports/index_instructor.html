@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block page_title %}Reports{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Reports" subtitle="Grade sheet PDFs and class record exports for your classes." %}
+{% include "partials/_page_subtitle.html" with subtitle="Grade sheet PDFs and class record exports for your classes." %}
 
 {% if not active_semester_set %}
 {% include "partials/_empty_state.html" with icon="document" title="No active semester" description="An admin hasn't set an active semester yet." %}

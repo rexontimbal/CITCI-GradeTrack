@@ -2,41 +2,42 @@
 {% load sidebar_icons %}
 {% block page_title %}Classes{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Classes" subtitle="Subject + section + instructor pairings for a semester." %}
 {% include "partials/_override_banner.html" %}
 
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <form hx-get="{% url 'academics:classes' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
-          hx-trigger="keyup changed delay:400ms from:input, change from:select, refreshClasses from:body"
-          class="flex flex-wrap items-center gap-2">
-        <div class="relative">
-            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
-            <input type="text" name="q" value="{{ query }}" placeholder="Search subject"
-                   class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+<div class="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <form hx-get="{% url 'academics:classes' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
+              hx-trigger="keyup changed delay:400ms from:input, change from:select, refreshClasses from:body"
+              class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            <div class="relative w-full sm:w-[280px]">
+                {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
+                <input type="text" name="q" value="{{ query }}" placeholder="Search subject"
+                       class="h-10 w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            </div>
+            <select name="semester" class="h-10 rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500" aria-label="Active semester">
+                <option value="">Active semester</option>
+                <option value="all">All semesters</option>
+                {% for s in semesters %}<option value="{{ s.pk }}">{{ s }}</option>{% endfor %}
+            </select>
+            <select name="program" class="h-10 rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500" aria-label="All programs">
+                <option value="">All programs</option>
+                {% for p in programs %}<option value="{{ p.pk }}">{{ p.code }}</option>{% endfor %}
+            </select>
+            <select name="instructor" class="h-10 rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500" aria-label="All instructors">
+                <option value="">All instructors</option>
+                {% for i in instructors %}<option value="{{ i.pk }}">{{ i.full_name }}</option>{% endfor %}
+            </select>
+        </form>
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <button hx-get="{% url 'academics:offerings_copy_previous' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                {% sidebar_icon "refresh" "w-4 h-4" %} Copy from Previous Semester
+            </button>
+            <button hx-get="{% url 'academics:class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="flex h-10 items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                {% sidebar_icon "plus" "w-4 h-4" %} Add Class
+            </button>
         </div>
-        <select name="semester" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Active semester">
-    <option value="">Active semester</option>
-            <option value="all">All semesters</option>
-            {% for s in semesters %}<option value="{{ s.pk }}">{{ s }}</option>{% endfor %}
-        </select>
-        <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All programs">
-    <option value="">All programs</option>
-            {% for p in programs %}<option value="{{ p.pk }}">{{ p.code }}</option>{% endfor %}
-        </select>
-        <select name="instructor" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All instructors">
-    <option value="">All instructors</option>
-            {% for i in instructors %}<option value="{{ i.pk }}">{{ i.full_name }}</option>{% endfor %}
-        </select>
-    </form>
-    <div class="flex items-center gap-2">
-        <button hx-get="{% url 'academics:offerings_copy_previous' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            {% sidebar_icon "refresh" "w-4 h-4" %} Copy from Previous Semester
-        </button>
-        <button hx-get="{% url 'academics:class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-            {% sidebar_icon "plus" "w-4 h-4" %} Add Class
-        </button>
     </div>
 </div>
 

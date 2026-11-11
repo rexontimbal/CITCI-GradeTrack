@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}{{ page_title }}{% endblock %}
 {% block content %}
-    {% include "partials/_page_header.html" with title=page_title subtitle="This module will be built in a later phase." %}
+    {% include "partials/_page_subtitle.html" with subtitle="This module will be built in a later phase." %}
     {% include "partials/_empty_state.html" with title="Coming soon" description=page_title|add:" will be available once this phase of CITCI GradeTrack is built." %}
 {% endblock %}

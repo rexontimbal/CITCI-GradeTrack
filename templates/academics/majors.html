@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Majors{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Majors" subtitle="Optional specializations within a program — a program may have none." %}
+{% include "partials/_page_subtitle.html" with subtitle="Optional specializations within a program — a program may have none." %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <form hx-get="{% url 'academics:majors' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"

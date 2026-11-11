@@ -580,7 +580,7 @@ def _build_pills(user):
         if majors:
             for major in majors:
                 if scoping.is_in_scope(user, program_id, major.id):
-                    pills.append({"label": major.name, "program": program, "major": major})
+                    pills.append({"label": major.name.title(), "program": program, "major": major})
         else:
             pills.append({"label": program.code, "program": program, "major": None})
     return pills

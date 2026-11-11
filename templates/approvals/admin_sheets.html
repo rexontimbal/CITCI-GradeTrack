@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Grade Sheets{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Grade Sheets" subtitle="All grade sheets for the active semester." %}
+{% include "partials/_page_subtitle.html" with subtitle="All grade sheets for the active semester." %}
 
 {% if not active_semester %}
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}

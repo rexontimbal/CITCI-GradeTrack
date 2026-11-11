@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Programs{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Programs" subtitle="Degree programs offered by the department." %}
+{% include "partials/_page_subtitle.html" with subtitle="Degree programs offered by the department." %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <form hx-get="{% url 'academics:programs' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"

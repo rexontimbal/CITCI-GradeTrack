@@ -2,7 +2,7 @@
 {% block page_title %}Historical Data{% endblock %}
 {% block content %}
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-    {% include "partials/_page_header.html" with title="Historical Data" subtitle="Masked past class records used to train the forecast model." %}
+    {% include "partials/_page_subtitle.html" with subtitle="Masked past class records used to train the forecast model." %}
     <div class="flex gap-2">
         <form method="post" action="{% url 'forecasting:historical_export_live' %}">
             {% csrf_token %}

@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Sections{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Sections" subtitle="Sections under your program for the active academic year." %}
+{% include "partials/_page_subtitle.html" with subtitle="Sections under your program for the active academic year." %}
 
 {% if not active_semester_set %}
 {% include "partials/_no_active_semester.html" %}

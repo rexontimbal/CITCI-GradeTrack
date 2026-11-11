@@ -2,7 +2,6 @@
 {% load sidebar_icons %}
 {% block page_title %}Subjects{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Subjects" subtitle="The subject catalog is shared school-wide — you can use any active subject on a class, but can only edit ones tagged solely to your own program/major." %}
 {% if is_admin %}{% include "partials/_override_banner.html" %}{% endif %}
 
 {% if no_scope %}

@@ -2,7 +2,7 @@
 {% block page_title %}Notifications{% endblock %}
 {% block content %}
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-    {% include "partials/_page_header.html" with title="Notifications" subtitle="Updates about your grade sheets." %}
+    {% include "partials/_page_subtitle.html" with subtitle="Updates about your grade sheets." %}
     {% if notifications %}
     <form method="post" action="{% url 'dashboard:notifications_mark_all_read' %}">
         {% csrf_token %}

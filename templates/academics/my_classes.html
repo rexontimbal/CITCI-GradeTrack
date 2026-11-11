@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block page_title %}My Classes{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="My Classes" subtitle="Your classes for the active semester." %}
+{% include "partials/_page_subtitle.html" with subtitle="Your classes for the active semester." %}
 
 {% if not active_semester_set %}
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}

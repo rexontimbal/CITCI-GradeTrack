@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.urls import reverse_lazy
 
 from accounts.models import User
-from core.forms import StyledModelForm
+from core.forms import INPUT_CLASSES, StyledModelForm
 from core.widgets import SearchableSelectWidget
 
 from .models import AcademicYear, ClassOffering, CurriculumEntry, Major, Program, Section, Semester, Subject
@@ -176,6 +176,16 @@ class SubjectAddForm(forms.Form):
         widget=forms.NumberInput(attrs=_UNITS_WIDGET_ATTRS),
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # A plain forms.Form (not StyledModelForm) never gets the shared
+        # bordered-input classes automatically -- apply them here, merged
+        # with each field's own attrs (hx-* on code, no-spinner on units)
+        # rather than overwriting them.
+        for field in self.fields.values():
+            existing = field.widget.attrs.get("class", "")
+            field.widget.attrs["class"] = f"{INPUT_CLASSES} {existing}".strip()
+
     def clean(self):
         from .services import find_subject_by_normalized_code
 
@@ -200,6 +210,12 @@ class SubjectCodeCorrectionForm(forms.Form):
 
     code = forms.CharField(max_length=20)
     reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            existing = field.widget.attrs.get("class", "")
+            field.widget.attrs["class"] = f"{INPUT_CLASSES} {existing}".strip()
 
 
 def _grouped_subject_choices(sections, term=None, base_queryset=None):

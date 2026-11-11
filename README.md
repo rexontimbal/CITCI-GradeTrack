@@ -80,11 +80,15 @@ python manage.py seed_citci_academics
 
 # 7. Build Tailwind CSS (downloads the Tailwind CLI binary the first time)
 python manage.py tailwind build
-#    while developing, use the watcher instead, in its own terminal:
-#    python manage.py tailwind watch
 
-# 8. Run the dev server
-python manage.py runserver
+# 8. Run the dev server -- while actively editing templates, use this instead of
+#    plain `runserver`: it runs Django's dev server AND the Tailwind watcher together,
+#    so static/css/tailwind.css stays in sync with every template change. A stale
+#    tailwind.css silently drops new utility classes with no error (`manage.py check`
+#    will warn you in dev if it ever goes stale -- see core.W001).
+python manage.py tailwind runserver
+#    (plain `python manage.py runserver` also works, but then you must remember to
+#    re-run `tailwind build` -- or run `tailwind watch` in a second terminal -- yourself)
 ```
 
 Visit http://127.0.0.1:8000/accounts/login/.

@@ -287,7 +287,12 @@ def slot_label(year_level, term):
 
 
 def scope_label(program, major):
-    return f"{program.code} – {major.name}" if major else program.code
+    """Display label for a program/major scope, e.g. "BSED – English".
+    `.title()` guards against a Major whose `name` happens to be stored
+    in a different case (e.g. imported from an all-caps docx heading like
+    "MAJOR IN ENGLISH") -- the badge should always read in proper case
+    regardless of how it's stored."""
+    return f"{program.code} – {major.name.title()}" if major else program.code
 
 
 def subject_duplicate_error(subject, program, major, year_level, term):

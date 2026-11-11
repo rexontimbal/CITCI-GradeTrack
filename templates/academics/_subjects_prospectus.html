@@ -99,11 +99,12 @@
     <div class="mb-4 last:mb-0">
         <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ table.label }}</span>
-            <a hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ card.year_level|default:'' }}&term={{ table.value }}"
+            <button type="button"
+               hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ card.year_level|default:'' }}&term={{ table.value }}"
                hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
                 {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add
-            </a>
+            </button>
         </div>
         {% if table.rows %}
         <div class="overflow-x-auto rounded-xl border border-gray-200">

@@ -2302,7 +2302,11 @@ class SubjectsFilterTests(TeachingAssignmentTestBase):
         self.assertContains(response, "SEMFIRST1")
         self.assertNotContains(response, "SEMSECOND1")
 
-    def test_semester_filter_all_shows_everything(self):
+    def test_semester_dropdown_is_the_only_term_control(self):
+        """The old "All / 1st Sem / 2nd Sem" pill row is gone -- the
+        Academic Year + Semester dropdown pair is the only way to change
+        which term's curriculum is listed now; a stray ?term= param in the
+        URL is simply ignored."""
         first_subject = Subject.objects.create(code="SEMFIRST2", title="X", units=Decimal("3.0"))
         second_subject = Subject.objects.create(code="SEMSECOND2", title="Y", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_b, major=self.major_eng, year_level=1, term="FIRST", subject=first_subject)
@@ -2311,7 +2315,8 @@ class SubjectsFilterTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.get(reverse("academics:ph_subjects") + f"?major={self.major_eng.pk}&term=ALL")
         self.assertContains(response, "SEMFIRST2")
-        self.assertContains(response, "SEMSECOND2")
+        self.assertNotContains(response, "SEMSECOND2")
+        self.assertNotContains(response, ">All<")
 
     def test_year_level_filter_hidden_when_no_year_levels(self):
         subject = Subject.objects.create(code="NOYRLVL1", title="X", units=Decimal("3.0"))

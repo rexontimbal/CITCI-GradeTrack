@@ -720,7 +720,10 @@ def subjects_home(request):
         return render(request, "academics/subjects.html", context)
 
     selected_semester = _resolve_semester_from_request(request)
-    term_filter = request.GET.get("term") or (selected_semester.term if selected_semester else "ALL")
+    # The Semester dropdown is the only term control now -- it drives both
+    # which semester's offerings show AND which curriculum term is listed
+    # (no separate "All terms" pill row any more).
+    term_filter = selected_semester.term if selected_semester else "ALL"
     year_level_filter = request.GET.get("year_level", "ALL")
     query = request.GET.get("q", "").strip()
 

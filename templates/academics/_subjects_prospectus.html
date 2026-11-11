@@ -3,84 +3,74 @@
 {% if not is_admin %}{% url 'academics:ph_subjects' as base_url %}{% endif %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    {% if is_admin %}
-    <form hx-get="{{ base_url }}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
-          class="flex flex-wrap items-center gap-2">
-        <select name="program" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Program">
-            {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
-        </select>
-        <select name="major" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Major">
-            <option value="">(no major — TCP-style)</option>
-            {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
-        </select>
-        <input type="hidden" name="term" value="{{ term_filter }}">
-        <input type="hidden" name="year_level" value="{{ year_level_filter }}">
-        <input type="hidden" name="q" value="{{ query }}">
-        <input type="hidden" name="ay" value="{{ selected_ay_id }}">
-        <input type="hidden" name="sem_term" value="{{ selected_sem_term }}">
-    </form>
-    {% else %}
-    <div class="flex flex-wrap gap-2">
-        {% for pill in pills %}
-        <a href="?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&term={{ term_filter }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-           hx-get="{{ base_url }}?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&term={{ term_filter }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-           hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
-           class="rounded-lg px-3 py-1.5 text-sm font-medium {% if pill.active %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-            {{ pill.label }}
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <div class="flex items-center gap-2" id="subjects-search-wrap">
-        <input type="hidden" id="subjects-search-program" value="{{ program.pk }}">
-        <input type="hidden" id="subjects-search-major" value="{{ major.pk|default:'' }}">
-        <input type="hidden" id="subjects-search-term" value="{{ term_filter }}">
-        <input type="hidden" id="subjects-search-year-level" value="{{ year_level_filter }}">
-        <input type="hidden" id="subjects-search-ay" value="{{ selected_ay_id }}">
-        <input type="hidden" id="subjects-search-sem-term" value="{{ selected_sem_term }}">
-        <div class="relative">
-            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
-            <input type="text" name="q" value="{{ query }}" placeholder="Search code or title"
-                   hx-get="{{ base_url }}" hx-include="#subjects-search-program,#subjects-search-major,#subjects-search-term,#subjects-search-year-level,#subjects-search-ay,#subjects-search-sem-term"
-                   hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-trigger="keyup changed delay:400ms"
-                   class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-        </div>
-    </div>
-</div>
-
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex flex-wrap items-center gap-4">
-        <div class="flex flex-wrap gap-1">
-            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term=ALL&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term=ALL&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+    <div class="flex flex-wrap items-center gap-3">
+        {% if is_admin %}
+        <form hx-get="{{ base_url }}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+              class="flex flex-wrap items-center gap-2">
+            <select name="program" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Program">
+                {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+            </select>
+            <select name="major" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Major">
+                <option value="">(no major — TCP-style)</option>
+                {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+            </select>
+            <input type="hidden" name="year_level" value="{{ year_level_filter }}">
+            <input type="hidden" name="q" value="{{ query }}">
+            <input type="hidden" name="ay" value="{{ selected_ay_id }}">
+            <input type="hidden" name="sem_term" value="{{ selected_sem_term }}">
+        </form>
+        {% else %}
+        <div class="flex flex-wrap gap-2">
+            {% for pill in pills %}
+            <a href="?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+               hx-get="{{ base_url }}?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
                hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
-               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if term_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-                All
+               class="rounded-lg px-3 py-1.5 text-sm font-medium {% if pill.active %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                {{ pill.label }}
             </a>
-            {% for value, label in term_choices %}
-            {% if value != "SUMMER" or has_summer %}
-            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ value }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ value }}&year_level={{ year_level_filter }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-               hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
-               class="rounded-lg px-2.5 py-1 text-xs font-medium {% if term_filter == value %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-                {{ label }}
-            </a>
-            {% endif %}
             {% endfor %}
         </div>
+        {% endif %}
+
+        <form hx-get="{{ base_url }}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true" class="flex flex-wrap items-center gap-3">
+            <div class="relative">
+                <label class="floating-label-bg pointer-events-none absolute -top-2 left-2 z-10 px-1 text-xs font-medium text-gray-600">Academic Year</label>
+                <select name="ay" onchange="this.form.requestSubmit()" aria-label="Academic Year"
+                        class="h-12 min-w-[150px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                    {% for ay in academic_years %}
+                    <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="relative">
+                <label class="floating-label-bg pointer-events-none absolute -top-2 left-2 z-10 px-1 text-xs font-medium text-gray-600">Semester</label>
+                <select name="sem_term" onchange="this.form.requestSubmit()" aria-label="Semester"
+                        class="h-12 min-w-[120px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                    {% for value, label in semester_term_choices %}
+                    <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if semester_locked %}
+            <span class="rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700">Closed</span>
+            {% endif %}
+            <input type="hidden" name="program" value="{{ program.pk }}">
+            <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
+            <input type="hidden" name="year_level" value="{{ year_level_filter }}">
+            <input type="hidden" name="q" value="{{ query }}">
+        </form>
 
         {% if available_year_levels %}
         <div class="flex flex-wrap gap-1">
-            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level=ALL&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level=ALL&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level=ALL&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level=ALL&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
                hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
                class="rounded-lg px-2.5 py-1 text-xs font-medium {% if year_level_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
                 All Years
             </a>
             {% for yl in available_year_levels %}
-            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level={{ yl }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&term={{ term_filter }}&year_level={{ yl }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+            <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ yl }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+               hx-get="{{ base_url }}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ yl }}&q={{ query|urlencode }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
                hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
                class="rounded-lg px-2.5 py-1 text-xs font-medium {% if year_level_filter == yl|stringformat:'s' %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
                 {{ yl }}{% if yl == 1 %}st{% elif yl == 2 %}nd{% elif yl == 3 %}rd{% else %}th{% endif %} Year
@@ -90,48 +80,35 @@
         {% endif %}
     </div>
 
-    <p class="text-xs font-medium text-gray-600">{{ subject_count }} subject{{ subject_count|pluralize }} · {{ total_units }} units</p>
+    <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2" id="subjects-search-wrap">
+            <input type="hidden" id="subjects-search-program" value="{{ program.pk }}">
+            <input type="hidden" id="subjects-search-major" value="{{ major.pk|default:'' }}">
+            <input type="hidden" id="subjects-search-year-level" value="{{ year_level_filter }}">
+            <input type="hidden" id="subjects-search-ay" value="{{ selected_ay_id }}">
+            <input type="hidden" id="subjects-search-sem-term" value="{{ selected_sem_term }}">
+            <div class="relative">
+                {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
+                <input type="text" name="q" value="{{ query }}" placeholder="Search code or title"
+                       hx-get="{{ base_url }}" hx-include="#subjects-search-program,#subjects-search-major,#subjects-search-year-level,#subjects-search-ay,#subjects-search-sem-term"
+                       hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-trigger="keyup changed delay:400ms"
+                       class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            </div>
+        </div>
+        <p class="whitespace-nowrap text-xs font-medium text-gray-600">{{ subject_count }} subject{{ subject_count|pluralize }} · {{ total_units }} units</p>
+    </div>
 </div>
 
-<div class="mb-4 flex flex-wrap items-center gap-3">
-    <form hx-get="{{ base_url }}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true" class="flex flex-wrap items-center gap-3">
-        <div class="relative">
-            <label class="pointer-events-none absolute -top-2 left-2 z-10 bg-white px-1 text-xs font-medium text-gray-600">Academic Year</label>
-            <select name="ay" onchange="this.form.requestSubmit()" aria-label="Academic Year"
-                    class="h-12 min-w-[150px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                {% for ay in academic_years %}
-                <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="relative">
-            <label class="pointer-events-none absolute -top-2 left-2 z-10 bg-white px-1 text-xs font-medium text-gray-600">Semester</label>
-            <select name="sem_term" onchange="this.form.requestSubmit()" aria-label="Semester"
-                    class="h-12 min-w-[120px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                {% for value, label in semester_term_choices %}
-                <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        {% if semester_locked %}
-        <span class="rounded-full bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700">Closed</span>
-        {% endif %}
-        <input type="hidden" name="program" value="{{ program.pk }}">
-        <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
-        <input type="hidden" name="term" value="{{ term_filter }}">
-        <input type="hidden" name="year_level" value="{{ year_level_filter }}">
-        <input type="hidden" name="q" value="{{ query }}">
-    </form>
-
-    {% if offering_ok %}
+{% if offering_ok %}
+<div class="mb-4 flex justify-end">
     <button type="button"
             hx-get="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
             hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
             class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
         Offer another subject…
     </button>
-    {% endif %}
 </div>
+{% endif %}
 
 {{ units_by_entry_id|json_script:"units-by-entry-id" }}
 <div x-data="subjectOffering(JSON.parse(document.getElementById('units-by-entry-id').textContent))" class="relative" style="padding-bottom: 4.5rem;">

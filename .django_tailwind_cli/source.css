@@ -215,6 +215,27 @@ input[type="submit"].htmx-request {
   pointer-events: none;
 }
 
+/*
+ * Floating-label select (Academic Year / Semester filter, and any other
+ * Material-outline-style dropdown reusing the pattern): the label paints
+ * over the border segment behind it, so it needs to match whatever
+ * surface it's actually sitting on -- not always bg-white, since the same
+ * component appears directly on the gray page body as well as inside
+ * white cards/modals. --surface-bg defaults to the page background and is
+ * redefined to white by any ancestor carrying Tailwind's bg-white utility
+ * (cards, #modal-content), which custom properties already inherit down
+ * through for free.
+ */
+:root {
+  --surface-bg: #f3f4f6; /* gray-100 -- html's own page background, see base.html */
+}
+.bg-white {
+  --surface-bg: #ffffff;
+}
+.floating-label-bg {
+  background-color: var(--surface-bg);
+}
+
 /* Explicit spinner for a template that wants to show one next to an
  * hx-indicator target (e.g. a "Saving…" label) — hidden by default,
  * htmx toggles the "htmx-indicator" visibility itself via opacity. */

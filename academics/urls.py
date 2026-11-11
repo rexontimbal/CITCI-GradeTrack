@@ -57,6 +57,13 @@ urlpatterns = [
     ),
     path("search/subjects/", views.subject_search, name="subject_search"),
 
+    # Subject Offering — check a box next to a curriculum subject to
+    # "offer" it for a semester; auto-creates classes + fills rosters.
+    path("subjects/offer/preview/", views.subject_offering_preview, name="subject_offering_preview"),
+    path("subjects/offer/adhoc/", views.subject_offering_adhoc, name="subject_offering_adhoc"),
+    path("subjects/offer/commit/", views.subject_offering_commit, name="subject_offering_commit"),
+    path("subjects/offerings/<int:pk>/withdraw/", views.subject_offering_withdraw, name="subject_offering_withdraw"),
+
     # Subjects (Program Head — same prospectus view, scoped by default)
     path("my-program/subjects/", views.subjects_home, name="ph_subjects"),
 

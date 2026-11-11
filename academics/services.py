@@ -373,6 +373,38 @@ def offerable_subjects_for(program, major, semester):
     return [entry for entry in entries if entry.subject_id not in offered_subject_ids]
 
 
+def _resolve_offering_sections_and_conflicts(subject, program, major, year_level, semester):
+    """Shared by preview_subject_offerings (curriculum-driven) and
+    preview_adhoc_offering ("Offer another subject…", not in the
+    curriculum) — resolves the active section(s) for this scope/year_level
+    in the semester's academic year and flags a "shared subject" conflict
+    per section. Returns (plan_rows, has_sections)."""
+    sections = Section.objects.filter(program=program, major=major, year_level=year_level, academic_year=semester.academic_year)
+    if not sections.exists():
+        return [], False
+
+    plan_rows = []
+    for section in sections:
+        conflict_class = (
+            ClassOffering.objects.filter(subject=subject, semester=semester, sections__year_level=year_level)
+            .exclude(sections=section)
+            .exclude(sections__program=program, sections__major=major)
+            .distinct()
+            .first()
+        )
+        plan_rows.append(
+            {
+                "subject": subject,
+                "program": program,
+                "major": major,
+                "year_level": year_level,
+                "section": section,
+                "conflict_class": conflict_class,
+            }
+        )
+    return plan_rows, True
+
+
 def preview_subject_offerings(curriculum_entry_ids, semester):
     """Read-only. For each requested CurriculumEntry: resolves the active
     section(s) of its program/major/year_level in the semester's academic
@@ -402,10 +434,10 @@ def preview_subject_offerings(curriculum_entry_ids, semester):
             already_offered_rows.append({"curriculum_entry": entry, "subject": entry.subject})
             continue
 
-        sections = Section.objects.filter(
-            program=entry.program, major=entry.major, year_level=entry.year_level, academic_year=semester.academic_year
+        entry_rows, has_sections = _resolve_offering_sections_and_conflicts(
+            entry.subject, entry.program, entry.major, entry.year_level, semester
         )
-        if not sections.exists():
+        if not has_sections:
             missing_section_rows.append(
                 {
                     "curriculum_entry": entry,
@@ -416,34 +448,38 @@ def preview_subject_offerings(curriculum_entry_ids, semester):
                 }
             )
             continue
-
-        for section in sections:
-            conflict_class = (
-                ClassOffering.objects.filter(
-                    subject=entry.subject, semester=semester, sections__year_level=entry.year_level
-                )
-                .exclude(sections=section)
-                .exclude(sections__program=entry.program, sections__major=entry.major)
-                .distinct()
-                .first()
-            )
-            plan_rows.append(
-                {
-                    "curriculum_entry": entry,
-                    "subject": entry.subject,
-                    "program": entry.program,
-                    "major": entry.major,
-                    "year_level": entry.year_level,
-                    "section": section,
-                    "conflict_class": conflict_class,
-                }
-            )
+        for row in entry_rows:
+            row["curriculum_entry"] = entry
+        plan_rows.extend(entry_rows)
 
     return {
         "plan_rows": plan_rows,
         "missing_section_rows": missing_section_rows,
         "already_offered_rows": already_offered_rows,
     }
+
+
+def preview_adhoc_offering(subject, program, major, year_level, semester):
+    """"Offer another subject…" — a subject not in this program/major's
+    curriculum for this term, offered anyway via an explicit searchable
+    picker + warning. Same conflict/missing-section resolution as the
+    curriculum-driven path, just with no CurriculumEntry to key off (each
+    plan row's "curriculum_entry" is None)."""
+    already_offered = SubjectOffering.objects.filter(
+        semester=semester, program=program, major=major, year_level=year_level, subject=subject
+    ).exists()
+    if already_offered:
+        return {"plan_rows": [], "missing_section_rows": [], "already_offered_rows": [{"subject": subject}]}
+
+    plan_rows, has_sections = _resolve_offering_sections_and_conflicts(subject, program, major, year_level, semester)
+    for row in plan_rows:
+        row["curriculum_entry"] = None
+    missing_section_rows = (
+        []
+        if has_sections
+        else [{"curriculum_entry": None, "subject": subject, "program": program, "major": major, "year_level": year_level}]
+    )
+    return {"plan_rows": plan_rows, "missing_section_rows": missing_section_rows, "already_offered_rows": []}
 
 
 def fill_roster_from_section(class_offering, section):

@@ -20,6 +20,7 @@ from core.htmx import is_htmx
 from . import scoping
 from .forms import (
     AcademicYearForm,
+    AdhocOfferingForm,
     AdminSubjectForm,
     BulkAssignInstructorForm,
     ClassOfferingForm,
@@ -46,8 +47,10 @@ from .models import (
     Program,
     Section,
     Semester,
+    SemesterStatus,
     StudentProfile,
     Subject,
+    SubjectOffering,
     Term,
 )
 from .ay_wizard import step1_preview, step2_preview_sections, step3_preview_promotions, step4_commit
@@ -64,10 +67,14 @@ from .services import (
     build_copy_preview,
     check_instructor_change_allowed,
     commit_copy,
+    commit_subject_offerings,
     default_source_semester,
     log_and_notify_instructor_change,
     notify_program_head_assignment,
+    preview_adhoc_offering,
+    preview_subject_offerings,
     teaching_load_rows,
+    withdraw_offering,
 )
 
 ADMIN = User.Role.ADMIN
@@ -369,6 +376,16 @@ class SectionDeleteView(RoleRequiredMixin, EntityDeleteView):
 def _active_academic_year():
     active = Semester.objects.filter(is_active=True).first()
     return active.academic_year if active else None
+
+
+def _require_semester_unlocked(class_offering):
+    """Raises PermissionDenied if class_offering's semester is CLOSED --
+    offerings/classes/rosters/instructor assignment are all read-only once
+    a semester closes (grade corrections are exempt — they go through
+    approvals.services.correct_grade's own RELEASED/LOCKED-only gate,
+    independent of semester status)."""
+    if services.is_semester_locked(class_offering.semester):
+        raise PermissionDenied("This semester is closed and read-only.")
 
 
 def _log_academic_setup_change(model_name, obj, action, actor, is_admin_override, program=None, major=None, **details):
@@ -677,6 +694,20 @@ def _subject_prospectus_context(program, major, query="", term_filter="ALL", yea
     return cards, shared_labels, summary
 
 
+def _resolve_semester_from_request(request):
+    """Academic Year + Semester filter (Subjects/Classes pages) — defaults
+    to the ACTIVE semester, kept in the URL via ?ay=<academic_year_id>&
+    sem_term=<term>. Falls back to the active semester (or None) if the
+    requested combination doesn't exist, rather than 404ing."""
+    ay_id = request.GET.get("ay") or request.POST.get("ay")
+    sem_term = request.GET.get("sem_term") or request.POST.get("sem_term")
+    if ay_id and sem_term:
+        semester = Semester.objects.filter(academic_year_id=ay_id, term=sem_term).select_related("academic_year").first()
+        if semester:
+            return semester
+    return Semester.objects.filter(is_active=True).select_related("academic_year").first()
+
+
 @role_required(ADMIN, PROGRAM_HEAD)
 def subjects_home(request):
     is_admin = request.user.is_admin_role
@@ -688,14 +719,36 @@ def subjects_home(request):
         context["no_scope"] = True
         return render(request, "academics/subjects.html", context)
 
-    active_semester = Semester.objects.filter(is_active=True).first()
-    term_filter = request.GET.get("term") or (active_semester.term if active_semester else "ALL")
+    selected_semester = _resolve_semester_from_request(request)
+    term_filter = request.GET.get("term") or (selected_semester.term if selected_semester else "ALL")
     year_level_filter = request.GET.get("year_level", "ALL")
     query = request.GET.get("q", "").strip()
 
     cards, shared_labels, summary = _subject_prospectus_context(
         program, major, query, term_filter=term_filter, year_level_filter=year_level_filter
     )
+
+    offering_term = selected_semester.term if selected_semester else None
+    semester_locked = services.is_semester_locked(selected_semester)
+    offering_ok = services.offering_allowed(selected_semester)
+    offered_by_subject_id = {}
+    if selected_semester:
+        offered_by_subject_id = {
+            so.subject_id: so
+            for so in SubjectOffering.objects.filter(semester=selected_semester, program=program, major=major)
+        }
+    units_by_entry_id = {}
+    for card in cards:
+        for table in card["term_tables"]:
+            table["is_offering_term"] = bool(selected_semester) and table["value"] == offering_term
+            offerable_ids = []
+            for entry in table["rows"]:
+                entry.offering = offered_by_subject_id.get(entry.subject_id)
+                units_by_entry_id[str(entry.pk)] = float(entry.subject.units)
+                if table["is_offering_term"] and entry.offering is None:
+                    offerable_ids.append(entry.pk)
+            table["offerable_ids"] = offerable_ids
+
     context.update(
         {
             "cards": cards,
@@ -704,6 +757,14 @@ def subjects_home(request):
             "term_filter": term_filter,
             "year_level_filter": year_level_filter,
             "term_choices": Term.choices,
+            "academic_years": AcademicYear.objects.all(),
+            "selected_semester": selected_semester,
+            "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+            "selected_sem_term": selected_semester.term if selected_semester else "",
+            "semester_term_choices": Term.choices,
+            "semester_locked": semester_locked,
+            "offering_ok": offering_ok,
+            "units_by_entry_id": units_by_entry_id,
             **summary,
         }
     )
@@ -733,6 +794,197 @@ def subject_search(request):
         qs = qs.filter(Q(code__icontains=query) | Q(title__icontains=query))
     options = [(s.pk, str(s)) for s in qs.order_by("code")[:20]]
     return render(request, "partials/_searchable_select_options.html", {"options": options})
+
+
+# ---------------------------------------------------------------------------
+# Subject Offering — a Program Head (or Admin, for any program) checks a
+# box next to curriculum subjects to "offer" them for a semester; offering
+# auto-creates one class per active section of that program/major/
+# year_level and fills its roster. Preview (session-stashed, same pattern
+# as offerings_import/the AY wizard) -> one confirm screen (missing
+# sections + a Combine/Separate choice per shared-subject conflict) ->
+# commit, all rendered into the shared #modal-content.
+# ---------------------------------------------------------------------------
+
+_OFFERING_PREVIEW_SESSION_KEY = "subject_offering_preview"
+
+
+def _serialize_plan_rows(plan_rows):
+    return [
+        {
+            "curriculum_entry_id": row["curriculum_entry"].pk if row["curriculum_entry"] else None,
+            "subject_id": row["subject"].pk,
+            "program_id": row["program"].pk,
+            "major_id": row["major"].pk if row["major"] else None,
+            "year_level": row["year_level"],
+            "section_id": row["section"].pk,
+            "conflict_class_id": row["conflict_class"].pk if row["conflict_class"] else None,
+        }
+        for row in plan_rows
+    ]
+
+
+def _deserialize_plan_rows(serialized):
+    rows = []
+    for item in serialized:
+        rows.append(
+            {
+                "curriculum_entry": (
+                    CurriculumEntry.objects.filter(pk=item["curriculum_entry_id"]).first()
+                    if item["curriculum_entry_id"]
+                    else None
+                ),
+                "subject": Subject.objects.get(pk=item["subject_id"]),
+                "program": Program.objects.get(pk=item["program_id"]),
+                "major": Major.objects.get(pk=item["major_id"]) if item["major_id"] else None,
+                "year_level": item["year_level"],
+                "section": Section.objects.get(pk=item["section_id"]),
+                "conflict_class": (
+                    ClassOffering.objects.filter(pk=item["conflict_class_id"]).first()
+                    if item["conflict_class_id"]
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
+def _offering_confirm_response(request, preview, program, major, selected_semester, next_url):
+    request.session[_OFFERING_PREVIEW_SESSION_KEY] = {
+        "semester_id": selected_semester.pk,
+        "plan_rows": _serialize_plan_rows(preview["plan_rows"]),
+        "next_url": next_url,
+    }
+    return render(
+        request,
+        "academics/_subject_offering_confirm.html",
+        {
+            "plan_rows": preview["plan_rows"],
+            "missing_section_rows": preview["missing_section_rows"],
+            "already_offered_rows": preview["already_offered_rows"],
+            "program": program,
+            "major": major,
+            "semester": selected_semester,
+        },
+    )
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_preview(request):
+    """"Offer selected" / "Offer all" — POST a list of CurriculumEntry ids,
+    get back one confirm screen. Nothing is written yet."""
+    from django.contrib import messages as django_messages
+
+    program, major = _resolve_program_major_from_request(request, request.user)
+    if program is None:
+        raise PermissionDenied("You have no program/major in scope.")
+    selected_semester = _resolve_semester_from_request(request)
+    if selected_semester is None or not services.offering_allowed(selected_semester):
+        raise PermissionDenied("Offering is not allowed for this semester.")
+
+    next_url = request.POST.get("next") or reverse("academics:subjects")
+
+    # Defense in depth — only entries actually offerable in this program/
+    # major's scope for this term may be previewed, regardless of what a
+    # tampered request's entry_ids contain.
+    offerable_ids = {e.pk for e in services.offerable_subjects_for(program, major, selected_semester)}
+    entry_ids = [int(i) for i in request.POST.getlist("entry_ids") if i.isdigit() and int(i) in offerable_ids]
+    if not entry_ids:
+        django_messages.error(request, "Select at least one offerable subject.")
+        return redirect(next_url)
+
+    preview = preview_subject_offerings(entry_ids, selected_semester)
+    return _offering_confirm_response(request, preview, program, major, selected_semester, next_url)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_adhoc(request):
+    """"Offer another subject…" — any active subject, even one outside
+    this program/major's curriculum for this term, offered with an
+    explicit warning."""
+    program, major = _resolve_program_major_from_request(request, request.user)
+    if program is None:
+        raise PermissionDenied("You have no program/major in scope.")
+    selected_semester = _resolve_semester_from_request(request)
+    if selected_semester is None or not services.offering_allowed(selected_semester):
+        raise PermissionDenied("Offering is not allowed for this semester.")
+
+    if request.method != "POST":
+        form = AdhocOfferingForm()
+        return render(
+            request,
+            "academics/_subject_offering_adhoc_modal.html",
+            {"form": form, "program": program, "major": major, "semester": selected_semester},
+        )
+
+    form = AdhocOfferingForm(request.POST)
+    if not form.is_valid():
+        return render(
+            request,
+            "academics/_subject_offering_adhoc_modal.html",
+            {"form": form, "program": program, "major": major, "semester": selected_semester},
+        )
+
+    subject = form.cleaned_data["subject"]
+    year_level = form.cleaned_data["year_level"]
+    preview = preview_adhoc_offering(subject, program, major, year_level, selected_semester)
+    next_url = reverse("academics:subjects") if request.user.is_admin_role else reverse("academics:ph_subjects")
+    return _offering_confirm_response(request, preview, program, major, selected_semester, next_url)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_commit(request):
+    from django.contrib import messages as django_messages
+
+    stashed = request.session.get(_OFFERING_PREVIEW_SESSION_KEY)
+    if not stashed:
+        response = render(
+            request,
+            "academics/_subject_offering_confirm.html",
+            {"plan_rows": [], "missing_section_rows": [], "already_offered_rows": [], "error": "Your preview expired — try again."},
+        )
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    semester = get_object_or_404(Semester, pk=stashed["semester_id"])
+    if not services.offering_allowed(semester):
+        raise PermissionDenied("Offering is not allowed for this semester.")
+
+    plan_rows = _deserialize_plan_rows(stashed["plan_rows"])
+    decisions = {}
+    for row in plan_rows:
+        conflict = row["conflict_class"]
+        if conflict is not None:
+            decisions[str(conflict.id)] = request.POST.get(f"decision_{conflict.id}", "combine")
+
+    is_admin_override = request.user.is_admin_role
+    result = commit_subject_offerings(plan_rows, decisions, semester, request.user, is_admin_override=is_admin_override)
+    del request.session[_OFFERING_PREVIEW_SESSION_KEY]
+
+    django_messages.success(
+        request,
+        f"{result['offerings_created']} subject(s) offered → {result['classes_created']} class(es) created, "
+        f"{result['students_added']} student(s) added.",
+    )
+    return trigger_response("refreshSubjects", toast="Subjects offered.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_withdraw(request, pk):
+    offering = get_object_or_404(SubjectOffering, pk=pk)
+    if not request.user.is_admin_role and not scoping.is_in_scope(request.user, offering.program_id, offering.major_id):
+        raise PermissionDenied("This offering is not under your program.")
+
+    if request.method != "POST":
+        return render(request, "academics/_subject_offering_withdraw_confirm.html", {"offering": offering})
+
+    ok, reason = withdraw_offering(offering, request.user)
+    if ok:
+        return trigger_response("refreshSubjects", toast="Offering withdrawn.")
+    return render(
+        request, "academics/_subject_offering_withdraw_confirm.html", {"offering": offering, "error": reason}
+    )
 
 
 def _subject_add_search_results(query, program, major, limit=8):
@@ -1065,9 +1317,16 @@ class ClassFormView(RoleRequiredMixin, EntityFormView):
     def post(self, request, pk=None):
         obj = self.get_object(pk)
         is_create = obj is None
+        if obj is not None:
+            _require_semester_unlocked(obj)
         old_instructor = obj.instructor if obj else None
         form = self.form_class(request.POST, instance=obj)
         if not form.is_valid():
+            _wire_live_subject_regroup(form, self._url(pk))
+            return render(request, self.form_template, self.get_context(request, form, obj))
+
+        if is_create and services.is_semester_locked(form.cleaned_data.get("semester")):
+            form.add_error(None, "This semester is closed and read-only.")
             _wire_live_subject_regroup(form, self._url(pk))
             return render(request, self.form_template, self.get_context(request, form, obj))
 
@@ -1285,6 +1544,7 @@ def ph_class_edit(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not class_offering.sections.filter(pk__in=scoping.sections_in_scope(request.user)).exists():
         raise PermissionDenied("This class is not under your program.")
+    _require_semester_unlocked(class_offering)
     active = Semester.objects.filter(is_active=True).first()
     url = reverse("academics:ph_class_edit", args=[pk])
 
@@ -1372,6 +1632,7 @@ def ph_class_leave(request, pk):
     own_sections_in_class = class_offering.sections.filter(pk__in=scoping.sections_in_scope(request.user))
     if not own_sections_in_class.exists():
         raise PermissionDenied("You have no sections in this class.")
+    _require_semester_unlocked(class_offering)
 
     if request.method != "POST":
         return render(
@@ -1604,6 +1865,7 @@ def class_list_add_section(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
         raise PermissionDenied("You can only manage your own classes' class lists.")
+    _require_semester_unlocked(class_offering)
     section_id = request.POST.get("section")
     section = get_object_or_404(class_offering.sections, pk=section_id)
     students = User.objects.filter(role=User.Role.STUDENT, student_profile__section=section)
@@ -1650,6 +1912,7 @@ def class_list_add_students_submit(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
         raise PermissionDenied("You can only manage your own classes' class lists.")
+    _require_semester_unlocked(class_offering)
     student_ids = request.POST.getlist("student_ids")
     for student_id in student_ids:
         ClassRosterEntry.objects.get_or_create(
@@ -1664,6 +1927,7 @@ def class_list_mark_dropped(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
     if not _can_manage_roster(request.user, entry.class_offering):
         raise PermissionDenied("You can only manage your own classes' class lists.")
+    _require_semester_unlocked(entry.class_offering)
     entry.status = ClassRosterEntry.Status.DROPPED
     entry.date_dropped = date.today()
     entry.save(update_fields=["status", "date_dropped"])
@@ -1676,6 +1940,7 @@ def class_list_restore(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
     if not _can_manage_roster(request.user, entry.class_offering):
         raise PermissionDenied("You can only manage your own classes' class lists.")
+    _require_semester_unlocked(entry.class_offering)
     entry.status = ClassRosterEntry.Status.ACTIVE
     entry.date_dropped = None
     entry.save(update_fields=["status", "date_dropped"])
@@ -1758,6 +2023,7 @@ def class_list_import_confirm(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
         raise PermissionDenied("You can only import a class list for your own classes.")
+    _require_semester_unlocked(class_offering)
 
     stashed = request.session.get(_IMPORT_SESSION_KEY)
     if not stashed or stashed.get("class_offering_id") != class_offering.pk:

@@ -2762,3 +2762,261 @@ class SemesterStatusTests(TestCase):
         self.assertFalse(ok)
         semester.refresh_from_db()
         self.assertEqual(semester.status, SemesterStatus.ACTIVE)
+
+
+class SubjectOfferingViewTests(SubjectOfferingTestBase):
+    """End-to-end through the actual URLs/views, not just the service
+    layer -- preview stashes in session, commit reads it back and clears
+    it, both gated by scope and by offering_allowed(semester)."""
+
+    def _post_params(self):
+        return {
+            "program": self.program.pk,
+            "major": self.major_eng.pk,
+            "ay": self.ay.pk,
+            "sem_term": Term.FIRST,
+        }
+
+    def test_preview_then_commit_creates_class(self):
+        self.client.force_login(self.admin)
+        params = self._post_params()
+        params["entry_ids"] = [self.entry_eng.pk]
+        response = self.client.post(reverse("academics:subject_offering_preview"), params)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Confirm Offering", response.content.decode())
+
+        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {})
+        self.assertEqual(commit_response.status_code, 204)
+        self.assertIn("refreshSubjects", commit_response.headers.get("HX-Trigger", ""))
+
+        self.assertEqual(ClassOffering.objects.filter(offering__subject=self.ge_subject).count(), 1)
+        self.assertNotIn("subject_offering_preview", self.client.session)
+
+    def test_preview_silently_drops_already_offered_entry(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+
+        self.client.force_login(self.admin)
+        params = self._post_params()
+        params["entry_ids"] = [self.entry_eng.pk]
+        response = self.client.post(reverse("academics:subject_offering_preview"), params, follow=True)
+        self.assertEqual(ClassOffering.objects.filter(offering__subject=self.ge_subject).count(), 1)
+
+    def test_preview_blocked_on_closed_semester(self):
+        self.semester.status = SemesterStatus.CLOSED
+        self.semester.is_active = False
+        self.semester.save()
+
+        self.client.force_login(self.admin)
+        params = self._post_params()
+        params["entry_ids"] = [self.entry_eng.pk]
+        response = self.client.post(reverse("academics:subject_offering_preview"), params)
+        self.assertEqual(response.status_code, 403)
+
+    def test_withdraw_view_get_then_post(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+
+        self.client.force_login(self.admin)
+        get_response = self.client.get(reverse("academics:subject_offering_withdraw", args=[offering.pk]))
+        self.assertEqual(get_response.status_code, 200)
+
+        post_response = self.client.post(reverse("academics:subject_offering_withdraw", args=[offering.pk]))
+        self.assertEqual(post_response.status_code, 204)
+        self.assertIn("refreshSubjects", post_response.headers.get("HX-Trigger", ""))
+        self.assertFalse(SubjectOffering.objects.filter(pk=offering.pk).exists())
+
+    def test_withdraw_blocked_for_program_head_outside_scope(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+
+        outside_head = make_user(User.Role.PROGRAM_HEAD, "offering_outside_head")
+        self.client.force_login(outside_head)
+        response = self.client.get(reverse("academics:subject_offering_withdraw", args=[offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_adhoc_offering_outside_curriculum(self):
+        other_subject = Subject.objects.create(code="ADHOC1", title="Ad-hoc Subject", units=Decimal("3.0"))
+
+        self.client.force_login(self.admin)
+        params = self._post_params()
+        params["subject"] = other_subject.pk
+        params["year_level"] = 1
+        response = self.client.post(reverse("academics:subject_offering_adhoc"), params)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Confirm Offering", response.content.decode())
+
+        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {})
+        self.assertEqual(commit_response.status_code, 204)
+        self.assertTrue(ClassOffering.objects.filter(offering__subject=other_subject).exists())
+        # Offering it didn't touch the curriculum itself.
+        self.assertFalse(CurriculumEntry.objects.filter(subject=other_subject).exists())
+
+
+class ClosedSemesterReadOnlyTests(TestCase):
+    """Once a semester is CLOSED, every existing mutation path that touches
+    one of its classes/rosters/instructor-assignments must 403 -- server-
+    enforced, not just a hidden button (CLAUDE.md's established rule for
+    every editability lock in this codebase)."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSIT3", name="BS Information Technology")
+        self.head = make_user(User.Role.PROGRAM_HEAD, "closed_sem_head")
+        self.program.program_head = self.head
+        self.program.save()
+        self.section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="A")
+        self.subject = Subject.objects.create(code="CLOSEDSUB", title="X", units=Decimal("3.0"))
+        self.class_offering = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
+        self.class_offering.sections.set([self.section])
+
+        self.student = make_user(User.Role.STUDENT, "closed_sem_student")
+        profile = self.student.student_profile
+        profile.program = self.program
+        profile.section = self.section
+        profile.year_level = 1
+        profile.save()
+        self.roster_entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
+        self.admin = make_user(User.Role.ADMIN, "closed_sem_admin", is_staff=True, is_superuser=True)
+
+        # Close it directly -- this test suite is about the read-only
+        # enforcement, not close_semester()'s own gating (covered above).
+        self.semester.status = SemesterStatus.CLOSED
+        self.semester.is_active = False
+        self.semester.save()
+
+    def test_ph_class_edit_blocked(self):
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("academics:ph_class_edit", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_ph_class_leave_blocked(self):
+        self.client.force_login(self.head)
+        response = self.client.get(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_class_edit_blocked(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("academics:class_edit", args=[self.class_offering.pk]),
+            {
+                "subject": self.subject.pk,
+                "sections": [self.section.pk],
+                "semester": self.semester.pk,
+                "schedule": "",
+                "room": "",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_class_list_add_section_blocked(self):
+        self.client.force_login(self.head)
+        response = self.client.post(
+            reverse("academics:class_list_add_section", args=[self.class_offering.pk]), {"section": self.section.pk}
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_class_list_add_students_submit_blocked(self):
+        self.client.force_login(self.head)
+        response = self.client.post(
+            reverse("academics:class_list_add_students_submit", args=[self.class_offering.pk]),
+            {"student_ids": [self.student.pk]},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_class_list_mark_dropped_blocked(self):
+        self.client.force_login(self.head)
+        response = self.client.post(reverse("academics:class_list_mark_dropped", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_class_list_restore_blocked(self):
+        self.roster_entry.status = ClassRosterEntry.Status.DROPPED
+        self.roster_entry.save()
+        self.client.force_login(self.head)
+        response = self.client.post(reverse("academics:class_list_restore", args=[self.roster_entry.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_class_list_import_confirm_blocked(self):
+        session = self.client.session
+        session["class_list_import_preview"] = {"class_offering_id": self.class_offering.pk, "rows": []}
+        session.save()
+        self.client.force_login(self.head)
+        response = self.client.post(reverse("academics:class_list_import_confirm", args=[self.class_offering.pk]), {})
+        self.assertEqual(response.status_code, 403)
+
+    def test_instructor_assignment_blocked(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "closed_sem_inst")
+        self.client.force_login(self.head)
+        self.client.post(
+            reverse("academics:class_assign_instructor", args=[self.class_offering.pk]), {"instructor": instructor.pk}
+        )
+        self.class_offering.refresh_from_db()
+        self.assertIsNone(self.class_offering.instructor)
+
+    def test_grade_correction_not_blocked_by_closed_semester(self):
+        """Grade corrections are explicitly exempt -- they go through
+        approvals.services.correct_grade's own RELEASED/LOCKED-only gate,
+        independent of semester status."""
+        from approvals.models import GradeSheet, GradeSheetEntry, GradeSheetStatus
+        from approvals.services import correct_grade
+
+        sheet = GradeSheet.objects.create(class_offering=self.class_offering, status=GradeSheetStatus.RELEASED)
+        entry = GradeSheetEntry.objects.create(
+            sheet=sheet, roster_entry=self.roster_entry, final_grade=Decimal("1.50"), remarks="PASSED"
+        )
+        correct_grade(entry, self.admin, Decimal("1.25"), "PASSED", "Recomputation error")
+        entry.refresh_from_db()
+        self.assertEqual(entry.final_grade, Decimal("1.25"))
+
+
+class SubjectsPageOfferingRenderTests(SubjectOfferingTestBase):
+    """The Subjects page itself must render correctly with the new
+    filter/checkbox/badge additions, both before and after a subject is
+    offered, and for a CLOSED semester (no checkboxes at all)."""
+
+    def test_page_renders_with_offerable_checkbox(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("academics:subjects"),
+            {"program": self.program.pk, "major": self.major_eng.pk, "ay": self.ay.pk, "sem_term": Term.FIRST},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="entry_ids"')
+        self.assertContains(response, "Offer another subject")
+
+    def test_page_renders_offered_badge_after_offering(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("academics:subjects"),
+            {"program": self.program.pk, "major": self.major_eng.pk, "ay": self.ay.pk, "sem_term": Term.FIRST},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Offered")
+
+    def test_page_renders_closed_semester_without_checkboxes(self):
+        self.semester.status = SemesterStatus.CLOSED
+        self.semester.is_active = False
+        self.semester.save()
+
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("academics:subjects"),
+            {"program": self.program.pk, "major": self.major_eng.pk, "ay": self.ay.pk, "sem_term": Term.FIRST},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'name="entry_ids"')
+        self.assertContains(response, "Closed")

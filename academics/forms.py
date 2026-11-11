@@ -8,7 +8,17 @@ from accounts.models import User
 from core.forms import INPUT_CLASSES, StyledModelForm
 from core.widgets import SearchableSelectWidget
 
-from .models import AcademicYear, ClassOffering, CurriculumEntry, Major, Program, Section, Semester, Subject
+from .models import (
+    YEAR_LEVEL_CHOICES,
+    AcademicYear,
+    ClassOffering,
+    CurriculumEntry,
+    Major,
+    Program,
+    Section,
+    Semester,
+    Subject,
+)
 
 
 class AcademicYearForm(StyledModelForm):
@@ -216,6 +226,33 @@ class SubjectCodeCorrectionForm(forms.Form):
         for field in self.fields.values():
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{INPUT_CLASSES} {existing}".strip()
+
+
+class AdhocOfferingForm(forms.Form):
+    """"Offer another subject…" — any active subject, even one outside
+    this program/major's curriculum for this term (academics.services.
+    preview_adhoc_offering handles the rest, with its own warning copy in
+    the template)."""
+
+    subject = forms.ModelChoiceField(
+        queryset=Subject.objects.filter(is_active=True),
+        widget=SearchableSelectWidget(
+            search_url=reverse_lazy("academics:subject_search"), queryset=Subject.objects.filter(is_active=True)
+        ),
+        label="Subject",
+    )
+    year_level = forms.TypedChoiceField(
+        choices=[("", "No year level (e.g. TCP)")] + list(YEAR_LEVEL_CHOICES),
+        coerce=int,
+        empty_value=None,
+        required=False,
+        label="Year level",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        existing = self.fields["year_level"].widget.attrs.get("class", "")
+        self.fields["year_level"].widget.attrs["class"] = f"{INPUT_CLASSES} {existing}".strip()
 
 
 def _grouped_subject_choices(sections, term=None, base_queryset=None):

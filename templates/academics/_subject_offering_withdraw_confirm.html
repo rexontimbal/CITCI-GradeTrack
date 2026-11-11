@@ -1,0 +1,28 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Withdraw {{ offering.subject.code }}?</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    {% if error %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+    {% else %}
+    <p class="text-sm text-gray-600">
+        This deletes the class(es) {{ offering.subject.code }} created for this offering, along with their class
+        lists. Only allowed while none of them has a score encoded or a submitted grade sheet.
+    </p>
+    {% endif %}
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        {% if not error %}
+        <button hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML"
+                class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Withdraw
+        </button>
+        {% endif %}
+    </div>
+</div>

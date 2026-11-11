@@ -1,0 +1,35 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Offer Another Subject</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+    This subject isn't in {{ program.code }}{% if major %}-{{ major.code }}{% endif %}'s curriculum for
+    {{ semester.get_term_display }}. Offering it anyway is allowed, but won't appear in the normal prospectus list.
+</div>
+
+<form method="post" hx-post="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ semester.academic_year_id }}&sem_term={{ semester.term }}"
+      hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+    {% for field in form %}
+    <div>
+        <label for="{{ field.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+    {% endfor %}
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Continue
+        </button>
+    </div>
+</form>

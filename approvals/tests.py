@@ -310,7 +310,7 @@ class GwaTests(TestCase):
         self.instructor = make_user(User.Role.INSTRUCTOR, "gwa_prof")
 
     def _make_entry(self, subject_code, units, final_grade, remarks="PASSED", sheet_status=GradeSheetStatus.RELEASED, roster_status=ClassRosterEntry.Status.ACTIVE):
-        subject = Subject.objects.create(code=subject_code, title=subject_code, units=Decimal(str(units)), term=Term.FIRST)
+        subject = Subject.objects.create(code=subject_code, title=subject_code, units=Decimal(str(units)))
         class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
         class_offering.sections.set([self.section])
         roster_entry = ClassRosterEntry.objects.create(student=self.student, class_offering=class_offering, status=roster_status)
@@ -338,7 +338,7 @@ class GwaTests(TestCase):
         self.assertFalse(result["is_complete"])  # the INC class makes it incomplete (DROPPED doesn't count against it)
 
     def test_gwa_incomplete_when_a_class_is_not_released_yet(self):
-        subject = Subject.objects.create(code="IT201", title="Pending", units=Decimal("3.0"), term=Term.FIRST)
+        subject = Subject.objects.create(code="IT201", title="Pending", units=Decimal("3.0"))
         class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
         class_offering.sections.set([self.section])
         ClassRosterEntry.objects.create(student=self.student, class_offering=class_offering)

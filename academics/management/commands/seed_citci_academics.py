@@ -13,6 +13,7 @@ from academics.models import (
     AcademicYear,
     ClassOffering,
     ClassRosterEntry,
+    CurriculumEntry,
     Major,
     Program,
     Section,
@@ -207,15 +208,12 @@ class Command(BaseCommand):
 
             subject, _ = Subject.objects.update_or_create(
                 code=code,
-                defaults={
-                    "title": c["description"] or code,
-                    "units": units,
-                    "program": program,
-                    "major": major,
-                    "year_level": year_level,
-                    "term": term,
-                },
+                defaults={"title": c["description"] or code, "units": units},
             )
+            if program is not None:
+                CurriculumEntry.objects.get_or_create(
+                    program=program, major=major, year_level=year_level, term=term, subject=subject
+                )
             subjects[code] = subject
         self.stdout.write(self.style.SUCCESS(f"{len(subjects)} subjects ready."))
         return subjects

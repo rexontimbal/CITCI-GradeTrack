@@ -181,6 +181,44 @@
 > title; every Program Head page shows a clear empty state if Admin hasn't set an active semester
 > yet. See section 3 (roles table) and the new section 3b for the full scope rules, section 8 for
 > the new/moved screens, and the "Program Head scope redesign" bullet under "Build Phases."
+>
+> **2026-11-11 (Curriculum mapping + prospectus Subjects page, built):** `academics.Subject` no
+> longer carries `program`/`major`/`year_level`/`term` directly — a new `academics.CurriculumEntry`
+> model places a subject into one program/major's prospectus at a given year level and term, and
+> the same subject code can now sit in several curricula at once (e.g. a Gen Ed subject shared
+> across majors), which the old one-slot-per-subject design couldn't represent. Existing placement
+> data was copied into `CurriculumEntry` by a data migration before the old fields were dropped
+> (three migrations: add the model, copy the data, remove the fields — in that order, so the data
+> migration could still read the columns being removed). `academics.scoping` gained
+> `curriculum_entries_in_scope`/a rewritten `subjects_editable_by` (a subject is editable by a
+> Program Head only if **every** one of its `CurriculumEntry` rows is in their own scope — a count
+> comparison, not a negated scope query, after a real Django ORM bug surfaced: negating a `Q()`
+> built from multiple conditions on a to-many relation lets *different* rows of that relation each
+> satisfy one condition, instead of requiring one row to satisfy all of them). Both the Program
+> Head and Admin Subjects pages were rebuilt as a shared prospectus-style view
+> (`academics.views.subjects_home`) — a segmented major-filter (Program Head, scoped) or a
+> program/major selector (Admin, everything) over cards per year level, each with 1st/2nd Sem
+> sub-tables, a "Shared" badge on a subject used by another program/major, and a two-path "Add
+> Subject" modal (use an existing subject from the catalog, or create a new one) — admin's page
+> keeps the Override banner and logs every change as an admin override, same pattern as Sections/
+> Classes. "Remove from curriculum" deletes only the `CurriculumEntry`, never the `Subject`, and is
+> blocked while an active-semester class still uses that placement. The Class-creation subject
+> picker (`academics.forms._grouped_subject_choices`) now groups "From the curriculum" subjects
+> ahead of "All subjects" once a section is chosen (full live re-grouping on changing the selected
+> sections mid-form was **not** built this pass — the suggestion is computed from an already-saved
+> class's sections on edit, and degrades to one ungrouped list on create, which was judged good
+> enough for this pass; a follow-up could wire an htmx re-render on the sections field the same way
+> `_user_form_modal.html` already re-renders on a role change). A new `load_citci_curriculum`
+> management command (dev-only, `python-docx`) loads CITCI's real curriculum from the Registrar's
+> `docs/source/all_subject_per_major.docx` — it turned out to be the exact same table shape
+> `import_offerings_docx.py` already parses, so it reuses `parse_docx` directly and just ignores
+> the instructor/room/schedule columns it doesn't need. Same-code rows with conflicting titles or
+> units across tables keep the BSED-table's value and are logged to `DATA_ISSUES.md`; near-
+> duplicate codes (e.g. "PEd 205" vs "PEd 205 Elec") are flagged, never auto-merged, matching the
+> project's existing "never auto-merge, confirm with CITCI" policy for suspicious instructor-name
+> pairs. See the "Curriculum mapping" bullet under "Build Phases" for the exact findings from the
+> real file (duplicate-code list, near-duplicates, a unit-count oddity) and the counts from running
+> it against the dev database.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -340,12 +378,19 @@ program/major dropdowns to pick from, since there's only ever one correct choice
   program/major pre-filled and locked to scope (or offered as a choice if the head covers more
   than one). Section has no `is_active` field, so delete is a real delete with the same
   `ProtectedError` → friendly-message handling as admin's own Sections page.
-- **Subjects** (`academics:ph_subjects`) — the subject catalog stays **shared**: subject codes
-  are unique school-wide (GE 2, PEd 202 are created once and reused), so a Program Head can use
-  *any* active subject when building a class. Creating a new subject tags it with their
-  program/major; **editing** one is only allowed when it's tagged to their own scope — a
-  shared/general subject with no program (`Subject.program = None`) stays admin-only to edit
-  (`academics.scoping.subjects_editable_by` excludes it by design).
+- **Subjects** (`academics:ph_subjects`, built as a prospectus-style view, see section 3b's
+  Curriculum mapping note below) — the subject catalog stays **shared**: subject codes are unique
+  school-wide (GE 2, PEd 202 are created once and reused), so a Program Head can use *any* active
+  subject when building a class. A subject's placement into a program/major's prospectus (year
+  level, term) is a separate `academics.CurriculumEntry` row, not a field on `Subject` itself — the
+  same subject code can sit in several curricula at once. "Add Subject" offers two paths: attach an
+  existing catalog subject into the current program/major's prospectus, or create a brand-new one
+  and attach it in the same step. **Editing** a subject's title/units is only allowed when *every*
+  one of its `CurriculumEntry` rows belongs to the head's own scope (`academics.scoping.
+  subjects_editable_by`) — a subject placed in any other program/major shows "Shared — ask the
+  Admin to edit" instead. "Remove from curriculum" deletes only the `CurriculumEntry`, never the
+  `Subject` (and any other program/major still using it) — blocked while an active-semester class
+  uses that placement.
 - **Classes** (`academics:program_head_classes`, now a full create/edit page, not just a teaching-
   load manager) — subject (any active) + their own sections + schedule/room/instructor. A class
   shared across programs (one Gen Ed class serving two majors' sections) can be **joined**
@@ -590,9 +635,13 @@ not cascade-delete. The hierarchy is **Program → Major (optional) → Section*
 - `academics.Section` — program + major (nullable) + academic_year FK (PROTECT), year_level
   (1–4, nullable — some programs have no year levels), name (blank allowed); unique per (program,
   major, academic_year, year_level, name). `__str__` e.g. "BSED-ENG 1", or just "TCP" with no major/year/name.
-- `academics.Subject` — code (unique), title, **units** (single Decimal — not split lec/lab),
-  program FK (PROTECT, nullable = shared across programs — most Gen Ed/Prof Ed subjects), major FK
-  (PROTECT, nullable — only for major-specific subjects), year_level (nullable), term, is_active
+- `academics.Subject` — code (unique school-wide), title, **units** (single Decimal — not split
+  lec/lab), is_active. No program/major/year_level/term here (built, 2026-11-11) — where a subject
+  sits in a program/major's prospectus is `CurriculumEntry` below, since the same subject can sit
+  in several curricula at once (built, 2026-11-11).
+- `academics.CurriculumEntry` — subject FK (PROTECT), program FK (PROTECT), major FK (PROTECT,
+  nullable — TCP-style, no major), year_level (nullable), term; unique per (program, major,
+  year_level, term, subject). Places a subject into one program/major's prospectus slot.
 - `academics.StudentProfile` — user OneToOne (role=STUDENT; auto-created by a `post_save` signal in
   `academics/signals.py`), program/major/year_level/section (all nullable until admin assigns them)
 - `academics.ClassOffering` ("Class") — subject FK (PROTECT) + **sections** `ManyToManyField`
@@ -1648,6 +1697,29 @@ until the previous one passes its tests.
   `AcademicSetupChangeLog` model rather than three per-domain ones, hand-written Program-Head
   views rather than a new `core.crud` scoping hook, auto-deactivating a shared class on its last
   section leaving — all confirmed with the user before building).
+- **Curriculum mapping, prospectus Subjects page, real CITCI curriculum (not a numbered phase,
+  done):** new `academics.CurriculumEntry` model replaces `Subject.program`/`major`/`year_level`/
+  `term` (three migrations: add the model, copy existing placement data into it, then drop the old
+  fields) so one subject code can sit in several programs'/majors' curricula at once. Both the
+  Program Head and Admin Subjects pages were rebuilt as one shared prospectus-style view
+  (`academics.views.subjects_home`) — year-level cards with 1st/2nd Sem sub-tables, a major-filter
+  segmented control (Program Head, scoped) or a program/major selector (Admin, everything), a
+  "Shared" badge, and a two-path Add-Subject modal (attach an existing subject, or create a new
+  one). `academics.scoping.subjects_editable_by` now checks every one of a subject's
+  `CurriculumEntry` rows, not a field on `Subject` — implemented as a count comparison after a real
+  Django ORM bug surfaced (negating a `Q()` with multiple conditions on a to-many relation lets
+  different rows each satisfy one condition). The Class-creation subject picker
+  (`academics.forms._grouped_subject_choices`) suggests curriculum-matched subjects first; full
+  live re-grouping as sections change mid-form was not built this pass (works on edit, degrades to
+  one ungrouped list on create — a deliberate, disclosed scope cut, not a bug).
+
+  A new `load_citci_curriculum` management command loads CITCI's real curriculum from
+  `docs/source/all_subject_per_major.docx` — it turned out to be the exact same table shape
+  `import_offerings_docx.py` already parses, so it reuses `parse_docx` directly rather than writing
+  a second parser, ignoring the instructor/room/schedule columns per the task's own instruction.
+  Run against the dev database: see the summary counts and the exact `DATA_ISSUES.md` findings
+  (duplicate-code conflicts resolved BSED-wins, near-duplicate codes flagged but never auto-merged,
+  the PATHFit 1–3-vs-4 unit-count oddity) reported to the user when this landed.
 
 ---
 

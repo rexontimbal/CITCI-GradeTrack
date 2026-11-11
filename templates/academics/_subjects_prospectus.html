@@ -1,0 +1,123 @@
+{% load sidebar_icons core_extras %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    {% if is_admin %}
+    <form hx-get="{% url 'academics:subjects' %}" hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+          class="flex flex-wrap items-center gap-2">
+        <select name="program" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Program">
+            {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.code }}</option>{% endfor %}
+        </select>
+        <select name="major" onchange="this.form.requestSubmit()" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Major">
+            <option value="">(no major — TCP-style)</option>
+            {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.code }} — {{ m.name }}</option>{% endfor %}
+        </select>
+        <input type="hidden" name="q" value="{{ query }}">
+    </form>
+    {% else %}
+    <div class="flex flex-wrap gap-2">
+        {% for pill in pills %}
+        <a href="?program={{ pill.program_id }}&major={{ pill.major_id }}"
+           hx-get="{% url 'academics:ph_subjects' %}?program={{ pill.program_id }}&major={{ pill.major_id }}"
+           hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-push-url="true"
+           class="rounded-lg px-3 py-1.5 text-sm font-medium {% if pill.active %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+            {{ pill.label }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="flex items-center gap-2" id="subjects-search-wrap">
+        <input type="hidden" id="subjects-search-program" value="{{ program.pk }}">
+        <input type="hidden" id="subjects-search-major" value="{{ major.pk|default:'' }}">
+        <div class="relative">
+            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
+            <input type="text" name="q" value="{{ query }}" placeholder="Search code or title"
+                   hx-get="{% url 'academics:subjects' %}" hx-include="#subjects-search-program,#subjects-search-major"
+                   hx-target="#subjects-prospectus" hx-swap="innerHTML" hx-trigger="keyup changed delay:400ms"
+                   class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+        </div>
+    </div>
+</div>
+
+{% if cards %}
+{% for card in cards %}
+<div class="mb-6 rounded-2xl border border-gray-200 bg-white p-5">
+    <h3 class="mb-3 text-sm font-semibold text-gray-900">
+        {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}{{ program.code }}{% if major %}-{{ major.code }}{% endif %}{% endif %}
+    </h3>
+    {% for table in card.term_tables %}
+    <div class="mb-4 last:mb-0">
+        <div class="mb-2 flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ table.label }}</span>
+            <a hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ card.year_level|default:'' }}&term={{ table.value }}"
+               hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+               class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
+                {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add
+            </a>
+        </div>
+        {% if table.rows %}
+        <div class="overflow-x-auto rounded-xl border border-gray-200">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <tr>
+                        <th class="px-3 py-2">Code</th>
+                        <th class="px-3 py-2">Title</th>
+                        <th class="px-3 py-2">Units</th>
+                        <th class="px-3 py-2">Shared</th>
+                        <th class="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for entry in table.rows %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2 font-medium text-gray-900">{{ entry.subject.code }}</td>
+                        <td class="px-3 py-2 text-gray-700">{{ entry.subject.title }}</td>
+                        <td class="px-3 py-2 text-gray-700">{{ entry.subject.units }}</td>
+                        <td class="px-3 py-2">
+                            {% with others=shared_labels|dict_get:entry.subject_id %}
+                            {% if others %}
+                            <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700" title="Also used by: {{ others|join:', ' }}">
+                                Also in {{ others|join:", " }}
+                            </span>
+                            {% endif %}
+                            {% endwith %}
+                        </td>
+                        <td class="px-3 py-2 text-right">
+                            <div class="flex justify-end gap-1">
+                                {% if is_admin or entry.subject.id in editable_subject_ids %}
+                                <button hx-get="{% url 'academics:subject_edit' entry.subject.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                        class="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100" title="Edit">
+                                    {% sidebar_icon "pencil" "w-4 h-4" %}
+                                </button>
+                                {% else %}
+                                <span class="text-xs text-gray-500" title="Shared — ask the Admin to edit">Shared</span>
+                                {% endif %}
+                                <button hx-get="{% url 'academics:subject_remove_from_curriculum' entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                        class="rounded-lg p-1.5 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Remove from curriculum">
+                                    {% sidebar_icon "trash" "w-4 h-4" %}
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <tr class="bg-gray-50 font-medium text-gray-700">
+                        <td class="px-3 py-2" colspan="2">Total units</td>
+                        <td class="px-3 py-2">{{ table.total_units }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="rounded-xl border border-dashed border-gray-200 px-3 py-3 text-xs text-gray-500">No subjects yet.</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+{% else %}
+{% include "partials/_empty_state.html" with icon="book" title="No subjects yet" description="Add a subject to this program/major's prospectus." %}
+{% endif %}
+
+<script>
+    document.body.addEventListener("refreshSubjects", () => window.location.reload());
+</script>

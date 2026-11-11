@@ -120,6 +120,14 @@ MANUALS = {
                 "/academics/program-head/classes/",
             ),
             (
+                "3b. Subjects",
+                "Subjects shows your program's prospectus, grouped by year level with 1st/2nd Sem "
+                "sub-tables. 'Add Subject' can attach an existing catalog subject or create a new "
+                "one; a 'Shared' subject (used by another program/major too) can only be edited by "
+                "Admin.",
+                "/academics/my-program/subjects/",
+            ),
+            (
                 "4. Teaching Loads summary",
                 "Per-instructor totals (classes, units, students) for your program(s), plus any "
                 "classes still unassigned.",

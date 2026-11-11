@@ -220,7 +220,7 @@ class DashboardQueryCountTests(GradingTestBase):
         self.extra_entries = []
         for i in range(self.EXTRA_SUBJECTS):
             subject = Subject.objects.create(
-                code=f"QC{i}", title=f"Query Count Subject {i}", units=Decimal("3.0"), term=self.semester.term
+                code=f"QC{i}", title=f"Query Count Subject {i}", units=Decimal("3.0")
             )
             class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
             class_offering.sections.set([self.section])
@@ -294,7 +294,7 @@ class DashboardQueryCountTests(GradingTestBase):
         with CaptureQueriesContext(connection) as baseline:
             self.client.get(reverse("dashboard:home"))
 
-        extra_subject = Subject.objects.create(code="QC_EXTRA", title="Extra", units=Decimal("3.0"), term=self.semester.term)
+        extra_subject = Subject.objects.create(code="QC_EXTRA", title="Extra", units=Decimal("3.0"))
         extra_class = ClassOffering.objects.create(subject=extra_subject, semester=self.semester, instructor=self.instructor)
         extra_class.sections.set([self.section])
 

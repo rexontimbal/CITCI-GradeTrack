@@ -2,40 +2,14 @@
 {% load sidebar_icons %}
 {% block page_title %}Subjects{% endblock %}
 {% block content %}
-{% include "partials/_page_header.html" with title="Subjects" subtitle="The subject catalog used to build class offerings." %}
-{% include "partials/_override_banner.html" %}
+{% include "partials/_page_header.html" with title="Subjects" subtitle="The subject catalog is shared school-wide — you can use any active subject on a class, but can only edit ones tagged solely to your own program/major." %}
+{% if is_admin %}{% include "partials/_override_banner.html" %}{% endif %}
 
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <form hx-get="{% url 'academics:subjects' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"
-          hx-trigger="keyup changed delay:400ms from:input, change from:select, refreshSubjects from:body"
-          class="flex flex-wrap items-center gap-2">
-        <div class="relative">
-            {% sidebar_icon "search" "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" %}
-            <input type="text" name="q" value="{{ query }}" placeholder="Search code or title"
-                   class="w-56 rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-        </div>
-        <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All programs">
-    <option value="">All programs</option>
-            {% for p in programs %}<option value="{{ p.pk }}">{{ p.code }}</option>{% endfor %}
-        </select>
-        <select name="year_level" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All year levels">
-    <option value="">All year levels</option>
-            <option value="1">1st Year</option>
-            <option value="2">2nd Year</option>
-            <option value="3">3rd Year</option>
-            <option value="4">4th Year</option>
-        </select>
-        <select name="is_active" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All statuses">
-    <option value="">All statuses</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-        </select>
-    </form>
-    <button hx-get="{% url 'academics:subject_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-        {% sidebar_icon "plus" "w-4 h-4" %} Add Subject
-    </button>
+{% if no_scope %}
+{% include "partials/_empty_state.html" with icon="book" title="No program in scope" description="You have not been assigned as a Program Head for any program yet — ask Admin to assign you on the Programs or Majors page." %}
+{% else %}
+<div id="subjects-prospectus">
+    {% include "academics/_subjects_prospectus.html" %}
 </div>
-
-{% include table_template %}
+{% endif %}
 {% endblock %}

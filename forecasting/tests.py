@@ -620,7 +620,7 @@ class AtRiskWithoutInterventionTests(ForecastingPart2TestBase):
 
         extra_classes = [self.class_offering]
         for i in range(3):
-            other_subject = Subject.objects.create(code=f"ARI{i}", title=f"ARI {i}", units=3, term=self.semester.term)
+            other_subject = Subject.objects.create(code=f"ARI{i}", title=f"ARI {i}", units=3)
             other_class = ClassOffering.objects.create(subject=other_subject, semester=self.semester, instructor=self.instructor)
             other_class.sections.set([self.section])
             extra_classes.append(other_class)
@@ -655,7 +655,7 @@ class AtRiskQueryCountTests(ForecastingPart2TestBase):
         self.extra_classes = []
         for i in range(5):
             subject = Subject.objects.create(
-                code=f"QC10{i}", title=f"Query Count Subject {i}", units=Decimal("3.0"), term=self.semester.term
+                code=f"QC10{i}", title=f"Query Count Subject {i}", units=Decimal("3.0")
             )
             class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
             class_offering.sections.set([self.section])

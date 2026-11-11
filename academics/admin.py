@@ -6,6 +6,7 @@ from .models import (
     AcademicYear,
     ClassOffering,
     ClassRosterEntry,
+    CurriculumEntry,
     Major,
     Program,
     Section,
@@ -50,9 +51,16 @@ class SectionAdmin(admin.ModelAdmin):
 
 @admin.register(Subject, site=site)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ("code", "title", "units", "program", "major", "year_level", "term", "is_active")
-    list_filter = ("program", "major", "year_level", "term", "is_active")
+    list_display = ("code", "title", "units", "is_active")
+    list_filter = ("is_active",)
     search_fields = ("code", "title")
+
+
+@admin.register(CurriculumEntry, site=site)
+class CurriculumEntryAdmin(admin.ModelAdmin):
+    list_display = ("subject", "program", "major", "year_level", "term")
+    list_filter = ("program", "major", "year_level", "term")
+    search_fields = ("subject__code", "subject__title")
 
 
 @admin.register(StudentProfile, site=site)

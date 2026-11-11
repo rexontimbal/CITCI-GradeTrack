@@ -6,7 +6,7 @@ from accounts.models import User
 from core.forms import StyledModelForm
 from core.widgets import SearchableSelectWidget
 
-from .models import AcademicYear, ClassOffering, Major, Program, Section, Semester, Subject
+from .models import AcademicYear, ClassOffering, CurriculumEntry, Major, Program, Section, Semester, Subject
 
 
 class AcademicYearForm(StyledModelForm):
@@ -81,10 +81,11 @@ class SectionForm(StyledModelForm):
 
 def _restrict_program_major_fields(form, user):
     """Shared by every Program-Head-scoped form with program/major fields
-    (Section, Subject): restricts both querysets to academics.scoping.
-    scope_for(user), and pre-selects program when there's only one choice.
-    A program-level scope tuple only covers majors with no head of their
-    own — one with its own head is that head's exclusively."""
+    (Section, and the curriculum-placement side of Subject): restricts
+    both querysets to academics.scoping.scope_for(user), and pre-selects
+    program when there's only one choice. A program-level scope tuple
+    only covers majors with no head of their own — one with its own head
+    is that head's exclusively."""
     from .scoping import scope_for
 
     scope = scope_for(user) or set()
@@ -113,27 +114,89 @@ class ProgramHeadSectionForm(StyledModelForm):
         _restrict_program_major_fields(self, user)
 
 
-class SubjectForm(StyledModelForm):
-    class Meta:
-        model = Subject
-        fields = ["code", "title", "units", "program", "major", "year_level", "term", "is_active"]
-
-
-class ProgramHeadSubjectForm(StyledModelForm):
-    """Same model as SubjectForm, but `program` is required (not blankable
-    — shared/general subjects with no program stay admin-only to create,
-    per the shared-subject-catalog rule) and program/major choices are
-    locked to scope."""
+class AdminSubjectForm(StyledModelForm):
+    """Admin can edit any subject's code/title/units/active flag directly
+    — used by the admin prospectus page's edit action. Unlike a Program
+    Head, admin isn't restricted to subjects used solely within one scope
+    (see SubjectEditForm)."""
 
     class Meta:
         model = Subject
-        fields = ["code", "title", "units", "program", "major", "year_level", "term", "is_active"]
+        fields = ["code", "title", "units", "is_active"]
 
-    def __init__(self, *args, user=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["program"].required = True
-        self.fields["program"].empty_label = None
-        _restrict_program_major_fields(self, user)
+
+class SubjectEditForm(StyledModelForm):
+    """A Program Head may only edit title/units of a subject used solely
+    within their own scope — never its code (that's admin-only, since a
+    code change could affect other programs sharing the subject, even
+    though *this* subject happens not to be shared right now)."""
+
+    class Meta:
+        model = Subject
+        fields = ["title", "units"]
+
+
+class SubjectQuickCreateForm(StyledModelForm):
+    """The "create a new subject" path of the Add-to-curriculum modal —
+    code/title/units only; the new subject is immediately attached to one
+    CurriculumEntry by the view, never left unplaced."""
+
+    class Meta:
+        model = Subject
+        fields = ["code", "title", "units"]
+
+
+class CurriculumEntryExistingSubjectForm(forms.Form):
+    """The "use an existing subject" path of the Add-to-curriculum modal
+    — program/major/year_level/term come from the page's current filter
+    context server-side, never from this form."""
+
+    subject = forms.ModelChoiceField(
+        queryset=Subject.objects.filter(is_active=True),
+        label="Subject",
+        widget=SearchableSelectWidget(
+            search_url=reverse_lazy("academics:subject_search"),
+            queryset=Subject.objects.filter(is_active=True),
+        ),
+    )
+
+
+def _grouped_subject_choices(sections, term=None, base_queryset=None):
+    """Groups the subject picker into "From the curriculum" (subjects
+    with a CurriculumEntry matching any of `sections`' program/major/
+    year_level, for `term` if given) first, then "All subjects" -- using
+    Django's native grouped-choices support on ModelChoiceField (a list
+    of (group_label, [(pk, label), ...]) tuples). Falls back to one
+    ungrouped list when no sections are selected yet (nothing to suggest
+    from)."""
+    base_queryset = Subject.objects.filter(is_active=True) if base_queryset is None else base_queryset
+    all_subjects = list(base_queryset.order_by("code"))
+    if not sections:
+        return [(s.pk, str(s)) for s in all_subjects]
+
+    # Built per-section as an OR'd Q(), not a blind field__in=[...,None] --
+    # SQL's IN (NULL) never matches a NULL column (it needs IS NULL), so a
+    # section with no major/year_level needs its own isnull=True clause.
+    section_q = Q()
+    for s in sections:
+        major_q = Q(major_id=s.major_id) if s.major_id is not None else Q(major_id__isnull=True)
+        year_q = Q(year_level=s.year_level) if s.year_level is not None else Q(year_level__isnull=True)
+        section_q |= Q(program_id=s.program_id) & major_q & year_q
+    entries = CurriculumEntry.objects.filter(section_q).select_related("subject")
+    if term:
+        entries = entries.filter(term=term)
+    suggested_ids = {e.subject_id for e in entries if e.subject.is_active}
+    if not suggested_ids:
+        return [(s.pk, str(s)) for s in all_subjects]
+
+    suggested = [s for s in all_subjects if s.pk in suggested_ids]
+    rest = [s for s in all_subjects if s.pk not in suggested_ids]
+    choices = []
+    if suggested:
+        choices.append(("From the curriculum", [(s.pk, str(s)) for s in suggested]))
+    if rest:
+        choices.append(("All subjects", [(s.pk, str(s)) for s in rest]))
+    return choices
 
 
 class ClassOfferingForm(StyledModelForm):
@@ -156,6 +219,14 @@ class ClassOfferingForm(StyledModelForm):
     class Meta:
         model = ClassOffering
         fields = ["subject", "sections", "semester", "instructor", "schedule", "room", "is_active"]
+
+    def __init__(self, *args, selected_sections=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        sections = selected_sections if selected_sections is not None else (
+            list(self.instance.sections.all()) if self.instance.pk else []
+        )
+        term = self.instance.semester.term if self.instance.pk else None
+        self.fields["subject"].choices = _grouped_subject_choices(sections, term=term)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -192,7 +263,7 @@ class ProgramHeadClassOfferingForm(StyledModelForm):
         model = ClassOffering
         fields = ["subject", "sections", "schedule", "room", "instructor", "is_active"]
 
-    def __init__(self, *args, user=None, academic_year=None, **kwargs):
+    def __init__(self, *args, user=None, academic_year=None, selected_sections=None, term=None, **kwargs):
         super().__init__(*args, **kwargs)
         from .scoping import sections_in_scope
 
@@ -200,6 +271,12 @@ class ProgramHeadClassOfferingForm(StyledModelForm):
         if academic_year is not None:
             qs = qs.filter(academic_year=academic_year)
         self.fields["sections"].queryset = qs.select_related("program", "major")
+
+        sections = selected_sections if selected_sections is not None else (
+            list(self.instance.sections.all()) if self.instance.pk else []
+        )
+        resolved_term = term if term is not None else (self.instance.semester.term if self.instance.pk else None)
+        self.fields["subject"].choices = _grouped_subject_choices(sections, term=resolved_term)
 
 
 class JoinClassForm(forms.Form):

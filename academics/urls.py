@@ -42,17 +42,22 @@ urlpatterns = [
     path("my-program/sections/<int:pk>/edit/", views.ph_section_edit, name="ph_section_edit"),
     path("my-program/sections/<int:pk>/delete/", views.ph_section_delete, name="ph_section_delete"),
 
-    # Subjects
-    path("subjects/", views.SubjectListView.as_view(), name="subjects"),
-    path("subjects/create/", views.SubjectFormView.as_view(), name="subject_create"),
-    path("subjects/<int:pk>/edit/", views.SubjectFormView.as_view(), name="subject_edit"),
-    path("subjects/<int:pk>/delete/", views.SubjectDeleteView.as_view(), name="subject_delete"),
+    # Subjects — prospectus-style, shared view logic for admin (every
+    # program/major) and Program Head (scoped). ph_subjects is a thin
+    # alias so the Program Head sidebar keeps its own URL name.
+    path("subjects/", views.subjects_home, name="subjects"),
+    path("subjects/add/", views.subject_add, name="subject_add"),
+    path("subjects/<int:pk>/edit/", views.subject_edit, name="subject_edit"),
     path("subjects/<int:pk>/toggle-active/", views.SubjectToggleActiveView.as_view(), name="subject_toggle_active"),
+    path(
+        "curriculum-entries/<int:pk>/remove/",
+        views.subject_remove_from_curriculum,
+        name="subject_remove_from_curriculum",
+    ),
+    path("search/subjects/", views.subject_search, name="subject_search"),
 
-    # Subjects (Program Head — shared catalog, create/edit scoped)
-    path("my-program/subjects/", views.ph_subjects, name="ph_subjects"),
-    path("my-program/subjects/create/", views.ph_subject_create, name="ph_subject_create"),
-    path("my-program/subjects/<int:pk>/edit/", views.ph_subject_edit, name="ph_subject_edit"),
+    # Subjects (Program Head — same prospectus view, scoped by default)
+    path("my-program/subjects/", views.subjects_home, name="ph_subjects"),
 
     # Classes (admin CRUD)
     path("classes/", views.ClassListView.as_view(), name="classes"),

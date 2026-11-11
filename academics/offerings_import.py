@@ -19,7 +19,7 @@ from core.importing import SpreadsheetImportError, get_cell, parse_spreadsheet_f
 
 from . import scoping
 from .management.commands.import_offerings_docx import normalize_instructor, normalize_space, parse_docx
-from .models import ClassOffering, Major, Program, Section, Subject
+from .models import ClassOffering, CurriculumEntry, Major, Program, Section, Subject
 
 REQUIRED_HEADERS = ["semester", "program", "course code", "description", "units"]
 OPTIONAL_HEADERS = ["major", "year level", "room", "schedule", "instructor"]
@@ -295,15 +295,26 @@ def commit_offerings_import(classes, target_semester, user=None):
                         raise PermissionDenied("One or more rows are outside your scope.")
             subject = Subject.objects.filter(code=cls["code"]).first()
             if subject is None:
-                program_ids = set(cls["program_ids"])
-                single_program = Program.objects.get(pk=next(iter(program_ids))) if len(program_ids) == 1 else None
                 subject = Subject.objects.create(
                     code=cls["code"],
                     title=cls["description"],
                     units=Decimal(cls["units"]),
-                    program=single_program,
                 )
                 subjects_created += 1
+
+            # Every distinct (program, major, year_level) among this row's
+            # sections gets its own curriculum slot for the target
+            # semester's term — a class shared across sections/majors
+            # places the subject in each of their prospectuses, not just
+            # one.
+            for section in Section.objects.filter(pk__in=cls["section_ids"]):
+                CurriculumEntry.objects.get_or_create(
+                    program=section.program,
+                    major=section.major,
+                    year_level=section.year_level,
+                    term=target_semester.term,
+                    subject=subject,
+                )
 
             class_offering = ClassOffering.objects.create(
                 subject=subject,

@@ -281,7 +281,7 @@ class Command(BaseCommand):
         for code in SUBJECT_CODES:
             subject, _ = Subject.objects.update_or_create(
                 code=code,
-                defaults={"title": f"Load Test Subject {code[-1]}", "units": Decimal("3.0"), "term": Term.FIRST},
+                defaults={"title": f"Load Test Subject {code[-1]}", "units": Decimal("3.0")},
             )
             subjects.append(subject)
         return subjects

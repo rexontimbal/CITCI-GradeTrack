@@ -283,3 +283,26 @@ leaves).
 screen inventory/use-case diagram documents the Program Head role at all (it should, per item 2),
 it should now show these scoped Program-Head pages and the Admin Override group as part of that
 role's description, not as a correction to anything the proposal stated.
+
+---
+
+## 13. Curriculum mapping + prospectus Subjects page (addition — the Subject model's one-slot-per-
+subject design was an implementation detail the proposal never specified, not a stated requirement)
+
+**Confirmed CITCI practice (2026-11-11):** CITCI's real curriculum places the same subject code
+(e.g. a Gen Ed course) into more than one program/major's prospectus, each possibly at a different
+year level — `academics.Subject` originally modeled at most one such placement per code. A new
+`academics.CurriculumEntry` model records each placement separately (subject × program × major ×
+year level × term), and the Program Head/Admin Subjects pages were rebuilt around it as a
+prospectus-style view (year-level cards, 1st/2nd Sem sub-tables, a "Shared" badge). CITCI's real
+curriculum (course code/title/units/placement) was loaded from the Registrar's
+`all_subject_per_major.docx` via a new `load_citci_curriculum` command — every ambiguity found
+(same code with a conflicting title/units across tables, a handful of near-duplicate codes) was
+resolved conservatively (kept the BSED-table's value, never auto-merged a near-duplicate) and
+logged to `docs/source/DATA_ISSUES.md` for CITCI to confirm, the same policy already established
+for suspicious instructor-name pairs.
+
+**Revise:** None of §1–§3.13 require revision — this is an internal data-model correction plus a
+real-data load, not a feature the proposal described differently. If the final paper's ERD/data
+dictionary is regenerated from the models (`tools/generate_erd.py`), it will already reflect
+`CurriculumEntry` and the trimmed `Subject` automatically.

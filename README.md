@@ -141,6 +141,16 @@ updated offerings sheet. It also writes `docs/source/DATA_ISSUES.md`, listing in
 pairs that look like they might be the same person misspelled/mistitled (e.g. "Mr. Garibay" vs
 "Ms. Garibay") — these are **never auto-merged**, confirm with CITCI first.
 
+`python manage.py load_citci_curriculum docs/source/all_subject_per_major.docx` (same
+`requirements-dev.txt` dependency) loads CITCI's real curriculum — course code/title/units and
+which program/major/year-level/term each sits in — into `Subject` + `CurriculumEntry` rows. It's
+the same docx the offerings import reads, just extracting different columns (code/description/
+units/placement, ignoring instructor/room/schedule) — idempotent, safe to re-run. Same-code rows
+with a conflicting title/units across tables keep the BSED-table's value; a near-duplicate code
+(e.g. "PEd 205" vs "PEd 205 Elec") is flagged, never auto-merged — both append to
+`docs/source/DATA_ISSUES.md` under their own section rather than overwriting
+`import_offerings_docx`'s.
+
 ### Resetting to a clean slate (dev only)
 
 `python manage.py reset_dev_clean --yes` wipes **every** data row (users, academic years/
@@ -630,6 +640,12 @@ header for how to regenerate it.
 - **Registrar .docx → seed data pipeline:** `academics/management/commands/import_offerings_docx.py`
   parses `docs/source/all_subject_per_major.docx` into `docs/source/citci_offerings_2026_2027.json`
   (+ `docs/source/DATA_ISSUES.md`); `seed_citci_academics` loads that JSON into the database.
+- **Curriculum mapping:** `academics.CurriculumEntry` places a `Subject` into one program/major's
+  prospectus (year level, term) — a subject's code is school-wide unique, but it can have many
+  `CurriculumEntry` rows across different programs/majors. `academics/management/commands/
+  load_citci_curriculum.py` reuses the same docx parser above to load CITCI's real curriculum.
+  `academics.scoping.subjects_editable_by`/`curriculum_entries_in_scope` are the scope checks the
+  prospectus-style Subjects page (`academics.views.subjects_home`) is built on.
 - **Grading engine** (templates, per-class scheme snapshot, assessment items, scores, computation):
   `grading/models.py`, `grading/services.py` (pure functions — `compute_student`, `compute_class`,
   `save_score`, `validate_component_weights`; no view/HTTP concerns), `grading/views.py` +

@@ -14,9 +14,9 @@ than an empty set, specifically so every caller is forced to branch on
 "is this admin" before applying a filter, instead of accidentally
 over-restricting an admin query by treating `None` as "no matches"."""
 
-from django.db.models import Q
+from django.db.models import Count, F, Q
 
-from .models import ClassOffering, Major, Program, Section, Subject
+from .models import ClassOffering, CurriculumEntry, Major, Program, Section, Subject
 
 
 def scope_for(user):
@@ -78,13 +78,49 @@ def sections_in_scope(user):
     return Section.objects.filter(_scope_q(scope))
 
 
+def curriculum_entries_in_scope(user, program=None, major=None):
+    """CurriculumEntry rows this user may manage — admin unrestricted
+    (optionally narrowed to one program/major via the admin selector),
+    else restricted to scope_for(user) and (if given) one program/major
+    pair the Program Head's own segmented filter is currently showing."""
+    scope = scope_for(user)
+    qs = CurriculumEntry.objects.all()
+    if scope is not None:
+        qs = qs.filter(_scope_q(scope, program_field="program", major_field="major"))
+    if program is not None:
+        qs = qs.filter(program=program)
+    if major is not None:
+        qs = qs.filter(major=major)
+    elif program is not None:
+        qs = qs.filter(major__isnull=True)
+    return qs
+
+
 def subjects_editable_by(user):
-    """Excludes shared/general subjects (program=None) — those stay
-    admin-only to edit, per CLAUDE.md section 4's subject-catalog rule."""
+    """A subject is editable by a scoped Program Head only if EVERY one
+    of its CurriculumEntry rows is within their own scope — a subject
+    used by any program/major outside their scope is "shared" and stays
+    admin-only to edit (per CLAUDE.md section 3b's subject-catalog rule).
+    A subject with zero CurriculumEntry rows at all has never been placed
+    anywhere yet and is treated the same as "shared" (nothing to confirm
+    it's exclusively theirs). Admin (scope is None) can edit anything.
+
+    Implemented as a count comparison (every entry in scope <=> count of
+    in-scope entries equals the total entry count) rather than negating
+    _scope_q directly — negating a Q() built from multiple conditions on
+    a to-many relation (curriculum_entries) makes Django compile each
+    AND'd condition as its own independent EXISTS subquery, so it can be
+    satisfied by DIFFERENT rows of the relation instead of requiring one
+    row to satisfy all of them at once (a real bug caught by
+    CurriculumScopingHelperTests' shared-subject case)."""
     scope = scope_for(user)
     if scope is None:
         return Subject.objects.all()
-    return Subject.objects.filter(_scope_q(scope), program__isnull=False)
+    in_scope_q = _scope_q(scope, program_field="curriculum_entries__program", major_field="curriculum_entries__major")
+    return Subject.objects.annotate(
+        _total_entries=Count("curriculum_entries", distinct=True),
+        _in_scope_entries=Count("curriculum_entries", filter=in_scope_q, distinct=True),
+    ).filter(_total_entries__gt=0, _total_entries=F("_in_scope_entries"))
 
 
 def programs_in_scope(user):

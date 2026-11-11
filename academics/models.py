@@ -140,28 +140,16 @@ class Section(TimeStampedModel):
 
 
 class Subject(TimeStampedModel):
+    """The school-wide subject catalog — `code` is unique across every
+    program (GE 2, PEd 202 are created once and reused). Where a subject
+    sits in a program/major's prospectus (year level, term) is recorded
+    by `CurriculumEntry` below, not on Subject itself — the same subject
+    code can appear in several majors' curricula, each possibly at a
+    different year level."""
+
     code = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=200)
     units = models.DecimalField(max_digits=3, decimal_places=1)
-    program = models.ForeignKey(
-        Program,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="subjects",
-        help_text="Leave blank for a subject shared across programs (most General Education / "
-        "Professional Education subjects).",
-    )
-    major = models.ForeignKey(
-        Major,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="subjects",
-        help_text="Leave blank unless this subject belongs to one specific major.",
-    )
-    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
-    term = models.CharField(max_length=10, choices=Term.choices, help_text="Recommended term.")
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -169,6 +157,34 @@ class Subject(TimeStampedModel):
 
     def __str__(self):
         return self.code
+
+
+class CurriculumEntry(TimeStampedModel):
+    """Places a Subject into one program/major's prospectus at a given
+    year level and term — "where a subject sits." A subject with no
+    CurriculumEntry at all has simply never been placed in anyone's
+    prospectus yet (e.g. freshly created via the admin Subjects page's
+    bare "create new subject" path before it's attached anywhere)."""
+
+    program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="curriculum_entries")
+    major = models.ForeignKey(
+        Major, on_delete=models.PROTECT, null=True, blank=True, related_name="curriculum_entries"
+    )
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
+    term = models.CharField(max_length=10, choices=Term.choices)
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="curriculum_entries")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["program", "major", "year_level", "term", "subject"], name="unique_curriculum_slot"
+            )
+        ]
+        ordering = ["program__code", "major__code", "year_level", "term"]
+
+    def __str__(self):
+        scope = f"{self.program.code}-{self.major.code}" if self.major else self.program.code
+        return f"{self.subject.code} — {scope}"
 
 
 class StudentProfile(TimeStampedModel):
@@ -336,11 +352,13 @@ class AcademicSetupChangeLog(TimeStampedModel):
         REACTIVATED = "REACTIVATED", "Reactivated"
         SECTION_JOINED = "SECTION_JOINED", "Section joined"
         SECTION_LEFT = "SECTION_LEFT", "Section left"
+        ADDED_TO_CURRICULUM = "ADDED_TO_CURRICULUM", "Added to curriculum"
+        REMOVED_FROM_CURRICULUM = "REMOVED_FROM_CURRICULUM", "Removed from curriculum"
 
     model_name = models.CharField(max_length=10, choices=ModelName.choices)
     object_id = models.PositiveIntegerField()
     object_repr = models.CharField(max_length=255)
-    action = models.CharField(max_length=20, choices=Action.choices)
+    action = models.CharField(max_length=25, choices=Action.choices)
     program = models.ForeignKey(Program, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     major = models.ForeignKey(Major, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")

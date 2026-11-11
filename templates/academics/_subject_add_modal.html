@@ -1,0 +1,67 @@
+{% load sidebar_icons %}
+<div x-data="{ mode: 'existing' }">
+    <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+        <h3 id="modal-title" class="text-base font-semibold text-gray-900">Add Subject</h3>
+        <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+            {% sidebar_icon "close" "w-5 h-5" %}
+        </button>
+    </div>
+
+    <div class="mt-4 flex gap-2">
+        <button type="button" @click="mode = 'existing'"
+                :class="mode === 'existing' ? 'bg-brand-primary-700 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                class="rounded-lg px-3 py-1.5 text-sm font-medium">
+            Use an existing subject
+        </button>
+        <button type="button" @click="mode = 'new'"
+                :class="mode === 'new' ? 'bg-brand-primary-700 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                class="rounded-lg px-3 py-1.5 text-sm font-medium">
+            Create a new subject
+        </button>
+    </div>
+
+    <form method="post" hx-post="{% url 'academics:subject_add' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="program" value="{{ program.pk }}">
+        <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
+        <input type="hidden" name="year_level" value="{{ year_level|default:'' }}">
+        <input type="hidden" name="term" value="{{ term }}">
+        <p class="text-xs text-gray-600">
+            Adding to: <strong>{{ program.code }}{% if major %}-{{ major.code }}{% endif %}</strong>
+            {% if year_level %}, Year {{ year_level }}{% endif %}, {{ term }}
+        </p>
+
+        <div x-show="mode === 'existing'" x-cloak>
+            {% if existing_form.non_field_errors %}
+            <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ existing_form.non_field_errors }}</div>
+            {% endif %}
+            <label for="{{ existing_form.subject.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Subject</label>
+            {{ existing_form.subject }}
+            {% for error in existing_form.subject.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        </div>
+
+        <div x-show="mode === 'new'" x-cloak class="space-y-4">
+            {% if create_form.non_field_errors %}
+            <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ create_form.non_field_errors }}</div>
+            {% endif %}
+            {% for field in create_form %}
+            <div>
+                <label for="{{ field.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <input type="hidden" name="mode" x-bind:value="mode">
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Add
+            </button>
+        </div>
+    </form>
+</div>

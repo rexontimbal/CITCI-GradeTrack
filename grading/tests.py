@@ -51,7 +51,7 @@ class GradingTestBase(TestCase):
         self.semester = Semester.objects.create(academic_year=self.academic_year, term=Term.FIRST, is_active=True)
         self.program = Program.objects.create(code="BSIT", name="BS Information Technology")
         self.section = Section.objects.create(program=self.program, academic_year=self.academic_year, year_level=1, name="A")
-        self.subject = Subject.objects.create(code="IT101", title="Intro to Computing", units=Decimal("3.0"), term=Term.FIRST)
+        self.subject = Subject.objects.create(code="IT101", title="Intro to Computing", units=Decimal("3.0"))
         self.instructor = make_user(User.Role.INSTRUCTOR, "prof")
         self.class_offering = ClassOffering.objects.create(
             subject=self.subject, semester=self.semester, instructor=self.instructor
@@ -662,8 +662,8 @@ class TwoInstructorsDifferentComponentsTests(TestCase):
         self.instructor_a = make_user(User.Role.INSTRUCTOR, "profA")
         self.instructor_b = make_user(User.Role.INSTRUCTOR, "profB")
 
-        subject_a = Subject.objects.create(code="IT101", title="Intro A", units=Decimal("3.0"), term=Term.FIRST)
-        subject_b = Subject.objects.create(code="IT102", title="Intro B", units=Decimal("3.0"), term=Term.FIRST)
+        subject_a = Subject.objects.create(code="IT101", title="Intro A", units=Decimal("3.0"))
+        subject_b = Subject.objects.create(code="IT102", title="Intro B", units=Decimal("3.0"))
         self.class_a = ClassOffering.objects.create(subject=subject_a, semester=self.semester, instructor=self.instructor_a)
         self.class_a.sections.set([self.section])
         self.class_b = ClassOffering.objects.create(subject=subject_b, semester=self.semester, instructor=self.instructor_b)
@@ -896,7 +896,7 @@ class GwaDisplayTests(StudentPortalTestBase):
         # A second, still-unreleased class for the same student/semester —
         # otherwise releasing the one-and-only class makes the GWA complete,
         # not partial.
-        second_subject = Subject.objects.create(code="EXTRA1", title="Extra Subject", units=Decimal("3.0"), term=Term.FIRST)
+        second_subject = Subject.objects.create(code="EXTRA1", title="Extra Subject", units=Decimal("3.0"))
         second_class = ClassOffering.objects.create(subject=second_subject, semester=self.semester, instructor=self.instructor)
         second_class.sections.set([self.section])
         ClassRosterEntry.objects.create(student=self.student, class_offering=second_class)

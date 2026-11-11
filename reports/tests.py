@@ -401,7 +401,7 @@ class StudentReportPdfTests(ReportsTestBase):
     def _second_class_for_student(self, student, scored=False, released=False):
         from academics.models import ClassOffering, ClassRosterEntry, Subject, Term
 
-        subject = Subject.objects.create(code=f"EXTRA-{student.pk}", title="Extra Subject", units=Decimal("3.0"), term=Term.FIRST)
+        subject = Subject.objects.create(code=f"EXTRA-{student.pk}", title="Extra Subject", units=Decimal("3.0"))
         class_offering = ClassOffering.objects.create(subject=subject, semester=self.semester, instructor=self.instructor)
         class_offering.sections.set([self.section])
         roster_entry = ClassRosterEntry.objects.create(student=student, class_offering=class_offering)

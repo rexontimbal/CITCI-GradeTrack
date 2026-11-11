@@ -19,10 +19,26 @@
         </div>
         <div>
             <label class="mb-1 block text-sm font-medium text-gray-700">Semesters to create</label>
-            <div class="space-y-1 text-sm text-gray-700">
-                <label class="flex items-center gap-2"><input type="checkbox" name="terms" value="FIRST" checked> 1st Sem</label>
-                <label class="flex items-center gap-2"><input type="checkbox" name="terms" value="SECOND" checked> 2nd Sem</label>
-                <label class="flex items-center gap-2"><input type="checkbox" name="terms" value="SUMMER"> Summer</label>
+            <p class="mb-2 text-xs text-gray-600">Dates are optional here — you can also set them later on the Academic Years &amp; Semesters page.</p>
+            <div class="space-y-2 text-sm text-gray-700">
+                <div class="flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-2 w-28"><input type="checkbox" name="terms" value="FIRST" checked> 1st Sem</label>
+                    <input type="date" name="start_FIRST" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="1st Sem start date">
+                    <span class="text-xs text-gray-500">to</span>
+                    <input type="date" name="end_FIRST" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="1st Sem end date">
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-2 w-28"><input type="checkbox" name="terms" value="SECOND" checked> 2nd Sem</label>
+                    <input type="date" name="start_SECOND" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="2nd Sem start date">
+                    <span class="text-xs text-gray-500">to</span>
+                    <input type="date" name="end_SECOND" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="2nd Sem end date">
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-2 w-28"><input type="checkbox" name="terms" value="SUMMER"> Summer</label>
+                    <input type="date" name="start_SUMMER" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="Summer start date">
+                    <span class="text-xs text-gray-500">to</span>
+                    <input type="date" name="end_SUMMER" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label="Summer end date">
+                </div>
             </div>
         </div>
         <div>

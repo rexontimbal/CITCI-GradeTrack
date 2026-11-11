@@ -81,23 +81,36 @@ def step3_preview_promotions(source_academic_year, new_sections):
     return rows
 
 
-def step4_commit(start_year, term_values, sections_to_create, promotion_rows, actor):
+def step4_commit(start_year, term_values, sections_to_create, promotion_rows, actor, term_dates=None):
     """One atomic transaction: creates the AcademicYear + its Semesters,
     creates every previewed Section, promotes/completes every non-excluded
     student, and writes one AuditLog row summarizing the run (counts only
     — never a name/ID number). Never touches ClassOffering/GradeSheet/
-    GradeSheetEntry rows in any prior semester."""
+    GradeSheetEntry rows in any prior semester.
+
+    `term_dates` (optional): {term_value: (start_iso_or_None, end_iso_or_None)}
+    from step 1's date fields, already validated there (range, within the
+    academic year, no overlap among the terms being created) — applied
+    here as-is, never re-validated."""
     from accounts.audit import log_audit
     from accounts.models import AuditLog
+    from datetime import date as _date
 
     promoted = 0
     completed = 0
     excluded = 0
+    term_dates = term_dates or {}
 
     with transaction.atomic():
         academic_year = AcademicYear.objects.create(start_year=start_year)
         for term in term_values:
-            Semester.objects.create(academic_year=academic_year, term=term)
+            start_iso, end_iso = term_dates.get(term, (None, None))
+            Semester.objects.create(
+                academic_year=academic_year,
+                term=term,
+                start_date=_date.fromisoformat(start_iso) if start_iso else None,
+                end_date=_date.fromisoformat(end_iso) if end_iso else None,
+            )
 
         created_sections = {}
         for s in sections_to_create:

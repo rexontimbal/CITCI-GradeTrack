@@ -79,6 +79,154 @@ class SubmissionDeadlineFormTests(TestCase):
         self.assertIsNone(semester2.submission_deadline)
 
 
+class SemesterDateValidationTests(TestCase):
+    """SemesterForm.clean() rules: end after start, both dates within the
+    academic year's two calendar years, no overlap with another semester
+    of the same A.Y., and a non-blocking duration warning."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2027)  # A.Y. 2027-2028
+
+    def _form(self, **overrides):
+        from .forms import SemesterForm
+
+        data = {"academic_year": self.ay.pk, "term": Term.FIRST}
+        data.update(overrides)
+        return SemesterForm(data=data)
+
+    def test_end_before_start_is_rejected(self):
+        form = self._form(start_date="2027-08-01", end_date="2027-07-01")
+        self.assertFalse(form.is_valid())
+        self.assertIn("end_date", form.errors)
+
+    def test_end_equal_to_start_is_rejected(self):
+        form = self._form(start_date="2027-08-01", end_date="2027-08-01")
+        self.assertFalse(form.is_valid())
+        self.assertIn("end_date", form.errors)
+
+    def test_dates_outside_academic_year_are_rejected(self):
+        form = self._form(start_date="2026-08-01", end_date="2026-12-01")
+        self.assertFalse(form.is_valid())
+        self.assertIn("start_date", form.errors)
+        self.assertIn("end_date", form.errors)
+
+    def test_dates_within_academic_year_are_accepted(self):
+        form = self._form(start_date="2027-08-01", end_date="2027-12-15")
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_december_of_second_calendar_year_is_within_range(self):
+        form = self._form(term=Term.SECOND, start_date="2028-01-10", end_date="2028-05-30")
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_overlapping_semester_in_same_academic_year_is_rejected(self):
+        Semester.objects.create(
+            academic_year=self.ay, term=Term.FIRST, start_date=date(2027, 8, 1), end_date=date(2027, 12, 15)
+        )
+        form = self._form(term=Term.SECOND, start_date="2027-12-01", end_date="2028-04-30")
+        self.assertFalse(form.is_valid())
+        self.assertIn("overlaps", form.errors["__all__"][0])
+
+    def test_non_overlapping_semester_is_accepted(self):
+        Semester.objects.create(
+            academic_year=self.ay, term=Term.FIRST, start_date=date(2027, 8, 1), end_date=date(2027, 12, 15)
+        )
+        form = self._form(term=Term.SECOND, start_date="2028-01-10", end_date="2028-05-30")
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_editing_a_semester_does_not_overlap_with_itself(self):
+        sem = Semester.objects.create(
+            academic_year=self.ay, term=Term.FIRST, start_date=date(2027, 8, 1), end_date=date(2027, 12, 15)
+        )
+        from .forms import SemesterForm
+
+        form = SemesterForm(
+            data={
+                "academic_year": self.ay.pk, "term": Term.FIRST,
+                "start_date": "2027-08-05", "end_date": "2027-12-20",
+            },
+            instance=sem,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_long_semester_warns_but_does_not_block(self):
+        form = self._form(start_date="2027-08-01", end_date="2028-04-01")  # ~8 months
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNotNone(form.duration_warning)
+
+    def test_long_summer_warns_at_a_shorter_threshold(self):
+        form = self._form(term=Term.SUMMER, start_date="2028-04-01", end_date="2028-07-15")  # ~3.5 months
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNotNone(form.duration_warning)
+
+    def test_ordinary_duration_has_no_warning(self):
+        form = self._form(start_date="2027-08-01", end_date="2027-12-15")
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.duration_warning)
+
+    def test_blank_dates_are_allowed_and_unvalidated(self):
+        form = self._form()
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.duration_warning)
+
+
+class SemesterActivationFlowTests(TestCase):
+    """View-level: status badges, the no-active-semester banner, the
+    Set-as-active action, and the activate-now prompt shown after
+    creating a semester while none is active."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "sem_flow_admin")
+        self.ay = AcademicYear.objects.create(start_year=2027)
+        self.client.force_login(self.admin)
+
+    def test_active_semester_shows_active_badge_no_button(self):
+        Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        response = self.client.get(reverse("academics:terms"))
+        self.assertContains(response, "Active")
+        self.assertNotContains(response, "Set as active")
+
+    def test_inactive_semester_shows_inactive_badge_and_button(self):
+        Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=False)
+        response = self.client.get(reverse("academics:terms"))
+        self.assertContains(response, "Inactive")
+        self.assertContains(response, "Set as active")
+
+    def test_no_active_semester_shows_banner(self):
+        Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=False)
+        response = self.client.get(reverse("academics:terms"))
+        self.assertContains(response, "No active semester yet")
+
+    def test_banner_absent_once_a_semester_is_active(self):
+        Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        response = self.client.get(reverse("academics:terms"))
+        self.assertNotContains(response, "No active semester yet")
+
+    def test_creating_first_semester_prompts_to_activate(self):
+        response = self.client.post(
+            reverse("academics:semester_create"),
+            {"academic_year": self.ay.pk, "term": Term.FIRST},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Set as active semester?")
+        semester = Semester.objects.get(academic_year=self.ay, term=Term.FIRST)
+        self.assertFalse(semester.is_active)
+
+    def test_creating_a_second_semester_does_not_prompt(self):
+        Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        response = self.client.post(
+            reverse("academics:semester_create"),
+            {"academic_year": self.ay.pk, "term": Term.SECOND},
+        )
+        self.assertEqual(response.status_code, 204)
+
+    def test_accepting_the_prompt_activates_the_semester(self):
+        semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=False)
+        response = self.client.post(reverse("academics:semester_set_active", args=[semester.pk]))
+        self.assertEqual(response.status_code, 204)
+        semester.refresh_from_db()
+        self.assertTrue(semester.is_active)
+
+
 class AcademicYearTests(TestCase):
     def test_end_year_is_derived_from_start_year(self):
         ay = AcademicYear.objects.create(start_year=2026)
@@ -1090,6 +1238,69 @@ class AYWizardPermissionTests(AYWizardTestBase):
         ):
             response = self.client.get(reverse(url_name))
             self.assertEqual(response.status_code, 403, url_name)
+
+
+class AYWizardDateValidationTests(AYWizardTestBase):
+    """Step 1's optional per-term start/end dates go through the same
+    academics.semester_validation rules as SemesterForm: range, within
+    the new A.Y.'s two calendar years, no overlap among the terms being
+    created together, and a non-blocking duration warning carried to
+    step 2. Dates actually land on the created Semester rows in step 4."""
+
+    def _step1(self, **fields):
+        self.client.force_login(self.admin)
+        data = {
+            "start_year": "2027", "terms": ["FIRST", "SECOND"],
+            "source_academic_year": self.ay_2026.pk,
+        }
+        data.update(fields)
+        return self.client.post(reverse("academics:ay_wizard_step1"), data)
+
+    def test_end_before_start_is_rejected(self):
+        response = self._step1(start_FIRST="2027-12-01", end_FIRST="2027-08-01")
+        self.assertContains(response, "End date must be after")
+        self.assertNotIn("ay_wizard", self.client.session)
+
+    def test_dates_outside_the_new_academic_year_are_rejected(self):
+        response = self._step1(start_FIRST="2026-08-01", end_FIRST="2026-12-15")
+        self.assertContains(response, "must fall within")
+
+    def test_valid_dates_proceed_to_step2(self):
+        response = self._step1(
+            start_FIRST="2027-08-01", end_FIRST="2027-12-15",
+            start_SECOND="2028-01-10", end_SECOND="2028-05-30",
+        )
+        self.assertRedirects(response, reverse("academics:ay_wizard_step2"))
+        stashed = self.client.session["ay_wizard"]
+        self.assertEqual(list(stashed["term_dates"]["FIRST"]), ["2027-08-01", "2027-12-15"])
+
+    def test_overlapping_terms_in_the_same_run_are_rejected(self):
+        response = self._step1(
+            start_FIRST="2027-08-01", end_FIRST="2027-12-31",
+            start_SECOND="2027-12-01", end_SECOND="2028-04-30",
+        )
+        self.assertContains(response, "overlap")
+
+    def test_long_semester_warns_but_proceeds(self):
+        response = self._step1(start_FIRST="2027-08-01", end_FIRST="2028-04-01")
+        self.assertRedirects(response, reverse("academics:ay_wizard_step2"))
+        step2 = self.client.get(reverse("academics:ay_wizard_step2"))
+        self.assertContains(step2, "longer than 6 months")
+
+    def test_blank_dates_are_allowed(self):
+        response = self._step1()
+        self.assertRedirects(response, reverse("academics:ay_wizard_step2"))
+
+    def test_step4_commit_applies_dates_to_created_semesters(self):
+        from .ay_wizard import step4_commit
+
+        result = step4_commit(
+            2027, ["FIRST"], [], [], self.admin,
+            term_dates={"FIRST": ("2027-08-01", "2027-12-15")},
+        )
+        semester = Semester.objects.get(academic_year=result["academic_year"], term="FIRST")
+        self.assertEqual(semester.start_date, date(2027, 8, 1))
+        self.assertEqual(semester.end_date, date(2027, 12, 15))
 
 
 class ScopeForHelperTests(TeachingAssignmentTestBase):

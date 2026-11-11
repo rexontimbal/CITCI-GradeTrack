@@ -25,6 +25,41 @@ class SemesterForm(StyledModelForm):
             "submission_deadline": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.duration_warning = None
+
+    def clean(self):
+        from .semester_validation import duration_warning, ranges_overlap, validate_date_range
+
+        cleaned_data = super().clean()
+        academic_year = cleaned_data.get("academic_year")
+        term = cleaned_data.get("term")
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+
+        if academic_year and (start_date or end_date):
+            errors = validate_date_range(start_date, end_date, academic_year.start_year, academic_year.end_year)
+            for field, message in errors.items():
+                self.add_error(field, message)
+
+            if not errors and start_date and end_date:
+                others = Semester.objects.filter(
+                    academic_year=academic_year, start_date__isnull=False, end_date__isnull=False
+                ).exclude(pk=self.instance.pk)
+                for other in others:
+                    if ranges_overlap(start_date, end_date, other.start_date, other.end_date):
+                        self.add_error(
+                            None,
+                            f"This overlaps with {other} ({other.start_date} to {other.end_date}).",
+                        )
+                        break
+
+            if not errors:
+                self.duration_warning = duration_warning(term, start_date, end_date)
+
+        return cleaned_data
+
 
 class ProgramForm(StyledModelForm):
     class Meta:

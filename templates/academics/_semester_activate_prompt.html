@@ -1,0 +1,22 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Set as active semester?</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<div class="mt-4 space-y-4">
+    <p class="text-sm text-gray-600">
+        There's no active semester yet. Set <strong>{{ semester }}</strong> as the active semester now?
+        All pages will default to it.
+    </p>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Later
+        </button>
+        <button hx-post="{% url 'academics:semester_set_active' semester.pk %}" hx-swap="none"
+                class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Yes, set active
+        </button>
+    </div>
+</div>

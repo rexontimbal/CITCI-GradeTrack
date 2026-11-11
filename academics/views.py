@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import date
 
 import openpyxl
@@ -42,6 +43,7 @@ from .models import (
     Semester,
     StudentProfile,
     Subject,
+    Term,
 )
 from .ay_wizard import step1_preview, step2_preview_sections, step3_preview_promotions, step4_commit
 from .offerings_import import (
@@ -81,6 +83,7 @@ def terms(request):
         "page_title": "Academic Years & Semesters",
         "academic_years": AcademicYear.objects.all(),
         "semesters": Semester.objects.select_related("academic_year").all(),
+        "latest_semester": Semester.objects.order_by("-created_at").first(),
     }
     return render(request, "academics/terms.html", context)
 
@@ -95,7 +98,10 @@ def semesters_table(request):
     return render(
         request,
         "academics/_semesters_table.html",
-        {"semesters": Semester.objects.select_related("academic_year").all()},
+        {
+            "semesters": Semester.objects.select_related("academic_year").all(),
+            "latest_semester": Semester.objects.order_by("-created_at").first(),
+        },
     )
 
 
@@ -122,6 +128,31 @@ class SemesterFormView(RoleRequiredMixin, EntityFormView):
     refresh_event = "refreshSemesters"
     modal_title_create = "Add Semester"
     modal_title_edit = "Edit Semester"
+
+    def post(self, request, pk=None):
+        obj = self.get_object(pk)
+        is_create = obj is None
+        had_active_before = Semester.objects.filter(is_active=True).exists()
+        form = self.form_class(request.POST, instance=obj)
+        if not form.is_valid():
+            return render(request, self.form_template, self.get_context(request, form, obj))
+
+        saved = form.save()
+        verb = "updated" if obj else "created"
+        toast = f"Semester {verb}."
+        toast_level = "success"
+        if form.duration_warning:
+            toast = f"{toast} {form.duration_warning}"
+            toast_level = "warning"
+
+        if is_create and not had_active_before:
+            response = render(request, "academics/_semester_activate_prompt.html", {"semester": saved})
+            response["HX-Trigger"] = json.dumps(
+                {self.refresh_event: True, "toast": {"message": toast, "level": toast_level}}
+            )
+            return response
+
+        return trigger_response(self.refresh_event, toast=toast, toast_level=toast_level)
 
 
 class SemesterDeleteView(RoleRequiredMixin, EntityDeleteView):
@@ -1611,10 +1642,56 @@ def ay_wizard_step1(request):
             {"academic_years": academic_years, "error": "No existing academic year to copy the section structure from.", "active": 1, "steps": _AY_WIZARD_STEPS},
         )
 
+    from django.utils.dateparse import parse_date
+
+    from .semester_validation import duration_warning, ranges_overlap, validate_date_range
+
+    term_dates = {}
+    field_errors = []
+    for term in term_values:
+        start_raw = request.POST.get(f"start_{term}", "").strip()
+        end_raw = request.POST.get(f"end_{term}", "").strip()
+        start = parse_date(start_raw) if start_raw else None
+        end = parse_date(end_raw) if end_raw else None
+        term_dates[term] = (start.isoformat() if start else None, end.isoformat() if end else None)
+        errors = validate_date_range(start, end, start_year, start_year + 1)
+        for field, message in errors.items():
+            field_errors.append(f"{Term(term).label} {field.replace('_', ' ')}: {message}")
+
+    for i, term_a in enumerate(term_values):
+        start_a, end_a = term_dates[term_a]
+        if not (start_a and end_a):
+            continue
+        start_a, end_a = date.fromisoformat(start_a), date.fromisoformat(end_a)
+        for term_b in term_values[i + 1 :]:
+            start_b, end_b = term_dates[term_b]
+            if not (start_b and end_b):
+                continue
+            start_b, end_b = date.fromisoformat(start_b), date.fromisoformat(end_b)
+            if ranges_overlap(start_a, end_a, start_b, end_b):
+                field_errors.append(f"{Term(term_a).label} and {Term(term_b).label} dates overlap.")
+
+    if field_errors:
+        return render(
+            request,
+            "academics/ay_wizard_step1.html",
+            {"academic_years": academic_years, "error": " ".join(field_errors), "active": 1, "steps": _AY_WIZARD_STEPS},
+        )
+
+    warnings = []
+    for term in term_values:
+        start_raw, end_raw = term_dates[term]
+        if start_raw and end_raw:
+            warning = duration_warning(term, date.fromisoformat(start_raw), date.fromisoformat(end_raw))
+            if warning:
+                warnings.append(f"{Term(term).label}: {warning}")
+
     request.session[_AY_WIZARD_SESSION_KEY] = {
         "start_year": start_year,
         "term_values": term_values,
+        "term_dates": term_dates,
         "source_academic_year_id": source_academic_year.pk,
+        "warnings": warnings,
     }
     return redirect("academics:ay_wizard_step2")
 
@@ -1639,6 +1716,7 @@ def ay_wizard_step2(request):
             "start_year": stashed["start_year"],
             "source_academic_year": source_academic_year,
             "sections": sections,
+            "warnings": stashed.get("warnings", []),
             "active": 2,
             "steps": _AY_WIZARD_STEPS,
         },
@@ -1678,7 +1756,14 @@ def ay_wizard_step4(request):
         row["excluded"] = row["profile_id"] in excluded_ids
 
     if request.method == "POST":
-        result = step4_commit(stashed["start_year"], stashed["term_values"], stashed["sections"], rows, request.user)
+        result = step4_commit(
+            stashed["start_year"],
+            stashed["term_values"],
+            stashed["sections"],
+            rows,
+            request.user,
+            term_dates=stashed.get("term_dates"),
+        )
         del request.session[_AY_WIZARD_SESSION_KEY]
         return render(request, "academics/ay_wizard_done.html", result)
 

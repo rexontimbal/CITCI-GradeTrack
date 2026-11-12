@@ -1850,6 +1850,7 @@ def program_head_classes(request):
             "unassigned_count": unassigned_count,
             "unassigned_filter": request.GET.get("unassigned") == "1",
             "bulk_form": BulkAssignInstructorForm(),
+            "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
         },
     )
 
@@ -2081,6 +2082,59 @@ def class_assign_instructor(request, pk):
         )
 
     return trigger_response("refreshClasses", toast=f"Instructor updated for {class_offering}.")
+
+
+_CLASS_INLINE_FIELDS = ("instructor", "room", "schedule")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def class_update_field(request, pk):
+    """The Classes page's per-row inline-edit endpoint (room, schedule,
+    instructor) — blur/change POSTs field+value, re-renders just that
+    <tr> (success or an inline error), the same convention
+    grading/_grid_row.html + grading.views.save_cell already establish. An
+    instructor change still goes through assign_instructor so audit
+    logging, notifications, and the submitted-sheet block are identical
+    to the modal-based class_assign_instructor path above."""
+    class_offering = get_object_or_404(
+        ClassOffering.objects.select_related("instructor", "subject", "semester").prefetch_related("sections__program"),
+        pk=pk,
+    )
+    if not _can_assign_instructor(request.user, class_offering):
+        raise PermissionDenied("This class is not under your program.")
+    if request.method != "POST":
+        raise PermissionDenied
+
+    field = request.POST.get("field")
+    value = request.POST.get("value", "").strip()
+    error = None
+
+    if field not in _CLASS_INLINE_FIELDS:
+        raise PermissionDenied("Unknown field.")
+
+    if field == "instructor":
+        instructor = User.objects.filter(pk=value, role=INSTRUCTOR, is_active=True).first() if value else None
+        try:
+            assign_instructor(
+                class_offering, instructor, request.user, is_admin_override=request.user.is_admin_role
+            )
+        except ValidationError as exc:
+            error = exc.messages[0]
+    else:
+        _require_semester_unlocked(class_offering)
+        setattr(class_offering, field, value)
+        class_offering.save(update_fields=[field])
+
+    class_offering.refresh_from_db()
+    return render(
+        request,
+        "academics/_classes_row.html",
+        {
+            "class_offering": class_offering,
+            "error": error,
+            "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
+        },
+    )
 
 
 @role_required(ADMIN, PROGRAM_HEAD)

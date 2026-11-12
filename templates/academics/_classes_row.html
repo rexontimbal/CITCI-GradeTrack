@@ -1,0 +1,66 @@
+{% load sidebar_icons %}
+<tr class="hover:bg-gray-50" id="class-row-{{ class_offering.pk }}">
+    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox" aria-label="Select {{ class_offering }}"></td>
+    <td class="px-4 py-3">
+        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering.display_code }} — {{ class_offering.display_title }}</a>
+        <div class="text-xs text-gray-500">
+            {% for section in class_offering.sections.all %}{{ section.short_label }}{% if not forloop.last %} + {% endif %}{% endfor %}
+        </div>
+    </td>
+    <td class="px-4 py-3">
+        <select hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
+                hx-trigger="change" name="value" hx-vals='{"field": "instructor"}' aria-label="Instructor"
+                class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            <option value="">Unassigned</option>
+            {% for instructor in instructors %}
+            <option value="{{ instructor.pk }}" {% if class_offering.instructor_id == instructor.pk %}selected{% endif %}>{{ instructor.full_name }}</option>
+            {% endfor %}
+        </select>
+    </td>
+    <td class="px-4 py-3">
+        <input type="text" name="value" value="{{ class_offering.room }}" placeholder="Room"
+               hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
+               hx-trigger="blur changed" hx-vals='{"field": "room"}'
+               class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+    </td>
+    <td class="px-4 py-3">
+        <input type="text" name="value" value="{{ class_offering.schedule }}" placeholder="e.g. MWF 8:00–9:00"
+               hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
+               hx-trigger="blur changed" hx-vals='{"field": "schedule"}'
+               class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+    </td>
+    <td class="px-4 py-3 text-gray-700">
+        {% if class_offering.roster_size %}
+        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="text-brand-primary-700 hover:underline">{{ class_offering.roster_size }}</a>
+        {% else %}
+        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">No students</span>
+        {% endif %}
+    </td>
+    <td class="px-4 py-3">
+        {% if not class_offering.instructor %}
+        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Needs instructor</span>
+        {% elif not class_offering.schedule %}
+        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Needs schedule</span>
+        {% else %}
+        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Ready</span>
+        {% endif %}
+    </td>
+    <td class="px-4 py-3 text-right">
+        {% if error %}
+        <p class="mb-1 text-xs text-red-600">{{ error }}</p>
+        {% endif %}
+        <div class="flex flex-wrap justify-end gap-1">
+            <a href="{% url 'grading:class_grading' class_offering.pk %}" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Grading
+            </a>
+            <button type="button" hx-get="{% url 'academics:ph_class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Edit
+            </button>
+            <button type="button" hx-get="{% url 'academics:ph_class_leave' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
+                Withdraw this section
+            </button>
+        </div>
+    </td>
+</tr>

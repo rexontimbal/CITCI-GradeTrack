@@ -90,6 +90,7 @@ urlpatterns = [
     # Teaching assignment (Program Head; Admin as a logged override)
     path("classes/<int:pk>/assign-instructor/", views.class_assign_instructor, name="class_assign_instructor"),
     path("classes/bulk-assign-instructor/", views.class_bulk_assign_instructor, name="class_bulk_assign_instructor"),
+    path("classes/<int:pk>/update-field/", views.class_update_field, name="class_update_field"),
     path("teaching-loads/", views.teaching_loads, name="teaching_loads"),
     path("teaching-loads/export.xlsx", views.teaching_loads_export, name="teaching_loads_export"),
 

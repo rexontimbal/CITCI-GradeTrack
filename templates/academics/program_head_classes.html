@@ -2,33 +2,35 @@
 {% load sidebar_icons %}
 {% block page_title %}Classes{% endblock %}
 {% block content %}
-{% include "partials/_page_subtitle.html" with subtitle="Classes under your program for the active semester." %}
 
 {% if not active_semester_set %}
 {% include "partials/_no_active_semester.html" %}
 {% else %}
 
-<div class="mb-4 flex justify-end gap-2">
-    <button hx-get="{% url 'academics:ph_class_join' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-            class="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-        {% sidebar_icon "refresh" "w-4 h-4" %} Join Existing Class
-    </button>
-    <button hx-get="{% url 'academics:ph_class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-            class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-        {% sidebar_icon "plus" "w-4 h-4" %} Add Class
-    </button>
-</div>
-
 {% if unassigned_count %}
 <div class="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-    <span>{{ unassigned_count }} class{{ unassigned_count|pluralize:"es" }} still need{{ unassigned_count|pluralize:",s" }} an instructor.</span>
+    <span>{{ unassigned_count }} class{{ unassigned_count|pluralize:"es" }} need{{ unassigned_count|pluralize:"s," }} an instructor.</span>
     {% if not unassigned_filter %}
-    <a href="?unassigned=1" class="font-medium underline">Show unassigned only</a>
+    <a href="?unassigned=1" class="font-medium underline">Show only these</a>
     {% else %}
     <a href="?" class="font-medium underline">Show all classes</a>
     {% endif %}
 </div>
 {% endif %}
+
+<div class="mb-4 flex items-center justify-between">
+    <p class="text-xs font-medium text-gray-600">{{ classes|length }} class{{ classes|length|pluralize:"es" }}</p>
+    <div class="flex gap-2">
+        <button hx-get="{% url 'academics:ph_class_join' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Join Existing Class
+        </button>
+        <button hx-get="{% url 'academics:ph_class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Add Class Manually
+        </button>
+    </div>
+</div>
 
 {% if classes %}
 <form method="post" action="{% url 'academics:class_bulk_assign_instructor' %}">
@@ -50,47 +52,23 @@
                     <th class="px-4 py-3"><span class="sr-only">Select all</span><input type="checkbox" aria-label="Select all classes" onclick="document.querySelectorAll('.class-checkbox').forEach(c => c.checked = this.checked)"></th>
                     <th class="px-4 py-3">Class</th>
                     <th class="px-4 py-3">Instructor</th>
+                    <th class="px-4 py-3">Room</th>
+                    <th class="px-4 py-3">Schedule</th>
                     <th class="px-4 py-3">Students</th>
-                    <th class="px-4 py-3">Grading</th>
+                    <th class="px-4 py-3">Status</th>
                     <th class="px-4 py-3 text-right">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 {% for class_offering in classes %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox" aria-label="Select {{ class_offering }}"></td>
-                    <td class="px-4 py-3">
-                        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering }}</a>
-                    </td>
-                    <td class="px-4 py-3 text-gray-700">{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ class_offering.roster_size }}</td>
-                    <td class="px-4 py-3">
-                        <a href="{% url 'grading:class_grading' class_offering.pk %}" class="text-brand-primary-700 hover:underline">View</a>
-                    </td>
-                    <td class="px-4 py-3 text-right">
-                        <div class="flex flex-wrap justify-end gap-1">
-                            <button type="button" hx-get="{% url 'academics:class_assign_instructor' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                {% if class_offering.instructor %}Change{% else %}Assign{% endif %} Instructor
-                            </button>
-                            <button type="button" hx-get="{% url 'academics:ph_class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                                Edit
-                            </button>
-                            <button type="button" hx-get="{% url 'academics:ph_class_leave' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                    class="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
-                                Leave
-                            </button>
-                        </div>
-                    </td>
-                </tr>
+                {% include "academics/_classes_row.html" with class_offering=class_offering instructors=instructors %}
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </form>
 {% else %}
-{% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="No classes under your program for the active semester." %}
+{% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="Offer a subject from the Subjects page, or add one manually." %}
 {% endif %}
 {% endif %}
 

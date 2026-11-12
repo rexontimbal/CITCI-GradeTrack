@@ -735,6 +735,73 @@ class AssignInstructorBlockedAfterSubmissionTests(TeachingAssignmentTestBase):
         self.assertEqual(self.class_offering.instructor_id, self.instructor2.id)
 
 
+class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
+    """The Classes page's inline-edit endpoint (instructor/room/schedule),
+    re-rendering just the one <tr> -- same convention as grading's
+    save_cell, now applied to the Classes page per the redesign spec."""
+
+    def test_updates_room_and_rerenders_row(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "room", "value": "Rm 301"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Rm 301")
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.room, "Rm 301")
+
+    def test_updates_schedule(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "schedule", "value": "MWF 8:00-9:00"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.schedule, "MWF 8:00-9:00")
+
+    def test_updates_instructor_through_assign_instructor_service(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "instructor", "value": self.instructor1.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+
+    def test_blocked_once_grade_sheet_submitted_shows_inline_error_not_a_500(self):
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+        self.make_submitted_sheet(self.class_offering)
+
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "instructor", "value": self.instructor2.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+
+    def test_outside_program_head_gets_403(self):
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "room", "value": "Rm 301"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_unknown_field_rejected(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "subject", "value": "haxx"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
 class AssignInstructorNotificationAndLogTests(TeachingAssignmentTestBase):
     def test_new_and_previous_instructor_are_both_notified(self):
         from dashboard.models import Notification

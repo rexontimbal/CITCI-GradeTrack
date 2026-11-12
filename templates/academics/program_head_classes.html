@@ -7,16 +7,7 @@
 {% include "partials/_no_active_semester.html" %}
 {% else %}
 
-{% if unassigned_count %}
-<div class="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-    <span>{{ unassigned_count }} class{{ unassigned_count|pluralize:"es" }} need{{ unassigned_count|pluralize:"s," }} an instructor.</span>
-    {% if not unassigned_filter %}
-    <a href="?unassigned=1" class="font-medium underline">Show only these</a>
-    {% else %}
-    <a href="?" class="font-medium underline">Show all classes</a>
-    {% endif %}
-</div>
-{% endif %}
+{% include "academics/_classes_unassigned_banner.html" %}
 
 <div class="mb-4 flex items-center justify-between">
     <p class="text-xs font-medium text-gray-600">{{ classes|length }} class{{ classes|length|pluralize:"es" }}</p>
@@ -33,23 +24,17 @@
 </div>
 
 {% if classes %}
-<form method="post" action="{% url 'academics:class_bulk_assign_instructor' %}">
-    {% csrf_token %}
-    <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
-        <div class="min-w-[220px]">
-            <label class="mb-1 block text-xs font-medium text-gray-700">Bulk assign selected classes to</label>
-            {{ bulk_form.instructor }}
-        </div>
-        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-            Assign to selected
-        </button>
-    </div>
-
+{{ class_ids_json|json_script:"all-class-ids" }}
+<div x-data="classBulkSelect('{% url 'academics:class_update_field' 0 %}')" class="relative" style="padding-bottom: 4.5rem;">
     <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>
-                    <th class="px-4 py-3"><span class="sr-only">Select all</span><input type="checkbox" aria-label="Select all classes" onclick="document.querySelectorAll('.class-checkbox').forEach(c => c.checked = this.checked)"></th>
+                    <th class="px-4 py-3">
+                        <input type="checkbox" aria-label="Select all classes"
+                               x-effect="$el.checked = allChecked(JSON.parse(document.getElementById('all-class-ids').textContent)); $el.indeterminate = someChecked(JSON.parse(document.getElementById('all-class-ids').textContent)) && !allChecked(JSON.parse(document.getElementById('all-class-ids').textContent))"
+                               @change="onHeaderToggle(JSON.parse(document.getElementById('all-class-ids').textContent), $event.target.checked)">
+                    </th>
                     <th class="px-4 py-3">Class</th>
                     <th class="px-4 py-3">Instructor</th>
                     <th class="px-4 py-3">Room</th>
@@ -66,7 +51,35 @@
             </tbody>
         </table>
     </div>
-</form>
+
+    <div x-show="count > 0" x-cloak
+         class="fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-6 py-3 shadow-lg md:left-64">
+        <p class="text-sm font-medium text-gray-700"><span x-text="count"></span> selected</p>
+        <div class="flex flex-wrap items-center gap-2">
+            <select @change="if ($event.target.value !== '__placeholder__') { assignInstructor($event.target.value); } $event.target.value = '__placeholder__'"
+                    class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="__placeholder__" selected>Assign instructor…</option>
+                <option value="">Unassigned</option>
+                {% for instructor in instructors %}
+                <option value="{{ instructor.pk }}">{{ instructor.full_name }}</option>
+                {% endfor %}
+            </select>
+            <div class="flex items-center gap-1">
+                <input type="text" x-model="roomValue" @keydown.enter.prevent="setRoom()" placeholder="Set room"
+                       class="w-28 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <button type="button" @click="setRoom()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Apply</button>
+            </div>
+            <div class="flex items-center gap-1">
+                <input type="text" x-model="scheduleValue" @keydown.enter.prevent="setSchedule()" placeholder="Set schedule"
+                       class="w-36 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <button type="button" @click="setSchedule()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Apply</button>
+            </div>
+            <button type="button" @click="clearAll()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Clear
+            </button>
+        </div>
+    </div>
+</div>
 {% else %}
 {% include "partials/_empty_state.html" with icon="chalkboard" title="No classes yet" description="Offer a subject from the Subjects page, or add one manually." %}
 {% endif %}

@@ -8,6 +8,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, ProtectedError, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views import View
 
@@ -22,7 +23,6 @@ from .forms import (
     AcademicYearForm,
     AdhocOfferingForm,
     AdminSubjectForm,
-    BulkAssignInstructorForm,
     ClassOfferingForm,
     JoinClassForm,
     MajorForm,
@@ -1829,10 +1829,10 @@ def _program_head_class_queryset(user, active):
 
 @role_required(PROGRAM_HEAD)
 def program_head_classes(request):
-    """Teaching-load manager for a Program Head's own program(s): assign/
-    change an instructor per class (academics:class_assign_instructor,
-    opened in the shared modal), an "Unassigned only" filter, and a bulk
-    "select several -> assign one instructor" action."""
+    """Teaching-load manager for a Program Head's own program(s): inline-
+    editable instructor/room/schedule per class (class_update_field), an
+    "Unassigned only" filter, and a sticky-bar bulk action (assign
+    instructor / set room / set schedule) over the checked rows."""
     active = Semester.objects.filter(is_active=True).first()
     qs = _program_head_class_queryset(request.user, active)
     unassigned_count = qs.filter(instructor__isnull=True).count() if active else 0
@@ -1840,16 +1840,17 @@ def program_head_classes(request):
     if request.GET.get("unassigned") == "1":
         qs = qs.filter(instructor__isnull=True)
 
+    classes = list(qs)
     return render(
         request,
         "academics/program_head_classes.html",
         {
             "page_title": "Classes",
-            "classes": qs,
+            "classes": classes,
+            "class_ids_json": [c.pk for c in classes],
             "active_semester_set": bool(active),
             "unassigned_count": unassigned_count,
             "unassigned_filter": request.GET.get("unassigned") == "1",
-            "bulk_form": BulkAssignInstructorForm(),
             "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
         },
     )
@@ -2087,12 +2088,22 @@ def class_assign_instructor(request, pk):
 _CLASS_INLINE_FIELDS = ("instructor", "room", "schedule")
 
 
+def _class_label(class_offering):
+    sections = ", ".join(s.short_label for s in class_offering.sections.all())
+    return f"{class_offering.display_code} · {sections}" if sections else class_offering.display_code
+
+
 @role_required(ADMIN, PROGRAM_HEAD)
 def class_update_field(request, pk):
     """The Classes page's per-row inline-edit endpoint (room, schedule,
-    instructor) — blur/change POSTs field+value, re-renders just that
-    <tr> (success or an inline error), the same convention
-    grading/_grid_row.html + grading.views.save_cell already establish. An
+    instructor) — change/blur POSTs field+value, re-renders just that
+    <tr> plus an out-of-band refresh of the "N classes need an
+    instructor" banner, and fires a toast (success or, on a refusal,
+    error — the row's own fields simply revert to their saved values,
+    nothing is swapped into an inconsistent state). hx-include="this" on
+    every inline control keeps this request scoped to that one element —
+    without it, htmx serializes the whole enclosing page as if it were
+    one giant form, and every row's same-named field collides. An
     instructor change still goes through assign_instructor so audit
     logging, notifications, and the submitted-sheet block are identical
     to the modal-based class_assign_instructor path above."""
@@ -2108,6 +2119,7 @@ def class_update_field(request, pk):
     field = request.POST.get("field")
     value = request.POST.get("value", "").strip()
     error = None
+    toast = None
 
     if field not in _CLASS_INLINE_FIELDS:
         raise PermissionDenied("Unknown field.")
@@ -2118,64 +2130,45 @@ def class_update_field(request, pk):
             assign_instructor(
                 class_offering, instructor, request.user, is_admin_override=request.user.is_admin_role
             )
+            toast = f"{instructor.full_name} assigned to {_class_label(class_offering)}." if instructor else f"{_class_label(class_offering)} unassigned."
         except ValidationError as exc:
             error = exc.messages[0]
     else:
-        _require_semester_unlocked(class_offering)
-        setattr(class_offering, field, value)
-        class_offering.save(update_fields=[field])
+        try:
+            _require_semester_unlocked(class_offering)
+            setattr(class_offering, field, value)
+            class_offering.save(update_fields=[field])
+            toast = f"{field.capitalize()} updated for {_class_label(class_offering)}."
+        except PermissionDenied as exc:
+            error = str(exc)
 
     class_offering.refresh_from_db()
-    return render(
-        request,
+    row_html = render_to_string(
         "academics/_classes_row.html",
         {
             "class_offering": class_offering,
             "error": error,
             "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
         },
+        request=request,
     )
 
+    banner_html = ""
+    if request.user.is_program_head:
+        active = Semester.objects.filter(is_active=True).first()
+        qs = _program_head_class_queryset(request.user, active)
+        unassigned_count = qs.filter(instructor__isnull=True).count() if active else 0
+        banner_html = render_to_string(
+            "academics/_classes_unassigned_banner.html",
+            {"unassigned_count": unassigned_count, "unassigned_filter": request.GET.get("unassigned") == "1"},
+            request=request,
+        )
 
-@role_required(ADMIN, PROGRAM_HEAD)
-def class_bulk_assign_instructor(request):
-    """A plain (non-HTMX) form POST — checkboxes in a table don't need
-    HTMX's modal/toast machinery, just messages + a redirect back."""
-    from django.contrib import messages as django_messages
-    from django.shortcuts import redirect
-
-    redirect_to = "academics:classes" if request.user.is_admin_role else "academics:program_head_classes"
-    if request.method != "POST":
-        raise PermissionDenied
-
-    form = BulkAssignInstructorForm(request.POST)
-    if not form.is_valid():
-        error_text = "; ".join(" ".join(errs) for errs in form.errors.values())
-        django_messages.error(request, error_text or "Could not assign.")
-        return redirect(redirect_to)
-
-    class_ids = form.cleaned_data["class_ids"]
-    instructor = form.cleaned_data["instructor"]
-    is_admin_override = request.user.is_admin_role
-
-    classes = ClassOffering.objects.filter(pk__in=class_ids)
-    if not is_admin_override:
-        classes = classes.filter(pk__in=scoping.classes_in_scope(request.user))
-
-    assigned, blocked = 0, 0
-    for class_offering in classes:
-        try:
-            result = assign_instructor(class_offering, instructor, request.user, is_admin_override=is_admin_override)
-            if result is not None:
-                assigned += 1
-        except ValidationError:
-            blocked += 1
-
-    text = f"Assigned {instructor.full_name} to {assigned} class{'es' if assigned != 1 else ''}."
-    if blocked:
-        text += f" {blocked} already-submitted class{'es were' if blocked != 1 else ' was'} skipped."
-    django_messages.success(request, text)
-    return redirect(redirect_to)
+    response = HttpResponse(row_html + banner_html)
+    silent = request.POST.get("silent") == "1"
+    if error or not silent:
+        response["HX-Trigger"] = json.dumps({"toast": {"message": error or toast, "level": "error" if error else "success"}})
+    return response
 
 
 # ---------------------------------------------------------------------------

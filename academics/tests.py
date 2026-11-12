@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date
 from decimal import Decimal
@@ -738,7 +739,49 @@ class AssignInstructorBlockedAfterSubmissionTests(TeachingAssignmentTestBase):
 class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
     """The Classes page's inline-edit endpoint (instructor/room/schedule),
     re-rendering just the one <tr> -- same convention as grading's
-    save_cell, now applied to the Classes page per the redesign spec."""
+    save_cell, now applied to the Classes page per the redesign spec.
+
+    Regression coverage for a real bug: every row's inline controls used
+    to share the literal name="value" and all sat inside one page-wide
+    <form> (the old bulk-assign box) -- htmx serializes the whole
+    enclosing form by default, so a single change event posted every
+    row's value under one colliding name, and Django's QueryDict.get()
+    silently returned the LAST one (almost always blank). The fix removed
+    that enclosing form and added hx-include="this" to each control, so a
+    posted selection must now actually come back selected in the
+    re-rendered <select> -- the first test below pins that down with
+    assertInHTML on the actual <option selected> markup, not just a
+    substring match (a substring match wouldn't have caught the bug,
+    since the posted id does appear elsewhere in the <select>'s option
+    list regardless of which one ended up selected)."""
+
+    def test_instructor_selection_actually_persists_and_renders_selected(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "instructor", "value": self.instructor1.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+        self.assertInHTML(
+            f'<option value="{self.instructor1.pk}" selected>{self.instructor1.full_name}</option>',
+            response.content.decode(),
+        )
+        toast = json.loads(response.headers["HX-Trigger"])["toast"]
+        self.assertEqual(toast["level"], "success")
+        self.assertIn(self.instructor1.full_name, toast["message"])
+        self.assertIn("PEd 205", toast["message"])
+
+    def test_instructor_assignment_updates_unassigned_banner_out_of_band(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "instructor", "value": self.instructor1.pk},
+        )
+        self.assertNotIn("1 class need", response.content.decode())
+        self.assertIn('id="unassigned-banner"', response.content.decode())
+        self.assertIn("hx-swap-oob", response.content.decode())
 
     def test_updates_room_and_rerenders_row(self):
         self.client.force_login(self.head_a)
@@ -750,6 +793,8 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.assertContains(response, "Rm 301")
         self.class_offering.refresh_from_db()
         self.assertEqual(self.class_offering.room, "Rm 301")
+        toast = json.loads(response.headers["HX-Trigger"])["toast"]
+        self.assertEqual(toast["level"], "success")
 
     def test_updates_schedule(self):
         self.client.force_login(self.head_a)
@@ -771,7 +816,7 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.class_offering.refresh_from_db()
         self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
 
-    def test_blocked_once_grade_sheet_submitted_shows_inline_error_not_a_500(self):
+    def test_blocked_once_grade_sheet_submitted_shows_inline_error_toast_and_reverts(self):
         self.class_offering.instructor = self.instructor1
         self.class_offering.save()
         self.make_submitted_sheet(self.class_offering)
@@ -784,6 +829,33 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.assertEqual(response.status_code, 200)
         self.class_offering.refresh_from_db()
         self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
+        self.assertInHTML(
+            f'<option value="{self.instructor1.pk}" selected>{self.instructor1.full_name}</option>',
+            response.content.decode(),
+        )
+        toast = json.loads(response.headers["HX-Trigger"])["toast"]
+        self.assertEqual(toast["level"], "error")
+        self.assertIn("submitted", toast["message"])
+
+    def test_silent_bulk_mode_suppresses_success_toast_but_not_error_toast(self):
+        self.client.force_login(self.head_a)
+        response = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "room", "value": "Rm 301", "silent": "1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("HX-Trigger", response.headers)
+
+        self.class_offering.instructor = self.instructor1
+        self.class_offering.save()
+        self.make_submitted_sheet(self.class_offering)
+        response2 = self.client.post(
+            reverse("academics:class_update_field", args=[self.class_offering.pk]),
+            {"field": "instructor", "value": self.instructor2.pk, "silent": "1"},
+        )
+        self.assertIn("HX-Trigger", response2.headers)
+        toast = json.loads(response2.headers["HX-Trigger"])["toast"]
+        self.assertEqual(toast["level"], "error")
 
     def test_outside_program_head_gets_403(self):
         self.client.force_login(self.head_b)
@@ -861,29 +933,6 @@ class AssignInstructorNotificationAndLogTests(TeachingAssignmentTestBase):
         log = self.class_offering.assignment_logs.get()
         self.assertTrue(log.is_admin_override)
         self.assertEqual(log.new_instructor, self.instructor1)
-
-
-class BulkAssignInstructorTests(TeachingAssignmentTestBase):
-    def setUp(self):
-        super().setUp()
-        self.other_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
-        self.other_class.sections.set([self.section_a])
-
-    def test_program_head_bulk_assigns_only_classes_in_their_program(self):
-        foreign_class = ClassOffering.objects.create(subject=self.subject, semester=self.semester)
-        foreign_class.sections.set([self.section_b])
-
-        self.client.force_login(self.head_a)
-        self.client.post(
-            reverse("academics:class_bulk_assign_instructor"),
-            {"class_ids": [self.class_offering.pk, self.other_class.pk, foreign_class.pk], "instructor": self.instructor1.pk},
-        )
-        self.class_offering.refresh_from_db()
-        self.other_class.refresh_from_db()
-        foreign_class.refresh_from_db()
-        self.assertEqual(self.class_offering.instructor_id, self.instructor1.id)
-        self.assertEqual(self.other_class.instructor_id, self.instructor1.id)
-        self.assertIsNone(foreign_class.instructor_id)  # not under head_a's program — silently skipped
 
 
 class TeachingLoadsPageTests(TeachingAssignmentTestBase):

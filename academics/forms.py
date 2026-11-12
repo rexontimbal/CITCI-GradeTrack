@@ -432,13 +432,3 @@ class TeachingAssignmentForm(forms.Form):
     )
 
 
-class BulkAssignInstructorForm(forms.Form):
-    class_ids = forms.ModelMultipleChoiceField(queryset=ClassOffering.objects.all(), widget=forms.MultipleHiddenInput)
-    instructor = forms.ModelChoiceField(
-        queryset=User.objects.filter(role=User.Role.INSTRUCTOR, is_active=True),
-        widget=SearchableSelectWidget(
-            search_url=reverse_lazy("academics:instructor_search"),
-            queryset=User.objects.filter(role=User.Role.INSTRUCTOR),
-        ),
-        label="Assign to instructor",
-    )

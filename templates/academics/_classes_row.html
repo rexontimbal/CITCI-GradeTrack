@@ -1,6 +1,9 @@
 {% load sidebar_icons %}
 <tr class="hover:bg-gray-50" id="class-row-{{ class_offering.pk }}">
-    <td class="px-4 py-3"><input type="checkbox" name="class_ids" value="{{ class_offering.pk }}" class="class-checkbox" aria-label="Select {{ class_offering }}"></td>
+    <td class="px-4 py-3">
+        <input type="checkbox" aria-label="Select {{ class_offering }}"
+               :checked="isSelected({{ class_offering.pk }})" @change="toggle({{ class_offering.pk }})">
+    </td>
     <td class="px-4 py-3">
         <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering.display_code }} — {{ class_offering.display_title }}</a>
         <div class="text-xs text-gray-500">
@@ -9,7 +12,7 @@
     </td>
     <td class="px-4 py-3">
         <select hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
-                hx-trigger="change" name="value" hx-vals='{"field": "instructor"}' aria-label="Instructor"
+                hx-include="this" hx-trigger="change" name="value" hx-vals='{"field": "instructor"}' aria-label="Instructor"
                 class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
             <option value="">Unassigned</option>
             {% for instructor in instructors %}
@@ -20,13 +23,13 @@
     <td class="px-4 py-3">
         <input type="text" name="value" value="{{ class_offering.room }}" placeholder="Room"
                hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
-               hx-trigger="blur changed" hx-vals='{"field": "room"}'
+               hx-include="this" hx-trigger="blur changed" hx-vals='{"field": "room"}'
                class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
     </td>
     <td class="px-4 py-3">
         <input type="text" name="value" value="{{ class_offering.schedule }}" placeholder="e.g. MWF 8:00–9:00"
                hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
-               hx-trigger="blur changed" hx-vals='{"field": "schedule"}'
+               hx-include="this" hx-trigger="blur changed" hx-vals='{"field": "schedule"}'
                class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
     </td>
     <td class="px-4 py-3 text-gray-700">
@@ -49,18 +52,39 @@
         {% if error %}
         <p class="mb-1 text-xs text-red-600">{{ error }}</p>
         {% endif %}
-        <div class="flex flex-wrap justify-end gap-1">
+        <div class="flex flex-wrap items-center justify-end gap-1">
             <a href="{% url 'grading:class_grading' class_offering.pk %}" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                 Grading
             </a>
-            <button type="button" hx-get="{% url 'academics:ph_class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                Edit
-            </button>
-            <button type="button" hx-get="{% url 'academics:ph_class_leave' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    class="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
-                Withdraw this section
-            </button>
+            <div class="relative inline-block" x-data="{ open: false }" @click.outside="open = false">
+                <button type="button" @click="
+                            open = !open;
+                            if (open) {
+                                $nextTick(() => {
+                                    const rect = $el.getBoundingClientRect();
+                                    $refs.menu{{ class_offering.pk }}.style.top = (rect.bottom + 4) + 'px';
+                                    $refs.menu{{ class_offering.pk }}.style.right = (window.innerWidth - rect.right) + 'px';
+                                });
+                            }"
+                        aria-label="More actions" class="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100">
+                    {% sidebar_icon "dots-vertical" "w-4 h-4" %}
+                </button>
+                <div x-show="open" x-cloak x-transition x-ref="menu{{ class_offering.pk }}" @click="open = false"
+                     style="position: fixed; z-index: 9999;"
+                     class="w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                    <a href="{% url 'academics:class_roster' class_offering.pk %}" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
+                        Students
+                    </a>
+                    <button type="button" hx-get="{% url 'academics:ph_class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                            class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
+                        Edit
+                    </button>
+                    <button type="button" hx-get="{% url 'academics:ph_class_leave' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                            class="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
+                        Withdraw this section
+                    </button>
+                </div>
+            </div>
         </div>
     </td>
 </tr>

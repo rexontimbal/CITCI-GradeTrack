@@ -1,0 +1,12 @@
+{% if unassigned_count %}
+<div id="unassigned-banner" hx-swap-oob="true" class="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <span>{{ unassigned_count }} class{{ unassigned_count|pluralize:"es" }} need{{ unassigned_count|pluralize:"s," }} an instructor.</span>
+    {% if not unassigned_filter %}
+    <a href="?unassigned=1" class="font-medium underline">Show only these</a>
+    {% else %}
+    <a href="?" class="font-medium underline">Show all classes</a>
+    {% endif %}
+</div>
+{% else %}
+<div id="unassigned-banner" hx-swap-oob="true"></div>
+{% endif %}

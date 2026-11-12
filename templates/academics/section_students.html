@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load sidebar_icons %}
+{% block page_title %}Students — {{ section }}{% endblock %}
+{% block content %}
+{% include "partials/_page_subtitle.html" with subtitle="Active students currently in this section." %}
+
+{% if profiles %}
+<form hx-post="{% url 'academics:section_students_move' section.pk %}" hx-swap="none">
+    {% csrf_token %}
+    <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div class="min-w-[220px]">
+            <label class="mb-1 block text-xs font-medium text-gray-700">Move selected students to</label>
+            <select name="target_section" class="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm" {% if not target_sections %}disabled{% endif %}>
+                {% for target in target_sections %}
+                <option value="{{ target.pk }}">{{ target }}</option>
+                {% empty %}
+                <option value="">No other sections at this year level yet</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="h-10 rounded-lg bg-brand-accent-600 px-4 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700" {% if not target_sections %}disabled{% endif %}>
+            Move selected
+        </button>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <tr>
+                    <th class="px-4 py-3"><input type="checkbox" aria-label="Select all" onclick="document.querySelectorAll('.profile-checkbox').forEach(c => c.checked = this.checked)"></th>
+                    <th class="px-4 py-3">Student</th>
+                    <th class="px-4 py-3">ID Number</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for profile in profiles %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3"><input type="checkbox" name="profile_ids" value="{{ profile.pk }}" class="profile-checkbox"></td>
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ profile.user.full_name }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ profile.user.id_number }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</form>
+{% else %}
+{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="No active students are assigned to this section." %}
+{% endif %}
+
+<script>
+    document.body.addEventListener("refreshSectionStudents", () => window.location.reload());
+</script>
+{% endblock %}

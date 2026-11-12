@@ -299,33 +299,6 @@ class MajorDeleteView(RoleRequiredMixin, EntityDeleteView):
 # ---------------------------------------------------------------------------
 
 
-class SectionListView(RoleRequiredMixin, EntityListView):
-    allowed_roles = (ADMIN,)
-    model = Section
-    list_template = "academics/sections.html"
-    table_template = "academics/_sections_table.html"
-    table_id = "sections-table"
-    page_title = "Sections"
-    search_fields = ["name__icontains", "program__code__icontains"]
-    refresh_event = "refreshSections"
-
-    def apply_filters(self, request, qs):
-        qs = qs.select_related("program", "major", "academic_year")
-        program = request.GET.get("program")
-        academic_year = request.GET.get("academic_year")
-        year_level = request.GET.get("year_level")
-        if program:
-            qs = qs.filter(program_id=program)
-        if academic_year:
-            qs = qs.filter(academic_year_id=academic_year)
-        if year_level:
-            qs = qs.filter(year_level=year_level)
-        return qs
-
-    def get_extra_context(self, request):
-        return {"programs": Program.objects.all(), "academic_years": AcademicYear.objects.all()}
-
-
 class SectionFormView(RoleRequiredMixin, EntityFormView):
     """Admin's Sections CRUD — normally the Program Head's own job (see
     academics:ph_sections); every save here is logged as an admin
@@ -337,6 +310,32 @@ class SectionFormView(RoleRequiredMixin, EntityFormView):
     refresh_event = "refreshSections"
     modal_title_create = "Add Section"
     modal_title_edit = "Edit Section"
+
+    def get(self, request, pk=None):
+        obj = self.get_object(pk)
+        initial = {}
+        if obj is None:
+            program_id = request.GET.get("program")
+            major_id = request.GET.get("major")
+            year_level = request.GET.get("year_level")
+            if program_id:
+                initial["program"] = program_id
+            if major_id:
+                initial["major"] = major_id
+            if year_level:
+                initial["year_level"] = year_level
+            active_ay = _active_academic_year()
+            if active_ay:
+                initial["academic_year"] = active_ay.pk
+            if program_id and year_level:
+                initial["name"] = services.next_section_letter(
+                    Program.objects.filter(pk=program_id).first(),
+                    Major.objects.filter(pk=major_id).first() if major_id else None,
+                    active_ay,
+                    int(year_level),
+                )
+        form = self.form_class(instance=obj, initial=initial)
+        return render(request, self.form_template, self.get_context(request, form, obj))
 
     def post(self, request, pk=None):
         obj = self.get_object(pk)
@@ -431,19 +430,98 @@ def _wire_live_subject_regroup(form, url):
         )
 
 
-@role_required(PROGRAM_HEAD)
-def ph_sections(request):
-    academic_year = _active_academic_year()
-    sections = (
-        scoping.sections_in_scope(request.user).filter(academic_year=academic_year).select_related("program", "major")
-        if academic_year
-        else Section.objects.none()
+@role_required(ADMIN, PROGRAM_HEAD)
+def sections_home(request):
+    """Shared Sections prospectus for admin (program/major selector, every
+    program) and Program Head (segmented major pills, scoped) — same
+    shape as academics.views.subjects_home: a toolbar (major scope +
+    Academic Year, sections aren't term-scoped so there's no Semester
+    dropdown) over year-level cards. "Classes this semester" is counted
+    against whatever semester is currently is_active=True, independent of
+    the Academic Year filter (a section can exist across several AYs but
+    "this semester" only ever means one)."""
+    is_admin = request.user.is_admin_role
+    pills = None if is_admin else _build_pills(request.user)
+    program, major = _resolve_program_major_from_request(request, request.user, pills=pills)
+
+    context = {"page_title": "Sections", "is_admin": is_admin, "program": program, "major": major}
+    if program is None:
+        context["no_scope"] = True
+        return render(request, "academics/sections.html", context)
+
+    academic_years = AcademicYear.objects.all()
+    selected_ay_id = request.GET.get("ay")
+    selected_ay = AcademicYear.objects.filter(pk=selected_ay_id).first() if selected_ay_id else None
+    if selected_ay is None:
+        selected_ay = _active_academic_year() or academic_years.first()
+
+    year_level_filter = request.GET.get("year_level", "ALL")
+    query = request.GET.get("q", "").strip()
+
+    sections_qs = Section.objects.filter(program=program, major=major)
+    if selected_ay:
+        sections_qs = sections_qs.filter(academic_year=selected_ay)
+    if query:
+        sections_qs = sections_qs.filter(name__icontains=query)
+    sections_qs = sections_qs.select_related("program", "major", "academic_year").annotate(
+        student_count=Count(
+            "student_profiles",
+            filter=Q(student_profiles__status=StudentProfile.Status.ACTIVE),
+            distinct=True,
+        )
     )
-    return render(
-        request,
-        "academics/ph_sections.html",
-        {"page_title": "Sections", "sections": sections, "active_semester_set": bool(academic_year)},
+    all_sections = list(sections_qs)
+
+    active_semester = Semester.objects.filter(is_active=True).first()
+    class_counts = {}
+    if active_semester and all_sections:
+        rows = (
+            ClassOffering.objects.filter(sections__in=all_sections, semester=active_semester)
+            .values("sections__id")
+            .annotate(c=Count("id", distinct=True))
+        )
+        class_counts = {row["sections__id"]: row["c"] for row in rows}
+    delete_url_name = "academics:section_delete" if is_admin else "academics:ph_section_delete"
+    for section in all_sections:
+        section.classes_this_semester = class_counts.get(section.id, 0)
+        section.row_actions = [
+            {"label": "Delete", "hx_get": reverse(delete_url_name, args=[section.pk]), "extra_classes": "text-red-600 hover:bg-red-50"}
+        ]
+
+    available_year_levels = sorted({s.year_level for s in all_sections if s.year_level is not None})
+    if year_level_filter and year_level_filter != "ALL":
+        yl = int(year_level_filter)
+        all_sections = [s for s in all_sections if s.year_level == yl]
+
+    year_levels = sorted({s.year_level for s in all_sections if s.year_level is not None})
+    has_no_year_level_rows = any(s.year_level is None for s in all_sections)
+    cards = [{"year_level": yl, "rows": [s for s in all_sections if s.year_level == yl]} for yl in year_levels]
+    if has_no_year_level_rows or not year_levels:
+        cards.append({"year_level": None, "rows": [s for s in all_sections if s.year_level is None]})
+
+    context.update(
+        {
+            "cards": cards,
+            "academic_years": academic_years,
+            "selected_ay_id": selected_ay.pk if selected_ay else None,
+            "year_level_filter": year_level_filter,
+            "available_year_levels": available_year_levels,
+            "query": query,
+            "section_count": len(all_sections),
+        }
     )
+    if is_admin:
+        context["programs"] = Program.objects.filter(is_active=True).order_by("code")
+        context["majors"] = Major.objects.filter(program=program, is_active=True).order_by("code")
+    else:
+        for pill in pills:
+            pill["active"] = program.id == pill["program"].id and (
+                (major.id if major else None) == (pill["major"].id if pill["major"] else None)
+            )
+        context["pills"] = pills
+
+    template = "academics/_sections_prospectus.html" if is_htmx(request) else "academics/sections.html"
+    return render(request, template, context)
 
 
 def _section_in_scope_or_403(request, section):
@@ -458,7 +536,23 @@ def ph_section_create(request):
         raise PermissionDenied("No active semester is set.")
 
     if request.method != "POST":
-        form = ProgramHeadSectionForm(user=request.user)
+        program_id = request.GET.get("program")
+        major_id = request.GET.get("major")
+        year_level = request.GET.get("year_level")
+        initial = {}
+        if program_id:
+            initial["program"] = program_id
+        if major_id:
+            initial["major"] = major_id
+        if year_level:
+            initial["year_level"] = year_level
+            initial["name"] = services.next_section_letter(
+                Program.objects.filter(pk=program_id).first(),
+                Major.objects.filter(pk=major_id).first() if major_id else None,
+                academic_year,
+                int(year_level),
+            )
+        form = ProgramHeadSectionForm(user=request.user, initial=initial)
         return render(request, "partials/_entity_form_modal.html", {"form": form, "modal_title": "Add Section"})
 
     form = ProgramHeadSectionForm(request.POST, user=request.user)
@@ -543,6 +637,66 @@ def ph_section_delete(request, pk):
         details={"note": "deleted"},
     )
     return trigger_response("refreshSections", toast=f"{label} deleted.")
+
+
+def _can_manage_section(user, section):
+    if user.is_admin_role:
+        return True
+    return scoping.is_in_scope(user, section.program_id, section.major_id)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_students(request, pk):
+    """A section's student list, with a "Move to section…" bulk action
+    restricted to other sections sharing the same program/major/
+    year_level (moving across year levels is the AY wizard's promotion
+    step's job, not this one)."""
+    section = get_object_or_404(Section.objects.select_related("program", "major", "academic_year"), pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+
+    target_sections = (
+        Section.objects.filter(
+            program=section.program, major=section.major, academic_year=section.academic_year, year_level=section.year_level
+        )
+        .exclude(pk=section.pk)
+        .order_by("name")
+    )
+    profiles = (
+        StudentProfile.objects.filter(section=section, status=StudentProfile.Status.ACTIVE)
+        .select_related("user")
+        .order_by("user__last_name", "user__first_name")
+    )
+    return render(
+        request,
+        "academics/section_students.html",
+        {
+            "page_title": f"Students — {section}",
+            "section": section,
+            "profiles": profiles,
+            "target_sections": target_sections,
+        },
+    )
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_students_move(request, pk):
+    section = get_object_or_404(Section, pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+    if request.method != "POST":
+        raise PermissionDenied
+
+    target_id = request.POST.get("target_section")
+    target_section = get_object_or_404(
+        Section.objects.filter(
+            program=section.program, major=section.major, academic_year=section.academic_year, year_level=section.year_level
+        ),
+        pk=target_id,
+    )
+    profile_ids = request.POST.getlist("profile_ids")
+    moved = services.move_students_to_section(profile_ids, target_section, request.user)
+    return trigger_response("refreshSectionStudents", toast=f"Moved {moved} student{'s' if moved != 1 else ''} to {target_section}.")
 
 
 # ---------------------------------------------------------------------------

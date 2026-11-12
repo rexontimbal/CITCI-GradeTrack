@@ -5,7 +5,7 @@ from io import StringIO
 from pathlib import Path
 
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -3025,3 +3025,198 @@ class SubjectsPageOfferingRenderTests(SubjectOfferingTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'name="entry_ids"')
         self.assertContains(response, "Closed")
+
+
+class SectionLetterTests(TestCase):
+    """Section.name is re-scoped to a single optional uppercase letter
+    (A, B, C…) -- display format "BSED-ENG 1-A" / "BSED-ENG 1" (no
+    suffix), and services.next_section_letter suggests the next free one."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.program = Program.objects.create(code="BSED", name="BS Education")
+        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
+
+    def test_blank_letter_displays_with_no_suffix(self):
+        section = Section.objects.create(
+            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name=""
+        )
+        self.assertEqual(str(section), "BSED-ENG 1")
+
+    def test_letter_displays_with_hyphen_suffix(self):
+        section = Section.objects.create(
+            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="A"
+        )
+        self.assertEqual(str(section), "BSED-ENG 1-A")
+
+    def test_lowercase_letter_rejected(self):
+        section = Section(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="a")
+        with self.assertRaises(ValidationError):
+            section.full_clean()
+
+    def test_multi_character_name_rejected(self):
+        section = Section(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="AB")
+        with self.assertRaises(ValidationError):
+            section.full_clean()
+
+    def test_next_section_letter_starts_at_a(self):
+        from .services import next_section_letter
+
+        letter = next_section_letter(self.program, self.major, self.ay, 1)
+        self.assertEqual(letter, "A")
+
+    def test_next_section_letter_increments(self):
+        from .services import next_section_letter
+
+        Section.objects.create(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="A")
+        Section.objects.create(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="B")
+        letter = next_section_letter(self.program, self.major, self.ay, 1)
+        self.assertEqual(letter, "C")
+
+    def test_next_section_letter_ignores_other_year_levels(self):
+        from .services import next_section_letter
+
+        Section.objects.create(program=self.program, major=self.major, academic_year=self.ay, year_level=2, name="A")
+        letter = next_section_letter(self.program, self.major, self.ay, 1)
+        self.assertEqual(letter, "A")
+
+
+class MoveStudentsToSectionTests(TestCase):
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.program = Program.objects.create(code="BSED", name="BS Education")
+        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
+        self.section_a = Section.objects.create(
+            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="A"
+        )
+        self.section_b = Section.objects.create(
+            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="B"
+        )
+        self.student = make_user(User.Role.STUDENT, "move_stud1")
+        profile = self.student.student_profile
+        profile.program = self.program
+        profile.major = self.major
+        profile.year_level = 1
+        profile.section = self.section_a
+        profile.save()
+        self.admin = make_user(User.Role.ADMIN, "move_admin", is_staff=True, is_superuser=True)
+
+    def test_moves_student_and_logs(self):
+        from .models import AcademicSetupChangeLog
+        from .services import move_students_to_section
+
+        moved = move_students_to_section([self.student.student_profile.pk], self.section_b, self.admin)
+        self.assertEqual(moved, 1)
+        self.student.student_profile.refresh_from_db()
+        self.assertEqual(self.student.student_profile.section, self.section_b)
+
+        log = AcademicSetupChangeLog.objects.get(action=AcademicSetupChangeLog.Action.STUDENTS_MOVED)
+        self.assertEqual(log.details["moved_count"], 1)
+        self.assertEqual(log.details["to_section_id"], self.section_b.pk)
+
+    def test_no_op_move_is_not_logged(self):
+        from .models import AcademicSetupChangeLog
+        from .services import move_students_to_section
+
+        moved = move_students_to_section([], self.section_b, self.admin)
+        self.assertEqual(moved, 0)
+        self.assertFalse(AcademicSetupChangeLog.objects.filter(action=AcademicSetupChangeLog.Action.STUDENTS_MOVED).exists())
+
+
+class SectionsPageRedesignTests(TeachingAssignmentTestBase):
+    """Sections is now a toolbar + year-level-card prospectus, same shape
+    as Subjects -- admin picks any program/major, Program Head sees
+    segmented major pills scoped to their own program(s)."""
+
+    def setUp(self):
+        super().setUp()
+        self.major_eng = Major.objects.create(program=self.program_b, code="ENG", name="English")
+        self.major_eng.program_head = self.head_b
+        self.major_eng.save()
+        self.section = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="A"
+        )
+
+    def test_admin_sections_page_renders(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("academics:sections"), {"program": self.program_b.pk, "major": self.major_eng.pk, "ay": self.ay.pk}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "BSED-ENG 1-A")
+
+    def test_ph_sections_page_renders_with_pills(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:ph_sections"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "English")
+        self.assertContains(response, "BSED-ENG 1-A")
+
+    def test_add_section_prefills_next_letter(self):
+        self.client.force_login(self.head_b)
+        response = self.client.get(
+            reverse("academics:ph_section_create"),
+            {"program": self.program_b.pk, "major": self.major_eng.pk, "year_level": 1},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="B"')
+
+    def test_section_students_page_scoped(self):
+        student = make_user(User.Role.STUDENT, "section_stud1")
+        profile = student.student_profile
+        profile.section = self.section
+        profile.program = self.program_b
+        profile.major = self.major_eng
+        profile.year_level = 1
+        profile.save()
+
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:section_students", args=[self.section.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, student.full_name)
+
+        outside_head = make_user(User.Role.PROGRAM_HEAD, "section_outside_head")
+        self.client.force_login(outside_head)
+        response = self.client.get(reverse("academics:section_students", args=[self.section.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_move_students_only_offers_same_year_level_sections(self):
+        student = make_user(User.Role.STUDENT, "section_stud3")
+        profile = student.student_profile
+        profile.section = self.section
+        profile.program = self.program_b
+        profile.major = self.major_eng
+        profile.year_level = 1
+        profile.save()
+        other_year_section = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=2, name="A"
+        )
+        same_year_section = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="B"
+        )
+        self.client.force_login(self.head_b)
+        response = self.client.get(reverse("academics:section_students", args=[self.section.pk]))
+        content = response.content.decode()
+        self.assertIn(str(same_year_section.pk), content)
+        self.assertNotIn(f'value="{other_year_section.pk}"', content)
+
+    def test_move_students_via_post(self):
+        student = make_user(User.Role.STUDENT, "section_stud2")
+        profile = student.student_profile
+        profile.section = self.section
+        profile.program = self.program_b
+        profile.major = self.major_eng
+        profile.year_level = 1
+        profile.save()
+        target = Section.objects.create(
+            program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="B"
+        )
+
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:section_students_move", args=[self.section.pk]),
+            {"target_section": target.pk, "profile_ids": [profile.pk]},
+        )
+        self.assertEqual(response.status_code, 204)
+        profile.refresh_from_db()
+        self.assertEqual(profile.section, target)

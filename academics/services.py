@@ -647,3 +647,52 @@ def class_status_chip(class_offering):
     if not class_offering.schedule:
         return "needs_schedule"
     return "ready"
+
+
+# ---------------------------------------------------------------------------
+# Section letters — "BSED-ENG 1-A", or just "BSED-ENG 1" when there's only
+# one section at that year level (see Section.name's validator for the
+# single-uppercase-letter rule this suggests into).
+# ---------------------------------------------------------------------------
+
+
+def next_section_letter(program, major, academic_year, year_level):
+    """"A" if no section exists yet in this exact scope, else the letter
+    after the current highest one. Blank/un-lettered existing sections are
+    treated as coming before "A" (a plain .exclude(name="") scan), so the
+    very first section ever created in a scope still suggests "A" rather
+    than "" forever."""
+    existing_letters = sorted(
+        Section.objects.filter(program=program, major=major, academic_year=academic_year, year_level=year_level)
+        .exclude(name="")
+        .values_list("name", flat=True)
+    )
+    if not existing_letters:
+        return "A"
+    next_ord = ord(existing_letters[-1]) + 1
+    if next_ord > ord("Z"):
+        return ""
+    return chr(next_ord)
+
+
+def move_students_to_section(student_profile_ids, target_section, actor):
+    """Bulk-moves students to `target_section` — restricted by the caller
+    to sections sharing the same program/major/year_level (scoping.py's
+    existing in-scope filter already enforces who may touch which
+    sections; this function trusts its caller to have validated that
+    `target_section` is actually a valid destination). Returns the number
+    of profiles moved."""
+    moved = StudentProfile.objects.filter(pk__in=student_profile_ids).update(section=target_section)
+    if moved:
+        AcademicSetupChangeLog.objects.create(
+            model_name=AcademicSetupChangeLog.ModelName.SECTION,
+            object_id=target_section.pk,
+            object_repr=str(target_section),
+            action=AcademicSetupChangeLog.Action.STUDENTS_MOVED,
+            program=target_section.program,
+            major=target_section.major,
+            actor=actor,
+            is_admin_override=False,
+            details={"moved_count": moved, "to_section_id": target_section.pk},
+        )
+    return moved

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models, transaction
 
 from accounts.models import User
@@ -131,6 +132,11 @@ class Major(TimeStampedModel):
         return f"{self.program.code}-{self.code}"
 
 
+_SECTION_LETTER_VALIDATOR = RegexValidator(
+    r"^[A-Z]?$", "A single uppercase letter (A, B, C…), or leave blank if this is the only section."
+)
+
+
 class Section(TimeStampedModel):
     program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name="sections")
     major = models.ForeignKey(
@@ -138,7 +144,13 @@ class Section(TimeStampedModel):
     )
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.PROTECT, related_name="sections")
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
-    name = models.CharField(max_length=10, blank=True)
+    name = models.CharField(
+        max_length=10,
+        blank=True,
+        validators=[_SECTION_LETTER_VALIDATOR],
+        help_text="A single letter distinguishing this section from others at the same year level "
+        "(A, B, C…) — optional when there's only one.",
+    )
 
     class Meta:
         ordering = ["program__code", "year_level", "name"]
@@ -153,7 +165,7 @@ class Section(TimeStampedModel):
         if self.year_level:
             label += f" {self.year_level}"
         if self.name:
-            label += f" {self.name}"
+            label += f"-{self.name}"
         return label
 
 
@@ -472,6 +484,9 @@ class AcademicSetupChangeLog(TimeStampedModel):
         OFFERED = "OFFERED", "Offered"
         WITHDRAWN = "WITHDRAWN", "Withdrawn"
         CLOSED = "CLOSED", "Closed"
+        SPLIT = "SPLIT", "Split"
+        COMBINED = "COMBINED", "Combined"
+        STUDENTS_MOVED = "STUDENTS_MOVED", "Students moved"
 
     model_name = models.CharField(max_length=10, choices=ModelName.choices)
     object_id = models.PositiveIntegerField()

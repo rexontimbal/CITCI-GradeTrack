@@ -31,13 +31,15 @@ urlpatterns = [
     path("majors/<int:pk>/delete/", views.MajorDeleteView.as_view(), name="major_delete"),
 
     # Sections
-    path("sections/", views.SectionListView.as_view(), name="sections"),
+    path("sections/", views.sections_home, name="sections"),
     path("sections/create/", views.SectionFormView.as_view(), name="section_create"),
     path("sections/<int:pk>/edit/", views.SectionFormView.as_view(), name="section_edit"),
     path("sections/<int:pk>/delete/", views.SectionDeleteView.as_view(), name="section_delete"),
+    path("sections/<int:pk>/students/", views.section_students, name="section_students"),
+    path("sections/<int:pk>/students/move/", views.section_students_move, name="section_students_move"),
 
     # Sections (Program Head — scoped to their own program/major)
-    path("my-program/sections/", views.ph_sections, name="ph_sections"),
+    path("my-program/sections/", views.sections_home, name="ph_sections"),
     path("my-program/sections/create/", views.ph_section_create, name="ph_section_create"),
     path("my-program/sections/<int:pk>/edit/", views.ph_section_edit, name="ph_section_edit"),
     path("my-program/sections/<int:pk>/delete/", views.ph_section_delete, name="ph_section_delete"),

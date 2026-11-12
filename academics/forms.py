@@ -85,7 +85,18 @@ class MajorForm(StyledModelForm):
         fields = ["program", "code", "name", "program_head", "is_active"]
 
 
+_SECTION_LETTER_WIDGET_ATTRS = {"maxlength": "1", "style": "text-transform: uppercase;", "placeholder": "A"}
+
+
 class SectionForm(StyledModelForm):
+    name = forms.CharField(
+        required=False,
+        max_length=1,
+        label="Letter",
+        help_text="Leave blank if this is the only section for this year level.",
+        widget=forms.TextInput(attrs=_SECTION_LETTER_WIDGET_ATTRS),
+    )
+
     class Meta:
         model = Section
         fields = ["program", "major", "academic_year", "year_level", "name"]
@@ -116,6 +127,14 @@ class ProgramHeadSectionForm(StyledModelForm):
     the acting Program Head's scope (academics.scoping.scope_for) and
     academic_year is never a form field — the view locks it to the active
     semester's academic year server-side."""
+
+    name = forms.CharField(
+        required=False,
+        max_length=1,
+        label="Letter",
+        help_text="Leave blank if this is the only section for this year level.",
+        widget=forms.TextInput(attrs=_SECTION_LETTER_WIDGET_ATTRS),
+    )
 
     class Meta:
         model = Section

@@ -293,16 +293,19 @@ def build_failing_inc_workbook(semester, entries):
     for cell in ws[1]:
         cell.font = Font(bold=True)
         cell.fill = HEADER_FILL
+    from academics.models import SectionMembership
+
     for entry in entries:
         student = entry.roster_entry.student
         profile = getattr(student, "student_profile", None)
         class_offering = entry.sheet.class_offering
+        membership = SectionMembership.objects.filter(student=student, semester=class_offering.semester).select_related("section").first()
         ws.append(
             [
                 student.full_name,
                 profile.program.code if profile and profile.program else "",
                 profile.major.code if profile and profile.major else "",
-                profile.get_year_level_display() if profile and profile.year_level else "",
+                membership.section.get_year_level_display() if membership else "",
                 class_offering.subject.code,
                 float(entry.final_grade) if entry.final_grade is not None else None,
                 entry.get_remarks_display(),

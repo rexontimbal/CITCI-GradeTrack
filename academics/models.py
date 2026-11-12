@@ -296,6 +296,12 @@ class SubjectOffering(TimeStampedModel):
 
 
 class StudentProfile(TimeStampedModel):
+    """Stable, account-level data only — program/major/status. Year level
+    and section are NOT here: they change every semester (a student can be
+    promoted, move sections, or sit a term with no section at all while
+    joining classes by code), so they live in SectionMembership instead,
+    one row per (student, semester). See SectionMembership below."""
+
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Active"
         COMPLETED = "COMPLETED", "Completed"
@@ -312,10 +318,6 @@ class StudentProfile(TimeStampedModel):
     major = models.ForeignKey(
         Major, on_delete=models.PROTECT, null=True, blank=True, related_name="student_profiles"
     )
-    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, null=True, blank=True)
-    section = models.ForeignKey(
-        Section, on_delete=models.SET_NULL, null=True, blank=True, related_name="student_profiles"
-    )
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
@@ -327,6 +329,34 @@ class StudentProfile(TimeStampedModel):
 
     def __str__(self):
         return self.user.full_name
+
+
+class SectionMembership(TimeStampedModel):
+    """Which section a student sits in for ONE semester -- year level is
+    derived from the section (Section.year_level), never stored again
+    here. Used only for (a) a Program Head's section auto-fill of class
+    lists for that semester and (b) the "Matches section" join-request
+    badge. A student with no membership for a semester is normal (TCP-
+    style, an irregular, or someone who only joins classes by code) --
+    this is deliberately optional, not a required enrollment record."""
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        limit_choices_to={"role": User.Role.STUDENT},
+        related_name="section_memberships",
+    )
+    section = models.ForeignKey(Section, on_delete=models.PROTECT, related_name="memberships")
+    semester = models.ForeignKey(Semester, on_delete=models.CASCADE, related_name="section_memberships")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["student", "semester"], name="unique_section_membership_per_semester")
+        ]
+        ordering = ["-semester__academic_year__start_year", "semester__term"]
+
+    def __str__(self):
+        return f"{self.student.full_name} — {self.section} ({self.semester})"
 
 
 class ClassOffering(TimeStampedModel):

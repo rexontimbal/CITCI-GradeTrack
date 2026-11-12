@@ -212,6 +212,14 @@ def _student_dashboard(request):
     forecast_cards.sort(key=lambda c: forecast_priority[c["level"]])
     forecast = forecast_cards[0] if forecast_cards else None
 
+    current_membership = None
+    if active:
+        from academics.models import SectionMembership
+
+        current_membership = (
+            SectionMembership.objects.filter(student=student, semester=active).select_related("section").first()
+        )
+
     context = {
         "cards": cards,
         "subjects_count": len(roster_entries),
@@ -220,6 +228,7 @@ def _student_dashboard(request):
         "warnings_count": warnings_count,
         "notifications": notifications,
         "forecast": forecast,
+        "current_membership": current_membership,
     }
     return render(request, "dashboard/student_dashboard.html", context)
 

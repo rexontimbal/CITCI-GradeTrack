@@ -10,6 +10,7 @@ from .models import (
     Major,
     Program,
     Section,
+    SectionMembership,
     Semester,
     StudentProfile,
     Subject,
@@ -65,9 +66,16 @@ class CurriculumEntryAdmin(admin.ModelAdmin):
 
 @admin.register(StudentProfile, site=site)
 class StudentProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "program", "major", "year_level", "section")
-    list_filter = ("program", "major", "year_level", "section")
+    list_display = ("user", "program", "major", "status")
+    list_filter = ("program", "major", "status")
     search_fields = ("user__username", "user__first_name", "user__last_name", "user__id_number")
+
+
+@admin.register(SectionMembership, site=site)
+class SectionMembershipAdmin(admin.ModelAdmin):
+    list_display = ("student", "section", "semester")
+    list_filter = ("semester", "section__program")
+    search_fields = ("student__username", "student__first_name", "student__last_name", "student__id_number")
 
 
 @admin.register(ClassOffering, site=site)

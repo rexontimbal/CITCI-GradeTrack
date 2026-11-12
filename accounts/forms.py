@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import SetPasswordForm
 
-from academics.models import Major, Program, Section, YEAR_LEVEL_CHOICES
+from academics.models import Major, Program
 from core.forms import StyledModelForm
 
 from .models import User
@@ -22,19 +22,19 @@ class ForcedPasswordChangeForm(SetPasswordForm):
 
 
 class UserForm(StyledModelForm):
-    """Create/edit a user of any role. Student-only fields (program, major,
-    year level, section) are shown/hidden client-side by the template based
-    on the selected role, and the major/section choices are narrowed via an
-    HTMX cascade (see accounts/views.py user_form) — not by this form's
-    __init__, so a GET "just refresh the dependent dropdowns" request never
-    runs full validation (which a bound form would trigger by rendering
-    `field.errors`).
+    """Create/edit a user of any role. Student-only fields (program,
+    major -- stable, account-level data) are shown/hidden client-side by
+    the template based on the selected role, and the major choices are
+    narrowed via an HTMX cascade (see accounts/views.py user_form) — not
+    by this form's __init__, so a GET "just refresh the dependent
+    dropdowns" request never runs full validation (which a bound form
+    would trigger by rendering `field.errors`). Year level and section
+    are NOT here — they're per-semester (academics.SectionMembership),
+    managed from the Program Head's Sections page, not the account form.
     """
 
     program = forms.ModelChoiceField(queryset=Program.objects.filter(is_active=True), required=False)
     major = forms.ModelChoiceField(queryset=Major.objects.none(), required=False)
-    year_level = forms.ChoiceField(choices=[("", "—")] + YEAR_LEVEL_CHOICES, required=False)
-    section = forms.ModelChoiceField(queryset=Section.objects.none(), required=False)
 
     class Meta:
         model = User
@@ -52,27 +52,15 @@ class UserForm(StyledModelForm):
         if profile and not self.is_bound:
             self.fields["program"].initial = profile.program
             self.fields["major"].initial = profile.major
-            self.fields["year_level"].initial = profile.year_level
-            self.fields["section"].initial = profile.section
 
         program_id = None
-        major_id = None
         if self.is_bound:
             program_id = self.data.get("program") or None
-            major_id = self.data.get("major") or None
         elif profile:
             program_id = profile.program_id
-            major_id = profile.major_id
 
         if program_id:
             self.fields["major"].queryset = Major.objects.filter(program_id=program_id, is_active=True)
-            section_qs = Section.objects.filter(program_id=program_id).select_related("major")
-            if major_id:
-                section_qs = section_qs.filter(major_id=major_id)
-            year_level = self.data.get("year_level") if self.is_bound else (profile.year_level if profile else None)
-            if year_level:
-                section_qs = section_qs.filter(year_level=year_level)
-            self.fields["section"].queryset = section_qs
 
     def clean(self):
         cleaned_data = super().clean()
@@ -83,8 +71,6 @@ class UserForm(StyledModelForm):
                 self.add_error("id_number", "Required for students.")
             if not cleaned_data.get("program"):
                 self.add_error("program", "Required for students.")
-            if not cleaned_data.get("section"):
-                self.add_error("section", "Required for students.")
             cleaned_data["username"] = cleaned_data.get("id_number") or ""
         elif role:
             if not cleaned_data.get("username"):
@@ -111,8 +97,6 @@ class UserForm(StyledModelForm):
             defaults={
                 "program": self.cleaned_data.get("program"),
                 "major": self.cleaned_data.get("major"),
-                "year_level": self.cleaned_data.get("year_level") or None,
-                "section": self.cleaned_data.get("section"),
             },
         )
 

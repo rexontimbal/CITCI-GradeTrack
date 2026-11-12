@@ -1,0 +1,21 @@
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Copy from {{ previous_semester.get_term_display }}?</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">&times;</button>
+</div>
+<div class="mt-4 space-y-4">
+    <p class="text-sm text-gray-600">
+        {{ previous_members.count }} student{{ previous_members.count|pluralize }} from {{ section }} in
+        {{ previous_semester.get_term_display }} will be added to {{ semester.get_term_display }}. Students already
+        placed for {{ semester.get_term_display }} are left untouched.
+    </p>
+    <ul class="max-h-48 list-inside list-disc overflow-y-auto text-sm text-gray-700">
+        {% for membership in previous_members %}<li>{{ membership.student.full_name }}</li>{% endfor %}
+    </ul>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button hx-post="{% url 'academics:section_students_copy_previous' section.pk %}" hx-vals='{"semester": "{{ semester.pk }}"}' hx-swap="none" @click="modalOpen = false"
+                class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Copy {{ previous_members.count }} student{{ previous_members.count|pluralize }}
+        </button>
+    </div>
+</div>

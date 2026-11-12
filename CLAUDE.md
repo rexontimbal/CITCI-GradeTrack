@@ -341,6 +341,53 @@
 > reset code; inactive semester; locked grade sheet blocking both join and a since-submitted
 > approval; rate limiting; section-match badge; bulk skip-already-decided; and permissions — a
 > student can't decide requests, an unrelated instructor can't even view the class's roster page).
+>
+> **2026-11-13 (Students: section membership per semester; fix Edit User prefill, built):**
+> `academics.StudentProfile.year_level`/`.section` are gone — a student's year level and section
+> change every semester (promotion, moving sections, sitting a term with none at all while joining
+> by code), so they never belonged on the permanent account. A new `academics.SectionMembership`
+> (`student`, `section`, `semester`, unique per student per semester — year level is derived from
+> `section.year_level`, never stored a second time) replaces them everywhere: the Program Head's
+> section auto-fill (`services.fill_roster_from_section`), the "Matches section" join-request badge
+> (`services.join_request_section_match`), the AY wizard's promotion step (`ay_wizard.step3/
+> step4`), the class-list/roster importers, the bulk "Import Students" flow, and every report/
+> template that used to read `profile.section`/`.year_level` directly (Users list, Class List,
+> student dashboard/profile, the Failing/INC Excel report). A three-migration data move (`0017` add
+> the model, `0018` copy existing `StudentProfile.section`/`.year_level` into a `SectionMembership`
+> for whichever semester actually matches the section's academic year, `0019` drop the old fields)
+> — same "add, copy, remove" shape already established for `CurriculumEntry`.
+>
+> **ID Number is now the student account's one required identifier** (`services.
+> check_join_eligibility` blocks joining by code without one, with a clear message) — Year Level/
+> Section are gone from the Add/Edit User form entirely (moved to the Program Head's Sections page,
+> see below) and from the bulk "Import Students" template's handling: an old import file that still
+> has a Year Level column keeps working (resolved to a section, written as a `SectionMembership` for
+> the active semester at commit time) but a blank value is now a perfectly valid row instead of a
+> forced "no matching section" rejection — a student with no section is normal (TCP-style, an
+> irregular, or one who only joins classes by code).
+>
+> **Section Students** (`academics:section_students`, Program Head's Sections page) is now scoped to
+> one semester at a time (a `?semester=` selector defaulting to the active one) and gained: Add/
+> Remove students directly (not just "Move"), **"Copy from previous semester"** (same section, same
+> academic year, 1st Sem → 2nd Sem — never overwrites a student already placed for the target
+> semester), and **Promote…** (`academics:section_promote`) — a lighter, Program-Head-reachable
+> counterpart to the AY wizard's system-wide promotion, for moving one section (e.g. BSED-ENG 1-A)
+> into a target section in a newer academic year one at a time; a preview step pre-unchecks any
+> student who already has a membership for the target semester (an irregular placed elsewhere),
+> never silently moving them. The Users list's "Program/Section/Scope" column now shows Program–
+> Major plus the *current* semester's section if any (e.g. "BSED-ENG · 1-A (1st Sem 2027–2028)"), and
+> a student with no ID number gets a "No ID number" warning badge instead of a blank cell.
+>
+> **The Edit User modal prefill bug report turned out not to reproduce** — a live Playwright check
+> against the actual running server confirmed `id_number`/`program`/`major`/`section` all prefilled
+> correctly from the database before this change (the form's `__init__`/`is_bound` logic was already
+> correct); the most likely explanation is the same stale-browser-tab class of issue documented
+> earlier this session, not a code bug. A regression test (`UserFormPrefillTests` — open the edit
+> form, submit unchanged, assert nothing on the account/profile changed) is now in place as a
+> standing guard regardless. The year_level/section cascade removed from `UserForm`/`accounts.views.
+> user_form` along the way (dead code once those fields left the form) incidentally simplifies a
+> GET-cascade code path that was a plausible place for exactly this class of bug to hide, if it
+> existed anywhere.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official

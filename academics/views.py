@@ -48,6 +48,7 @@ from .models import (
     Major,
     Program,
     Section,
+    SectionMembership,
     Semester,
     SemesterStatus,
     StudentProfile,
@@ -468,8 +469,8 @@ def sections_home(request):
         sections_qs = sections_qs.filter(name__icontains=query)
     sections_qs = sections_qs.select_related("program", "major", "academic_year").annotate(
         student_count=Count(
-            "student_profiles",
-            filter=Q(student_profiles__status=StudentProfile.Status.ACTIVE),
+            "memberships",
+            filter=Q(memberships__student__student_profile__status=StudentProfile.Status.ACTIVE),
             distinct=True,
         )
     )
@@ -648,15 +649,50 @@ def _can_manage_section(user, section):
     return scoping.is_in_scope(user, section.program_id, section.major_id)
 
 
+_TERM_ORDER = {"FIRST": 0, "SECOND": 1, "SUMMER": 2}
+
+
+def _section_students_semester(request, section):
+    """The semester this page manages membership for -- ?semester=<id> if
+    given and valid for this section's academic year, else the active
+    semester if it belongs to this academic year, else the first semester
+    that exists for it."""
+    semester_id = request.GET.get("semester") or request.POST.get("semester")
+    qs = Semester.objects.filter(academic_year=section.academic_year)
+    if semester_id:
+        semester = qs.filter(pk=semester_id).first()
+        if semester:
+            return semester
+    active = qs.filter(is_active=True).first()
+    return active or qs.order_by("term").first()
+
+
+def _previous_semester_same_section(semester):
+    """The semester immediately before `semester` IN THE SAME academic
+    year (1st Sem -> 2nd Sem's previous is 1st Sem) -- "Copy from previous
+    semester" is deliberately scoped to the same section/academic year,
+    not a cross-year copy (that's the AY wizard's Promote job instead)."""
+    order = _TERM_ORDER.get(semester.term)
+    if order is None or order == 0:
+        return None
+    candidates = Semester.objects.filter(academic_year=semester.academic_year).exclude(pk=semester.pk)
+    earlier = [s for s in candidates if _TERM_ORDER.get(s.term, 99) < order]
+    return max(earlier, key=lambda s: _TERM_ORDER.get(s.term, -1)) if earlier else None
+
+
 @role_required(ADMIN, PROGRAM_HEAD)
 def section_students(request, pk):
-    """A section's student list, with a "Move to section…" bulk action
-    restricted to other sections sharing the same program/major/
-    year_level (moving across year levels is the AY wizard's promotion
-    step's job, not this one)."""
+    """A section's student list FOR ONE SEMESTER, with a "Move to
+    section…" bulk action restricted to other sections sharing the same
+    program/major/year_level (moving across year levels is the AY
+    wizard's/Promote's job, not this one), "Add students", "Remove", and
+    "Copy from previous semester"."""
     section = get_object_or_404(Section.objects.select_related("program", "major", "academic_year"), pk=pk)
     if not _can_manage_section(request.user, section):
         raise PermissionDenied("This section is not under your program.")
+
+    semester = _section_students_semester(request, section)
+    semesters = Semester.objects.filter(academic_year=section.academic_year).order_by("term")
 
     target_sections = (
         Section.objects.filter(
@@ -665,19 +701,40 @@ def section_students(request, pk):
         .exclude(pk=section.pk)
         .order_by("name")
     )
-    profiles = (
-        StudentProfile.objects.filter(section=section, status=StudentProfile.Status.ACTIVE)
-        .select_related("user")
-        .order_by("user__last_name", "user__first_name")
+    memberships = (
+        SectionMembership.objects.filter(section=section, semester=semester)
+        .select_related("student")
+        .order_by("student__last_name", "student__first_name")
+        if semester
+        else SectionMembership.objects.none()
     )
+    member_ids = set(memberships.values_list("student_id", flat=True))
+    addable_students = (
+        User.objects.filter(
+            role=User.Role.STUDENT,
+            is_active=True,
+            student_profile__program=section.program,
+            student_profile__major=section.major,
+            student_profile__status=StudentProfile.Status.ACTIVE,
+        )
+        .exclude(pk__in=member_ids)
+        .order_by("last_name", "first_name")
+        if semester
+        else User.objects.none()
+    )
+    previous_semester = _previous_semester_same_section(semester) if semester else None
     return render(
         request,
         "academics/section_students.html",
         {
             "page_title": f"Students — {section}",
             "section": section,
-            "profiles": profiles,
+            "semester": semester,
+            "semesters": semesters,
+            "memberships": memberships,
+            "addable_students": addable_students,
             "target_sections": target_sections,
+            "previous_semester": previous_semester,
         },
     )
 
@@ -690,6 +747,7 @@ def section_students_move(request, pk):
     if request.method != "POST":
         raise PermissionDenied
 
+    semester = get_object_or_404(Semester, pk=request.POST.get("semester"))
     target_id = request.POST.get("target_section")
     target_section = get_object_or_404(
         Section.objects.filter(
@@ -697,9 +755,127 @@ def section_students_move(request, pk):
         ),
         pk=target_id,
     )
-    profile_ids = request.POST.getlist("profile_ids")
-    moved = services.move_students_to_section(profile_ids, target_section, request.user)
+    student_ids = request.POST.getlist("student_ids")
+    moved = services.move_students_to_section(
+        student_ids, target_section, semester, request.user, is_admin_override=request.user.is_admin_role
+    )
     return trigger_response("refreshSectionStudents", toast=f"Moved {moved} student{'s' if moved != 1 else ''} to {target_section}.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_students_add(request, pk):
+    section = get_object_or_404(Section, pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+    if request.method != "POST":
+        raise PermissionDenied
+
+    semester = get_object_or_404(Semester, pk=request.POST.get("semester"))
+    student_ids = request.POST.getlist("student_ids")
+    added = services.move_students_to_section(
+        student_ids, section, semester, request.user, is_admin_override=request.user.is_admin_role
+    )
+    return trigger_response("refreshSectionStudents", toast=f"Added {added} student{'s' if added != 1 else ''} to {section}.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_students_remove(request, pk):
+    section = get_object_or_404(Section, pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+    if request.method != "POST":
+        raise PermissionDenied
+
+    semester = get_object_or_404(Semester, pk=request.POST.get("semester"))
+    student_ids = request.POST.getlist("student_ids")
+    removed = services.remove_section_membership(student_ids, semester, request.user)
+    return trigger_response("refreshSectionStudents", toast=f"Removed {removed} student{'s' if removed != 1 else ''} from {section}.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_students_copy_previous(request, pk):
+    section = get_object_or_404(Section, pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+
+    semester = get_object_or_404(Semester, pk=request.POST.get("semester") or request.GET.get("semester"))
+    previous_semester = _previous_semester_same_section(semester)
+    if previous_semester is None:
+        raise PermissionDenied("No earlier semester to copy from.")
+
+    if request.method != "POST":
+        previous_members = SectionMembership.objects.filter(section=section, semester=previous_semester).select_related("student")
+        return render(
+            request,
+            "academics/_section_copy_previous_confirm.html",
+            {"section": section, "semester": semester, "previous_semester": previous_semester, "previous_members": previous_members},
+        )
+
+    added = services.copy_section_membership_to_semester(section, previous_semester, semester, request.user)
+    return trigger_response("refreshSectionStudents", toast=f"Copied {added} student{'s' if added != 1 else ''} from {previous_semester}.")
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def section_promote(request, pk):
+    """Promote selected students from `section` (e.g. BSED-ENG 1-A) into
+    a target section the caller picks (typically BSED-ENG 2-A in a newer
+    academic year) for a target semester they pick -- a lighter, Program-
+    Head-reachable counterpart to the AY wizard's system-wide promotion
+    step, for moving one section at a time. Irregulars (already placed in
+    the target semester) are pre-unchecked, never silently moved."""
+    section = get_object_or_404(Section, pk=pk)
+    if not _can_manage_section(request.user, section):
+        raise PermissionDenied("This section is not under your program.")
+
+    semester = get_object_or_404(Semester, pk=request.POST.get("semester") or request.GET.get("semester"))
+
+    target_section_id = request.POST.get("target_section") or request.GET.get("target_section")
+    if not target_section_id or "target_semester" not in request.POST:
+        target_sections = (
+            Section.objects.filter(program=section.program, major=section.major)
+            .exclude(academic_year=section.academic_year)
+            .select_related("academic_year")
+            .order_by("-academic_year__start_year", "name")
+        )
+        target_semesters = []
+        if target_section_id:
+            target_section_candidate = Section.objects.filter(pk=target_section_id).first()
+            if target_section_candidate:
+                target_semesters = Semester.objects.filter(academic_year=target_section_candidate.academic_year).order_by("term")
+        return render(
+            request,
+            "academics/_section_promote_pick_target.html",
+            {
+                "section": section,
+                "semester": semester,
+                "target_sections": target_sections,
+                "selected_target_section_id": int(target_section_id) if target_section_id else None,
+                "target_semesters": target_semesters,
+            },
+        )
+
+    target_section = get_object_or_404(Section, pk=target_section_id)
+    target_semester = get_object_or_404(Semester, pk=request.POST.get("target_semester"))
+
+    if "confirm" not in request.POST:
+        rows = services.preview_promote_students(section, semester, target_section, target_semester)
+        return render(
+            request,
+            "academics/_section_promote_confirm.html",
+            {
+                "section": section,
+                "semester": semester,
+                "target_section": target_section,
+                "target_semester": target_semester,
+                "rows": rows,
+            },
+        )
+
+    student_ids = request.POST.getlist("student_ids")
+    promoted = services.commit_promote_students(student_ids, target_section, target_semester, request.user)
+    return trigger_response(
+        "refreshSectionStudents", toast=f"Promoted {promoted} student{'s' if promoted != 1 else ''} to {target_section}."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1770,18 +1946,36 @@ def _get_class_offering_for_viewer(request, pk):
 @role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_roster(request, pk):
     class_offering = _get_class_offering_for_viewer(request, pk)
-    roster_entries = class_offering.roster_entries.select_related("student", "student__student_profile__section")
+    roster_entries = class_offering.roster_entries.select_related("student", "student__student_profile")
     assignment_logs = class_offering.assignment_logs.select_related("old_instructor", "new_instructor", "changed_by")[:10]
     is_owner = request.user.is_instructor and class_offering.instructor_id == request.user.id
+
+    roster_entries = list(roster_entries)
+    memberships_by_student_id = {
+        m.student_id: m.section
+        for m in SectionMembership.objects.filter(
+            semester=class_offering.semester, student_id__in=[e.student_id for e in roster_entries]
+        ).select_related("section")
+    }
+    for entry in roster_entries:
+        entry.membership_section = memberships_by_student_id.get(entry.student_id)
+
     pending_requests = []
     if is_owner:
         pending_requests = list(
             class_offering.join_requests.filter(status=ClassJoinRequest.Status.PENDING)
-            .select_related("student", "student__student_profile__section")
+            .select_related("student", "student__student_profile")
             .order_by("requested_at")
         )
+        pending_memberships = {
+            m.student_id: m.section
+            for m in SectionMembership.objects.filter(
+                semester=class_offering.semester, student_id__in=[r.student_id for r in pending_requests]
+            ).select_related("section")
+        }
         for join_request in pending_requests:
             join_request.section_match = services.join_request_section_match(join_request)
+            join_request.membership_section = pending_memberships.get(join_request.student_id)
     return render(
         request,
         "academics/class_roster.html",
@@ -2357,9 +2551,19 @@ def teaching_loads_export(request):
 
 
 def _roster_context(class_offering):
-    roster_entries = class_offering.roster_entries.select_related("student").order_by(
-        "status", "student__last_name", "student__first_name"
+    roster_entries = list(
+        class_offering.roster_entries.select_related("student", "student__student_profile").order_by(
+            "status", "student__last_name", "student__first_name"
+        )
     )
+    memberships_by_student_id = {
+        m.student_id: m.section
+        for m in SectionMembership.objects.filter(
+            semester=class_offering.semester, student_id__in=[e.student_id for e in roster_entries]
+        ).select_related("section")
+    }
+    for entry in roster_entries:
+        entry.membership_section = memberships_by_student_id.get(entry.student_id)
     return {"class_offering": class_offering, "roster_entries": roster_entries}
 
 
@@ -2402,7 +2606,11 @@ def class_list_add_section(request, pk):
     _require_semester_unlocked(class_offering)
     section_id = request.POST.get("section")
     section = get_object_or_404(class_offering.sections, pk=section_id)
-    students = User.objects.filter(role=User.Role.STUDENT, student_profile__section=section)
+    students = User.objects.filter(
+        role=User.Role.STUDENT,
+        section_memberships__section=section,
+        section_memberships__semester=class_offering.semester,
+    )
     added_count, skipped_count = 0, 0
     for student in students:
         _, created = ClassRosterEntry.objects.get_or_create(
@@ -2946,6 +3154,7 @@ def ay_wizard_step4(request):
             rows,
             request.user,
             term_dates=stashed.get("term_dates"),
+            source_academic_year=source_academic_year,
         )
         del request.session[_AY_WIZARD_SESSION_KEY]
         return render(request, "academics/ay_wizard_done.html", result)

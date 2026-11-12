@@ -327,3 +327,20 @@ from the other three paths in reporting.
 *roster*, the same object the other three paths already populate. If the ERD/data dictionary is
 regenerated from the models, `ClassJoinRequest` and `ClassRosterEntry.source` will already reflect
 this.
+
+## 15. Student section/year level moved to a per-semester record (internal data-model
+correction, not a feature the proposal described differently)
+
+**Confirmed practice (2026-11-13):** a student's year level and section change every semester
+(promotion, moving sections, sitting a term with none at all while joining classes by code) — the
+original `StudentProfile.year_level`/`.section` fields modeled this as permanent account data,
+which was wrong the moment a student was promoted or moved. A new `academics.SectionMembership`
+(student, section, semester) replaces both fields everywhere they were read or written — the
+Program Head's section auto-fill, the join-request "Matches section" badge, the AY wizard's
+promotion step, the class-list/roster and bulk "Import Students" importers, and every report/
+template that displayed a student's year/section. A three-step migration copied existing data
+across before the old fields were removed, the same pattern already used for `CurriculumEntry`.
+
+**Revise:** None of §1–§3.13 require revision — this is an internal data-model correction, not a
+feature the proposal described differently. If the ERD/data dictionary is regenerated from the
+models, `SectionMembership` and the trimmed `StudentProfile` will already reflect this.

@@ -603,3 +603,58 @@ class AdminUrlEnvOverrideTests(TestCase):
         importlib.reload(urls_module)
         patterns = [str(p.pattern) for p in urls_module.urlpatterns]
         self.assertIn("admin/", patterns)
+
+
+class UserFormPrefillTests(TestCase):
+    """Opening the Edit User modal must show the account's real current
+    values, and saving it unchanged must not wipe anything -- a live
+    Playwright check against the running dev server found this already
+    correct (id_number/program/major/section all prefilled), but this
+    regression guard locks that in going forward (see CLAUDE.md's dated
+    note on the bug report that didn't reproduce)."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "prefill_admin")
+        self.client.force_login(self.admin)
+        self.academic_year = AcademicYear.objects.create(start_year=2027)
+        self.program = Program.objects.create(code="BSED", name="BS Education")
+
+        from academics.models import Major
+
+        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
+        self.student = make_user(
+            User.Role.STUDENT, "2027-0001", id_number="2027-0001", first_name="Juan", last_name="Dela Cruz"
+        )
+        self.student.student_profile.program = self.program
+        self.student.student_profile.major = self.major
+        self.student.student_profile.save()
+
+    def test_edit_form_prefills_id_number_program_and_major(self):
+        response = self.client.get(reverse("accounts:user_edit", args=[self.student.pk]))
+        self.assertContains(response, "2027-0001")
+        form = response.context["form"]
+        self.assertEqual(form["id_number"].value(), "2027-0001")
+        self.assertEqual(form["program"].value(), self.program.pk)
+        self.assertEqual(form["major"].value(), self.major.pk)
+
+    def test_saving_unchanged_form_does_not_wipe_data(self):
+        response = self.client.post(
+            reverse("accounts:user_edit", args=[self.student.pk]),
+            {
+                "role": User.Role.STUDENT,
+                "id_number": "2027-0001",
+                "last_name": "Dela Cruz",
+                "first_name": "Juan",
+                "middle_name": "",
+                "email": "",
+                "program": self.program.pk,
+                "major": self.major.pk,
+            },
+        )
+        self.assertEqual(response.status_code, 204)
+        self.student.refresh_from_db()
+        self.student.student_profile.refresh_from_db()
+        self.assertEqual(self.student.id_number, "2027-0001")
+        self.assertEqual(self.student.last_name, "Dela Cruz")
+        self.assertEqual(self.student.student_profile.program, self.program)
+        self.assertEqual(self.student.student_profile.major, self.major)

@@ -151,6 +151,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("Demo student has no program set — skipping past semester."))
             return
 
+        from academics.models import SectionMembership
+
+        current_membership = (
+            SectionMembership.objects.filter(student=student, semester__is_active=True).select_related("section").first()
+        )
+        current_section = current_membership.section if current_membership else None
+
         past_year, _ = AcademicYear.objects.get_or_create(start_year=PAST_ACADEMIC_YEAR_START)
         past_semester, _ = Semester.objects.get_or_create(
             academic_year=past_year, term=Term.SECOND, defaults={"is_active": False}
@@ -160,9 +167,10 @@ class Command(BaseCommand):
             program=profile.program,
             major=profile.major,
             academic_year=past_year,
-            year_level=profile.year_level,
-            name=profile.section.name if profile.section else "",
+            year_level=current_section.year_level if current_section else None,
+            name=current_section.name if current_section else "",
         )
+        SectionMembership.objects.get_or_create(student=student, semester=past_semester, defaults={"section": section})
 
         # Avoid reusing a subject code the student is already carrying this
         # (current) semester — same Subject row, different ClassOffering,

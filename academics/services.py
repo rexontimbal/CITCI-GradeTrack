@@ -23,6 +23,7 @@ from .models import (
     ClassRosterEntry,
     CurriculumEntry,
     Section,
+    SectionMembership,
     Semester,
     SemesterStatus,
     StudentProfile,
@@ -514,16 +515,20 @@ def preview_manage_sections(offering):
 
 
 def fill_roster_from_section(class_offering, section):
-    """Adds every active student of `section` to `class_offering`'s roster
+    """Adds every active student currently a SectionMembership member of
+    `section` FOR THIS CLASS'S OWN SEMESTER to `class_offering`'s roster
     (idempotent — safe to call again, e.g. when Combine adds a section to
-    an already-populated class). Returns how many roster entries were
-    newly created. Modeled directly on roster_import.commit_import's
-    identical ClassRosterEntry.objects.get_or_create(...) call."""
+    an already-populated class, or "Sync class lists from sections").
+    Returns how many roster entries were newly created. Modeled directly
+    on roster_import.commit_import's identical
+    ClassRosterEntry.objects.get_or_create(...) call."""
     added = 0
-    profiles = StudentProfile.objects.filter(section=section, status=StudentProfile.Status.ACTIVE).select_related("user")
-    for profile in profiles:
+    memberships = SectionMembership.objects.filter(
+        section=section, semester=class_offering.semester, student__student_profile__status=StudentProfile.Status.ACTIVE
+    ).select_related("student")
+    for membership in memberships:
         _, created = ClassRosterEntry.objects.get_or_create(
-            student=profile.user, class_offering=class_offering, defaults={"status": ClassRosterEntry.Status.ACTIVE}
+            student=membership.student, class_offering=class_offering, defaults={"status": ClassRosterEntry.Status.ACTIVE}
         )
         if created:
             added += 1
@@ -778,14 +783,21 @@ def next_section_letter(program, major, academic_year, year_level):
     return chr(next_ord)
 
 
-def move_students_to_section(student_profile_ids, target_section, actor):
-    """Bulk-moves students to `target_section` — restricted by the caller
-    to sections sharing the same program/major/year_level (scoping.py's
-    existing in-scope filter already enforces who may touch which
-    sections; this function trusts its caller to have validated that
-    `target_section` is actually a valid destination). Returns the number
-    of profiles moved."""
-    moved = StudentProfile.objects.filter(pk__in=student_profile_ids).update(section=target_section)
+def move_students_to_section(student_ids, target_section, semester, actor, is_admin_override=False):
+    """Bulk-sets/moves students' SectionMembership to `target_section` FOR
+    `semester` — restricted by the caller to sections sharing the same
+    program/major/year_level (scoping.py's existing in-scope filter
+    already enforces who may touch which sections; this function trusts
+    its caller to have validated that `target_section` is actually a
+    valid destination). Upserts (a student has at most one section per
+    semester) — "moving" and "adding for the first time" are the same
+    operation here. Returns the number of students touched."""
+    moved = 0
+    for student_id in student_ids:
+        SectionMembership.objects.update_or_create(
+            student_id=student_id, semester=semester, defaults={"section": target_section}
+        )
+        moved += 1
     if moved:
         AcademicSetupChangeLog.objects.create(
             model_name=AcademicSetupChangeLog.ModelName.SECTION,
@@ -795,10 +807,101 @@ def move_students_to_section(student_profile_ids, target_section, actor):
             program=target_section.program,
             major=target_section.major,
             actor=actor,
-            is_admin_override=False,
-            details={"moved_count": moved, "to_section_id": target_section.pk},
+            is_admin_override=is_admin_override,
+            details={"moved_count": moved, "to_section_id": target_section.pk, "semester_id": semester.pk},
         )
     return moved
+
+
+def remove_section_membership(student_ids, semester, actor):
+    """Removes selected students' SectionMembership for `semester`
+    entirely (they stay enrolled on the account level — Program/Major —
+    just without a section for this one term, same as any irregular/
+    join-by-code student). Returns the count removed."""
+    return SectionMembership.objects.filter(student_id__in=student_ids, semester=semester).delete()[0]
+
+
+def copy_section_membership_to_semester(section, from_semester, to_semester, actor):
+    """"Copy from previous semester" — every student who was a member of
+    `section` in `from_semester` becomes a member of the SAME section in
+    `to_semester` (e.g. 1st Sem -> 2nd Sem of the same academic year).
+    Never overwrites a student who already has a membership for
+    `to_semester` (an irregular already placed elsewhere, or moved
+    manually ahead of time) — returns the count actually added."""
+    existing_student_ids = set(
+        SectionMembership.objects.filter(semester=to_semester).values_list("student_id", flat=True)
+    )
+    added = 0
+    with transaction.atomic():
+        for membership in SectionMembership.objects.filter(section=section, semester=from_semester):
+            if membership.student_id in existing_student_ids:
+                continue
+            SectionMembership.objects.create(student_id=membership.student_id, section=section, semester=to_semester)
+            added += 1
+    if added:
+        AcademicSetupChangeLog.objects.create(
+            model_name=AcademicSetupChangeLog.ModelName.SECTION,
+            object_id=section.pk,
+            object_repr=str(section),
+            action=AcademicSetupChangeLog.Action.STUDENTS_MOVED,
+            program=section.program,
+            major=section.major,
+            actor=actor,
+            is_admin_override=False,
+            details={"copied_count": added, "from_semester_id": from_semester.pk, "to_semester_id": to_semester.pk},
+        )
+    return added
+
+
+def preview_promote_students(section, from_semester, target_section, to_semester):
+    """Preview for the Program Head "Promote" action (e.g. BSED-ENG 1-A ->
+    BSED-ENG 2-A for a new academic year): every student who was a member
+    of `section` in `from_semester`, flagged if they already have a
+    membership for `to_semester` elsewhere (an irregular the UI should
+    leave unchecked by default, not silently move)."""
+    existing_student_ids = set(
+        SectionMembership.objects.filter(semester=to_semester).values_list("student_id", flat=True)
+    )
+    rows = []
+    for membership in (
+        SectionMembership.objects.filter(section=section, semester=from_semester)
+        .select_related("student")
+        .order_by("student__last_name", "student__first_name")
+    ):
+        rows.append(
+            {
+                "student": membership.student,
+                "already_placed": membership.student_id in existing_student_ids,
+            }
+        )
+    return rows
+
+
+def commit_promote_students(student_ids, target_section, to_semester, actor):
+    """Creates a SectionMembership in `target_section`/`to_semester` for
+    each student id, skipping anyone who already has one for that
+    semester (never overwrites). Returns the count actually promoted."""
+    promoted = 0
+    with transaction.atomic():
+        for student_id in student_ids:
+            _, created = SectionMembership.objects.get_or_create(
+                student_id=student_id, semester=to_semester, defaults={"section": target_section}
+            )
+            if created:
+                promoted += 1
+    if promoted:
+        AcademicSetupChangeLog.objects.create(
+            model_name=AcademicSetupChangeLog.ModelName.SECTION,
+            object_id=target_section.pk,
+            object_repr=str(target_section),
+            action=AcademicSetupChangeLog.Action.STUDENTS_MOVED,
+            program=target_section.program,
+            major=target_section.major,
+            actor=actor,
+            is_admin_override=False,
+            details={"promoted_count": promoted, "to_section_id": target_section.pk, "to_semester_id": to_semester.pk},
+        )
+    return promoted
 
 
 def sync_offering_after_section_change(subject_offering):
@@ -917,6 +1020,8 @@ def resolve_join_code(code):
 def check_join_eligibility(class_offering, student):
     """Raises JoinCodeError with a clear, specific reason if `student`
     can't join `class_offering` right now; returns silently if they can."""
+    if not student.id_number:
+        raise JoinCodeError("Your account has no ID number on file yet — ask the Registrar/Admin to add it before joining a class.")
     if not class_offering.join_enabled:
         raise JoinCodeError("This class isn't accepting join requests right now.")
     if not class_offering.semester.is_active:
@@ -1040,17 +1145,15 @@ def bulk_decide_join_requests(join_requests, actor, approve, reason=""):
 
 
 def join_request_section_match(join_request):
-    """True if the requesting student's own section is one of the
-    class's sections -- backs the Pending Requests list's "Matches
-    section X ✓" / "Different section ⚠" badge. None if the student has
-    no section assigned yet. Queries StudentProfile directly rather than
-    `join_request.student.student_profile` -- the reverse-OneToOne
-    accessor can be cached stale on an in-memory `student` instance
-    created before its profile was filled in (e.g. right after the
-    auto-create signal, before Admin assigns a section)."""
-    section_id = StudentProfile.objects.filter(user_id=join_request.student_id).values_list(
-        "section_id", flat=True
-    ).first()
+    """True if the requesting student's SectionMembership for the class's
+    OWN semester is one of the class's sections -- backs the Pending
+    Requests list's "Matches section X ✓" / "Different section ⚠" badge.
+    None if the student has no section membership for that semester (a
+    TCP-style/irregular student, or one who only ever joins by code --
+    this is deliberately not an error)."""
+    section_id = SectionMembership.objects.filter(
+        student_id=join_request.student_id, semester_id=join_request.class_offering.semester_id
+    ).values_list("section_id", flat=True).first()
     if not section_id:
         return None
     return join_request.class_offering.sections.filter(pk=section_id).exists()

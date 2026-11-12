@@ -22,6 +22,7 @@ from .models import (
     Major,
     Program,
     Section,
+    SectionMembership,
     Semester,
     SemesterStatus,
     StudentProfile,
@@ -309,14 +310,14 @@ class ClassListTests(TestCase):
         self.students_in_section = []
         for i in range(3):
             student = make_user(User.Role.STUDENT, f"stud{i}")
-            StudentProfile.objects.filter(user=student).update(program=self.program, section=self.section)
+            StudentProfile.objects.filter(user=student).update(program=self.program)
+            SectionMembership.objects.create(student=student, section=self.section, semester=self.semester)
             self.students_in_section.append(student)
 
         # a student in a different section should NOT get swept in
         self.outside_student = make_user(User.Role.STUDENT, "outside_stud")
-        StudentProfile.objects.filter(user=self.outside_student).update(
-            program=self.program, section=self.other_section
-        )
+        StudentProfile.objects.filter(user=self.outside_student).update(program=self.program)
+        SectionMembership.objects.create(student=self.outside_student, section=self.other_section, semester=self.semester)
 
     def test_add_entire_section_skips_students_already_on_the_list(self):
         # pre-add one student manually
@@ -379,9 +380,11 @@ class SharedClassTests(TestCase):
         self.class_offering.sections.set([self.section_a, self.section_b])
 
         self.student_a = make_user(User.Role.STUDENT, "student_a")
-        StudentProfile.objects.filter(user=self.student_a).update(program=self.program, major=self.major_a, section=self.section_a)
+        StudentProfile.objects.filter(user=self.student_a).update(program=self.program, major=self.major_a)
+        SectionMembership.objects.create(student=self.student_a, section=self.section_a, semester=self.semester)
         self.student_b = make_user(User.Role.STUDENT, "student_b")
-        StudentProfile.objects.filter(user=self.student_b).update(program=self.program, major=self.major_b, section=self.section_b)
+        StudentProfile.objects.filter(user=self.student_b).update(program=self.program, major=self.major_b)
+        SectionMembership.objects.create(student=self.student_b, section=self.section_b, semester=self.semester)
 
         ClassRosterEntry.objects.create(student=self.student_a, class_offering=self.class_offering)
         ClassRosterEntry.objects.create(student=self.student_b, class_offering=self.class_offering)
@@ -508,7 +511,8 @@ class RosterImportTests(TestCase):
         self.assertEqual(new_user.role, User.Role.STUDENT)
         self.assertTrue(new_user.must_change_password)
         self.assertTrue(ClassRosterEntry.objects.filter(student=new_user, class_offering=self.class_offering).exists())
-        self.assertEqual(new_user.student_profile.section, self.section)
+        membership = SectionMembership.objects.get(student=new_user, semester=self.class_offering.semester)
+        self.assertEqual(membership.section, self.section)
 
 
 class DocxParserTests(TestCase):
@@ -1202,6 +1206,7 @@ class CopyClassesPreviousSemesterTests(TestCase):
 class AYWizardTestBase(TestCase):
     def setUp(self):
         self.ay_2026 = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay_2026, term=Term.FIRST, is_active=True)
         self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
         self.tcp = Program.objects.create(code="TCP", name="Teacher Certificate Program")
         self.sec1 = Section.objects.create(program=self.program, academic_year=self.ay_2026, year_level=1, name="")
@@ -1212,9 +1217,8 @@ class AYWizardTestBase(TestCase):
 
     def _make_student(self, username, section):
         student = make_user(User.Role.STUDENT, username, id_number=username)
-        StudentProfile.objects.filter(user=student).update(
-            program=section.program, section=section, year_level=section.year_level
-        )
+        StudentProfile.objects.filter(user=student).update(program=section.program)
+        SectionMembership.objects.create(student=student, section=section, semester=self.semester)
         return student
 
 
@@ -1276,11 +1280,13 @@ class AYWizardExclusionTests(AYWizardTestBase):
         for row in rows:
             row["excluded"] = True
 
-        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin)
+        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin, source_academic_year=self.ay_2026)
 
+        membership = SectionMembership.objects.filter(student=student, semester=self.semester).first()
+        self.assertEqual(membership.section, self.sec1)
         student.student_profile.refresh_from_db()
-        self.assertEqual(student.student_profile.section, self.sec1)
         self.assertEqual(student.student_profile.status, StudentProfile.Status.ACTIVE)
+        self.assertFalse(SectionMembership.objects.filter(student=student, semester__academic_year__start_year=2027).exists())
 
 
 class AYWizardTransactionTests(TransactionTestCase):
@@ -1323,7 +1329,7 @@ class AYWizardAuditLogTests(AYWizardTestBase):
         new_sections = step2_preview_sections(self.ay_2026)
         rows = step3_preview_promotions(self.ay_2026, new_sections)
 
-        step4_commit(2027, ["FIRST", "SECOND"], new_sections, rows, self.admin)
+        step4_commit(2027, ["FIRST", "SECOND"], new_sections, rows, self.admin, source_academic_year=self.ay_2026)
 
         logs = AuditLog.objects.filter(action=AuditLog.Action.ACADEMIC_YEAR_WIZARD_RUN)
         self.assertEqual(logs.count(), 1)
@@ -1343,7 +1349,7 @@ class AYWizardPastDataUntouchedTests(AYWizardTestBase):
 
         new_sections = step2_preview_sections(self.ay_2026)
         rows = step3_preview_promotions(self.ay_2026, new_sections)
-        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin)
+        step4_commit(2027, ["FIRST"], new_sections, rows, self.admin, source_academic_year=self.ay_2026)
 
         class_offering.refresh_from_db()
         self.assertIn(self.sec1, class_offering.sections.all())
@@ -2678,10 +2684,9 @@ class SubjectOfferingTestBase(TestCase):
         profile = user.student_profile
         profile.program = section.program
         profile.major = section.major
-        profile.year_level = section.year_level
-        profile.section = section
         profile.status = status
         profile.save()
+        SectionMembership.objects.create(student=user, section=section, semester=self.semester)
         return user
 
 
@@ -3016,9 +3021,8 @@ class ClosedSemesterReadOnlyTests(TestCase):
         self.student = make_user(User.Role.STUDENT, "closed_sem_student")
         profile = self.student.student_profile
         profile.program = self.program
-        profile.section = self.section
-        profile.year_level = 1
         profile.save()
+        SectionMembership.objects.create(student=self.student, section=self.section, semester=self.semester)
         self.roster_entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
         self.admin = make_user(User.Role.ADMIN, "closed_sem_admin", is_staff=True, is_superuser=True)
 
@@ -3213,6 +3217,7 @@ class SectionLetterTests(TestCase):
 class MoveStudentsToSectionTests(TestCase):
     def setUp(self):
         self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
         self.program = Program.objects.create(code="BSED", name="BS Education")
         self.major = Major.objects.create(program=self.program, code="ENG", name="English")
         self.section_a = Section.objects.create(
@@ -3225,19 +3230,18 @@ class MoveStudentsToSectionTests(TestCase):
         profile = self.student.student_profile
         profile.program = self.program
         profile.major = self.major
-        profile.year_level = 1
-        profile.section = self.section_a
         profile.save()
+        SectionMembership.objects.create(student=self.student, section=self.section_a, semester=self.semester)
         self.admin = make_user(User.Role.ADMIN, "move_admin", is_staff=True, is_superuser=True)
 
     def test_moves_student_and_logs(self):
         from .models import AcademicSetupChangeLog
         from .services import move_students_to_section
 
-        moved = move_students_to_section([self.student.student_profile.pk], self.section_b, self.admin)
+        moved = move_students_to_section([self.student.pk], self.section_b, self.semester, self.admin)
         self.assertEqual(moved, 1)
-        self.student.student_profile.refresh_from_db()
-        self.assertEqual(self.student.student_profile.section, self.section_b)
+        membership = SectionMembership.objects.get(student=self.student, semester=self.semester)
+        self.assertEqual(membership.section, self.section_b)
 
         log = AcademicSetupChangeLog.objects.get(action=AcademicSetupChangeLog.Action.STUDENTS_MOVED)
         self.assertEqual(log.details["moved_count"], 1)
@@ -3247,7 +3251,7 @@ class MoveStudentsToSectionTests(TestCase):
         from .models import AcademicSetupChangeLog
         from .services import move_students_to_section
 
-        moved = move_students_to_section([], self.section_b, self.admin)
+        moved = move_students_to_section([], self.section_b, self.semester, self.admin)
         self.assertEqual(moved, 0)
         self.assertFalse(AcademicSetupChangeLog.objects.filter(action=AcademicSetupChangeLog.Action.STUDENTS_MOVED).exists())
 
@@ -3293,11 +3297,10 @@ class SectionsPageRedesignTests(TeachingAssignmentTestBase):
     def test_section_students_page_scoped(self):
         student = make_user(User.Role.STUDENT, "section_stud1")
         profile = student.student_profile
-        profile.section = self.section
         profile.program = self.program_b
         profile.major = self.major_eng
-        profile.year_level = 1
         profile.save()
+        SectionMembership.objects.create(student=student, section=self.section, semester=self.semester)
 
         self.client.force_login(self.head_b)
         response = self.client.get(reverse("academics:section_students", args=[self.section.pk]))
@@ -3312,11 +3315,10 @@ class SectionsPageRedesignTests(TeachingAssignmentTestBase):
     def test_move_students_only_offers_same_year_level_sections(self):
         student = make_user(User.Role.STUDENT, "section_stud3")
         profile = student.student_profile
-        profile.section = self.section
         profile.program = self.program_b
         profile.major = self.major_eng
-        profile.year_level = 1
         profile.save()
+        SectionMembership.objects.create(student=student, section=self.section, semester=self.semester)
         other_year_section = Section.objects.create(
             program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=2, name="A"
         )
@@ -3332,11 +3334,10 @@ class SectionsPageRedesignTests(TeachingAssignmentTestBase):
     def test_move_students_via_post(self):
         student = make_user(User.Role.STUDENT, "section_stud2")
         profile = student.student_profile
-        profile.section = self.section
         profile.program = self.program_b
         profile.major = self.major_eng
-        profile.year_level = 1
         profile.save()
+        SectionMembership.objects.create(student=student, section=self.section, semester=self.semester)
         target = Section.objects.create(
             program=self.program_b, major=self.major_eng, academic_year=self.ay, year_level=1, name="B"
         )
@@ -3344,11 +3345,11 @@ class SectionsPageRedesignTests(TeachingAssignmentTestBase):
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:section_students_move", args=[self.section.pk]),
-            {"target_section": target.pk, "profile_ids": [profile.pk]},
+            {"semester": self.semester.pk, "target_section": target.pk, "student_ids": [student.pk]},
         )
         self.assertEqual(response.status_code, 204)
-        profile.refresh_from_db()
-        self.assertEqual(profile.section, target)
+        membership = SectionMembership.objects.get(student=student, semester=self.semester)
+        self.assertEqual(membership.section, target)
 
 
 class SectionShortLabelTests(TestCase):
@@ -3424,10 +3425,9 @@ class OfferingMatrixAndManageSectionsTests(TestCase):
         self.student = make_user(User.Role.STUDENT, "matrix_student")
         profile = self.student.student_profile
         profile.program = self.program
-        profile.year_level = 1
-        profile.section = self.section_a
         profile.status = StudentProfile.Status.ACTIVE
         profile.save()
+        SectionMembership.objects.create(student=self.student, section=self.section_a, semester=self.semester)
 
     def test_default_combine_off_creates_one_class_per_section(self):
         from .services import commit_subject_offerings, preview_subject_offerings
@@ -3629,8 +3629,9 @@ class ClassJoinCodeTestBase(TestCase):
         self.class_offering.sections.set([self.section])
 
         self.student = make_user(User.Role.STUDENT, "join_student", id_number="2026-0099")
-        StudentProfile.objects.update_or_create(
-            user=self.student, defaults={"program": self.program, "section": self.section}
+        StudentProfile.objects.update_or_create(user=self.student, defaults={"program": self.program})
+        SectionMembership.objects.update_or_create(
+            student=self.student, semester=self.semester, defaults={"section": self.section}
         )
 
     def _request_join(self, student=None, code=None):
@@ -3713,6 +3714,12 @@ class JoinRequestFlowTests(ClassJoinCodeTestBase):
         with self.assertRaises(ValidationError):
             resolve_join_code("ZZZZZZZ")
 
+    def test_student_with_no_id_number_cannot_join(self):
+        no_id_student = make_user(User.Role.STUDENT, "join_student_no_id")
+        self.assertIsNone(no_id_student.id_number)
+        with self.assertRaises(ValidationError):
+            self._request_join(student=no_id_student)
+
     def test_join_disabled_rejected(self):
         self.class_offering.join_enabled = False
         self.class_offering.save(update_fields=["join_enabled"])
@@ -3744,9 +3751,10 @@ class JoinRequestFlowTests(ClassJoinCodeTestBase):
         join_request = self._request_join()
         self.assertTrue(join_request_section_match(join_request))
 
-        other_student = make_user(User.Role.STUDENT, "join_student_other")
-        StudentProfile.objects.update_or_create(
-            user=other_student, defaults={"program": self.program, "section": self.other_section}
+        other_student = make_user(User.Role.STUDENT, "join_student_other", id_number="2026-0100")
+        StudentProfile.objects.update_or_create(user=other_student, defaults={"program": self.program})
+        SectionMembership.objects.update_or_create(
+            student=other_student, semester=self.semester, defaults={"section": self.other_section}
         )
         other_request = self._request_join(student=other_student)
         self.assertFalse(join_request_section_match(other_request))
@@ -3867,7 +3875,7 @@ class ClassJoinViewTests(ClassJoinCodeTestBase):
         join_request = self._request_join()
         approve_join_request(join_request, self.instructor)
 
-        other_student = make_user(User.Role.STUDENT, "join_student_pending_view")
+        other_student = make_user(User.Role.STUDENT, "join_student_pending_view", id_number="2026-0101")
         StudentProfile.objects.update_or_create(user=other_student, defaults={"program": self.program})
         pending_request = self._request_join(student=other_student)
 

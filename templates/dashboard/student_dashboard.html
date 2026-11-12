@@ -7,8 +7,7 @@
 <p class="mb-4 -mt-2 text-sm text-gray-600">
     {{ user.student_profile.program.code|default:"—" }}
     {% if user.student_profile.major %}· {{ user.student_profile.major.code }}{% endif %}
-    {% if user.student_profile.year_level %}· {{ user.student_profile.get_year_level_display }}{% endif %}
-    {% if user.student_profile.section %}· {{ user.student_profile.section }}{% endif %}
+    {% if current_membership %}· {{ current_membership.section.get_year_level_display }} · {{ current_membership.section }}{% endif %}
 </p>
 
 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">

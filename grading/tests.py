@@ -70,7 +70,7 @@ class GradingTestBase(TestCase):
         self.class_offering.sections.set([self.section])
 
         self.student = make_user(User.Role.STUDENT, "student1", id_number="2026-0001")
-        StudentProfile.objects.update_or_create(user=self.student, defaults={"program": self.program, "section": self.section})
+        StudentProfile.objects.update_or_create(user=self.student, defaults={"program": self.program})
         self.roster_entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
 
         self.template = GradingTemplate.objects.create(name="CITCI Default", is_default=True)

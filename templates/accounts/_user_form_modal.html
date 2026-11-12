@@ -94,25 +94,10 @@
                     </select>
                 </div>
             </div>
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label for="id_year_level" class="mb-1 block text-sm font-medium text-gray-700">Year Level</label>
-                    <select name="year_level" id="id_year_level"
-                            hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
-                            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                        <option value="">—</option>
-                        <option value="1" {% if form.year_level.value == "1" %}selected{% endif %}>1st Year</option>
-                        <option value="2" {% if form.year_level.value == "2" %}selected{% endif %}>2nd Year</option>
-                        <option value="3" {% if form.year_level.value == "3" %}selected{% endif %}>3rd Year</option>
-                        <option value="4" {% if form.year_level.value == "4" %}selected{% endif %}>4th Year</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="{{ form.section.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Section</label>
-                    {{ form.section }}
-                    {% for error in form.section.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
-                </div>
-            </div>
+            <p class="text-xs text-gray-600">
+                Year level and section change every semester — manage them from
+                <span class="font-medium">My Program → Sections</span> (Program Head), not here.
+            </p>
         </div>
 
         <div class="flex justify-end gap-2 pt-2">

@@ -35,6 +35,7 @@ from academics.models import (
     ClassRosterEntry,
     Program,
     Section,
+    SectionMembership,
     Semester,
     StudentProfile,
     Subject,
@@ -93,7 +94,7 @@ class Command(BaseCommand):
             sections_past = self._seed_sections(programs, past_year)
             sections_current = self._seed_sections(programs, current_year)
             subjects = self._seed_subjects()
-            students = self._seed_students(password_hash, programs, sections_current)
+            students = self._seed_students(password_hash, programs, sections_current, sem_current)
 
             for semester, sections, is_past in (
                 (sem_past_1, sections_past, True),
@@ -188,7 +189,7 @@ class Command(BaseCommand):
             instructors.append(instructor)
         return instructors
 
-    def _seed_students(self, password_hash, programs, sections_current):
+    def _seed_students(self, password_hash, programs, sections_current, semester_current):
         """bulk_create (bypassing the StudentProfile auto-create signal,
         which only fires on save()) is deliberate here — 450 individual
         .create() calls plus 450 signal-fired profile creations would be
@@ -224,16 +225,26 @@ class Command(BaseCommand):
             sections_by_program.setdefault(section.program_id, []).append(section)
 
         profiles_by_user = {p.user_id: p for p in StudentProfile.objects.filter(user__in=students)}
+        existing_membership_user_ids = set(
+            SectionMembership.objects.filter(semester=semester_current, student__in=students).values_list(
+                "student_id", flat=True
+            )
+        )
         new_profiles = []
+        new_memberships = []
         for index, student in enumerate(students):
             program = programs[index % len(programs)]
             program_sections = sections_by_program[program.id]
             section = program_sections[index % len(program_sections)]
+            if student.id not in existing_membership_user_ids:
+                new_memberships.append(SectionMembership(student=student, section=section, semester=semester_current))
             if student.id in profiles_by_user:
                 continue
-            new_profiles.append(StudentProfile(user=student, program=program, major=None, year_level=1, section=section))
+            new_profiles.append(StudentProfile(user=student, program=program, major=None))
         if new_profiles:
             StudentProfile.objects.bulk_create(new_profiles)
+        if new_memberships:
+            SectionMembership.objects.bulk_create(new_memberships)
 
         return students
 
@@ -321,11 +332,12 @@ class Command(BaseCommand):
 
     def _seed_roster(self, class_offering, students):
         section_ids = set(class_offering.sections.values_list("id", flat=True))
-        wanted_students = [
-            s
-            for s in students
-            if StudentProfile.objects.filter(user=s, section_id__in=section_ids).exists()
-        ]
+        member_student_ids = set(
+            SectionMembership.objects.filter(
+                semester=class_offering.semester, section_id__in=section_ids, student__in=students
+            ).values_list("student_id", flat=True)
+        )
+        wanted_students = [s for s in students if s.id in member_student_ids]
         existing_ids = set(
             ClassRosterEntry.objects.filter(class_offering=class_offering).values_list("student_id", flat=True)
         )

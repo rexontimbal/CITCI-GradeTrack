@@ -33,17 +33,6 @@
     <option value="">All majors</option>
             {% for m in majors %}<option value="{{ m.pk }}">{{ m }}</option>{% endfor %}
         </select>
-        <select name="year_level" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All year levels">
-    <option value="">All year levels</option>
-            <option value="1">1st Year</option>
-            <option value="2">2nd Year</option>
-            <option value="3">3rd Year</option>
-            <option value="4">4th Year</option>
-        </select>
-        <select name="section" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All sections">
-    <option value="">All sections</option>
-            {% for s in sections %}<option value="{{ s.pk }}">{{ s }}</option>{% endfor %}
-        </select>
         {% endif %}
     </form>
 
@@ -65,7 +54,13 @@
             <tbody class="divide-y divide-gray-100">
                 {% for u in page_obj %}
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-gray-700">{{ u.id_number|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-700">
+                        {% if u.id_number %}
+                        {{ u.id_number }}
+                        {% elif u.role == "STUDENT" %}
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">No ID number</span>
+                        {% else %}—{% endif %}
+                    </td>
                     <td class="px-4 py-3 font-medium text-gray-900">{{ u.full_name }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ u.username }}</td>
                     <td class="px-4 py-3">
@@ -73,7 +68,11 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">
                         {% if u.role == "STUDENT" and u.student_profile %}
-                            {{ u.student_profile.section|default:"—" }}
+                            {% if u.student_profile.program %}{{ u.student_profile.program.code }}{% if u.student_profile.major %} – {{ u.student_profile.major.code }}{% endif %}{% endif %}
+                            {% with membership=u.current_section_memberships.0 %}
+                            {% if membership %} · {{ membership.section.short_label }} ({{ membership.semester }}){% endif %}
+                            {% endwith %}
+                            {% if not u.student_profile.program %}—{% endif %}
                         {% elif u.role == "PROGRAM_HEAD" %}
                             {{ u.program_head_scope_label|default:"—" }}
                         {% else %}—{% endif %}

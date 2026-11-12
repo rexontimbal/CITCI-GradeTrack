@@ -6,7 +6,7 @@ that's only ever available right after that import's confirm step."""
 
 import re
 
-from academics.models import Program, Section, StudentProfile
+from academics.models import Program, Section, SectionMembership, StudentProfile
 from core.importing import get_cell, parse_spreadsheet_file
 
 from .models import User
@@ -40,7 +40,8 @@ def _slugify_username(last_name, taken):
     return username
 
 
-def build_student_preview(index, data_rows, active_academic_year):
+def build_student_preview(index, data_rows, active_semester):
+    active_academic_year = active_semester.academic_year if active_semester else None
     preview = []
     for row_number, row in enumerate(data_rows, start=2):
         if row is None or not any(row):
@@ -99,28 +100,36 @@ def build_student_preview(index, data_rows, active_academic_year):
                 preview.append(entry)
                 continue
 
-        if not active_academic_year:
-            entry["kind"] = "invalid"
-            entry["reason"] = "No active semester — set one before importing students."
-            preview.append(entry)
-            continue
-
-        section = Section.objects.filter(
-            program=program, major=major, academic_year=active_academic_year, year_level=year_level_int
-        ).first()
-        if not section:
-            entry["kind"] = "invalid"
-            entry["reason"] = "No matching section for this program/major/year level in the active academic year."
-            preview.append(entry)
-            continue
+        # Year Level/Section are optional now (per-semester SectionMembership,
+        # not account-level) -- an old import file that still has this column
+        # keeps working: if a value is given, it's resolved to a section and
+        # becomes a SectionMembership for the active semester at commit time;
+        # if blank, the row is still valid with no section membership (a
+        # perfectly normal student who joins classes by code, or whose
+        # section Admin will set from the Program Head's Sections page).
+        section = None
+        if year_level_int is not None:
+            if not active_academic_year:
+                entry["kind"] = "invalid"
+                entry["reason"] = "No active semester — set one before importing a Year Level."
+                preview.append(entry)
+                continue
+            section = Section.objects.filter(
+                program=program, major=major, academic_year=active_academic_year, year_level=year_level_int
+            ).first()
+            if not section:
+                entry["kind"] = "invalid"
+                entry["reason"] = "No matching section for this program/major/year level in the active academic year."
+                preview.append(entry)
+                continue
 
         # Session storage is JSON (django.contrib.sessions), so only plain
         # values go in the preview row — never model instances; commit_student_import
         # re-fetches by these IDs.
         entry["program_id"] = program.pk
         entry["major_id"] = major.pk if major else None
-        entry["year_level_int"] = year_level_int
-        entry["section_id"] = section.pk
+        entry["section_id"] = section.pk if section else None
+        entry["semester_id"] = active_semester.pk if section else None
         entry["kind"] = "update" if User.objects.filter(id_number=id_number).exists() else "new"
         preview.append(entry)
 
@@ -158,10 +167,12 @@ def commit_student_import(rows):
             defaults={
                 "program_id": row["program_id"],
                 "major_id": row["major_id"],
-                "year_level": row["year_level_int"],
-                "section_id": row["section_id"],
             },
         )
+        if row.get("section_id") and row.get("semester_id"):
+            SectionMembership.objects.update_or_create(
+                student=user, semester_id=row["semester_id"], defaults={"section_id": row["section_id"]}
+            )
         row["temp_password"] = temp_password
         row["username"] = user.username
 

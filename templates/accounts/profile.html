@@ -24,8 +24,8 @@
             {% if user.is_student %}
             <div class="flex justify-between py-2"><dt class="text-gray-600">Program</dt><dd class="font-medium text-gray-900">{{ user.student_profile.program.code|default:"—" }}</dd></div>
             <div class="flex justify-between py-2"><dt class="text-gray-600">Major</dt><dd class="font-medium text-gray-900">{{ user.student_profile.major.code|default:"—" }}</dd></div>
-            <div class="flex justify-between py-2"><dt class="text-gray-600">Year Level</dt><dd class="font-medium text-gray-900">{{ user.student_profile.get_year_level_display|default:"—" }}</dd></div>
-            <div class="flex justify-between py-2"><dt class="text-gray-600">Section</dt><dd class="font-medium text-gray-900">{{ user.student_profile.section|default:"—" }}</dd></div>
+            <div class="flex justify-between py-2"><dt class="text-gray-600">Year Level</dt><dd class="font-medium text-gray-900">{{ current_membership.section.get_year_level_display|default:"—" }}</dd></div>
+            <div class="flex justify-between py-2"><dt class="text-gray-600">Section</dt><dd class="font-medium text-gray-900">{{ current_membership.section|default:"—" }}</dd></div>
             {% elif user.is_instructor %}
             <div class="flex justify-between py-2"><dt class="text-gray-600">Classes</dt><dd class="font-medium text-gray-900">{{ classes_count }}</dd></div>
             {% endif %}

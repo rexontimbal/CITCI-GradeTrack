@@ -9,7 +9,7 @@ from django.utils.crypto import get_random_string
 from accounts.models import User
 from core.importing import SpreadsheetImportError, get_cell, parse_spreadsheet_file  # noqa: F401 (re-exported)
 
-from .models import ClassRosterEntry, StudentProfile
+from .models import ClassRosterEntry, SectionMembership, StudentProfile
 
 REQUIRED_HEADERS = ["id number", "last name", "first name"]
 OPTIONAL_HEADERS = ["middle name"]
@@ -97,9 +97,13 @@ def commit_import(class_offering, rows, target_section):
             defaults={
                 "program": target_section.program,
                 "major": target_section.major,
-                "year_level": target_section.year_level,
-                "section": target_section,
             },
+        )
+        # Section/year level are per-semester (SectionMembership), scoped
+        # to THIS class's own semester -- never overwrites a membership
+        # the student already has for some other semester.
+        SectionMembership.objects.update_or_create(
+            student=user, semester=class_offering.semester, defaults={"section": target_section}
         )
 
         _, was_created = ClassRosterEntry.objects.get_or_create(

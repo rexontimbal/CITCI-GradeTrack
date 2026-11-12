@@ -43,7 +43,7 @@
                     <tr class="hover:bg-gray-50">
                         <td class="px-4 py-3 text-gray-700">{{ entry.student.id_number|default:"—" }}</td>
                         <td class="px-4 py-3 font-medium text-gray-900">{{ entry.student.full_name }}</td>
-                        <td class="px-4 py-3 text-gray-700">{{ entry.student.student_profile.section|default:"—" }}</td>
+                        <td class="px-4 py-3 text-gray-700">{{ entry.membership_section|default:"—" }}</td>
                         <td class="px-4 py-3">
                             {% if entry.status == "ACTIVE" %}
                             <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>

@@ -332,7 +332,7 @@ class GwaTests(TestCase):
         self.program = Program.objects.create(code="BSED", name="BS Education")
         self.section = Section.objects.create(program=self.program, academic_year=self.academic_year, year_level=1, name="A")
         self.student = make_user(User.Role.STUDENT, "gwa_student", id_number="2026-9999")
-        StudentProfile.objects.update_or_create(user=self.student, defaults={"program": self.program, "section": self.section})
+        StudentProfile.objects.update_or_create(user=self.student, defaults={"program": self.program})
         self.instructor = make_user(User.Role.INSTRUCTOR, "gwa_prof")
 
     def _make_entry(self, subject_code, units, final_grade, remarks="PASSED", sheet_status=GradeSheetStatus.RELEASED, roster_status=ClassRosterEntry.Status.ACTIVE):

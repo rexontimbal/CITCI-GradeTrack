@@ -2,50 +2,105 @@
 {% load sidebar_icons %}
 {% block page_title %}Students — {{ section }}{% endblock %}
 {% block content %}
-{% include "partials/_page_subtitle.html" with subtitle="Active students currently in this section." %}
 
-{% if profiles %}
-<form hx-post="{% url 'academics:section_students_move' section.pk %}" hx-swap="none">
-    {% csrf_token %}
-    <div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
-        <div class="min-w-[220px]">
-            <label class="mb-1 block text-xs font-medium text-gray-700">Move selected students to</label>
-            <select name="target_section" class="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm" {% if not target_sections %}disabled{% endif %}>
-                {% for target in target_sections %}
-                <option value="{{ target.pk }}">{{ target }}</option>
-                {% empty %}
-                <option value="">No other sections at this year level yet</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="h-10 rounded-lg bg-brand-accent-600 px-4 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700" {% if not target_sections %}disabled{% endif %}>
-            Move selected
-        </button>
-    </div>
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <form method="get" class="flex items-center gap-2 text-sm">
+        <label for="semester-select" class="text-gray-600">Semester:</label>
+        <select id="semester-select" name="semester" onchange="this.form.submit()"
+                class="h-10 rounded-lg border border-gray-300 px-3 text-sm">
+            {% for s in semesters %}
+            <option value="{{ s.pk }}" {% if semester and s.pk == semester.pk %}selected{% endif %}>{{ s.get_term_display }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    {% if previous_semester %}
+    <button type="button" hx-post="{% url 'academics:section_students_copy_previous' section.pk %}?semester={{ semester.pk }}"
+            hx-vals='{"semester": "{{ semester.pk }}"}' hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Copy from {{ previous_semester.get_term_display }}
+    </button>
+    {% endif %}
+</div>
 
-    <div class="overflow-x-auto gold-scroll rounded-2xl border border-gray-200 bg-white">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                <tr>
-                    <th class="px-4 py-3"><input type="checkbox" aria-label="Select all" onclick="document.querySelectorAll('.profile-checkbox').forEach(c => c.checked = this.checked)"></th>
-                    <th class="px-4 py-3">Student</th>
-                    <th class="px-4 py-3">ID Number</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-                {% for profile in profiles %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3"><input type="checkbox" name="profile_ids" value="{{ profile.pk }}" class="profile-checkbox"></td>
-                    <td class="px-4 py-3 font-medium text-gray-900">{{ profile.user.full_name }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ profile.user.id_number }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+<form hx-post="{% url 'academics:section_students_add' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
+    <input type="hidden" name="semester" value="{{ semester.pk }}">
+    <div class="min-w-[260px] flex-1">
+        <label class="mb-1 block text-xs font-medium text-gray-700">Add students to this section</label>
+        <select name="student_ids" multiple size="1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" style="height:42px;">
+            {% for student in addable_students %}
+            <option value="{{ student.pk }}">{{ student.full_name }} ({{ student.id_number|default:"no ID" }})</option>
+            {% empty %}
+            <option value="" disabled>No eligible students to add</option>
+            {% endfor %}
+        </select>
     </div>
+    <button type="button"
+            @click="htmx.ajax('POST', '{% url 'academics:section_students_add' section.pk %}', {source: this.closest('form'), swap: 'none'})"
+            class="h-10 rounded-lg bg-brand-accent-600 px-4 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        Add selected
+    </button>
 </form>
+
+{% if memberships %}
+<div x-data="{ selected: [] }">
+<div class="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
+    <div class="min-w-[220px]">
+        <label class="mb-1 block text-xs font-medium text-gray-700">Move selected students to</label>
+        <select id="target-section-select" class="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm" {% if not target_sections %}disabled{% endif %}>
+            {% for target in target_sections %}
+            <option value="{{ target.pk }}">{{ target }}</option>
+            {% empty %}
+            <option value="">No other sections at this year level yet</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="button" :disabled="selected.length === 0"
+            @click="htmx.ajax('POST', '{% url 'academics:section_students_move' section.pk %}', {values: {semester: '{{ semester.pk }}', target_section: document.getElementById('target-section-select').value, student_ids: selected}, swap: 'none'})"
+            class="h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+        Move selected
+    </button>
+    <button type="button" :disabled="selected.length === 0"
+            @click="htmx.ajax('POST', '{% url 'academics:section_students_remove' section.pk %}', {values: {semester: '{{ semester.pk }}', student_ids: selected}, swap: 'none'})"
+            class="h-10 rounded-lg border border-red-300 px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
+        Remove selected
+    </button>
+    <a href="{% url 'academics:section_promote' section.pk %}?semester={{ semester.pk }}"
+       class="ml-auto h-10 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center"
+       hx-get="{% url 'academics:section_promote' section.pk %}?semester={{ semester.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click.prevent="modalOpen=true">
+        Promote…
+    </a>
+</div>
+
+<div class="overflow-x-auto gold-scroll rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+                <th class="px-4 py-3">
+                    <input type="checkbox" aria-label="Select all"
+                           @change="selected = $event.target.checked ? [{% for m in memberships %}{{ m.student.pk }}{% if not forloop.last %},{% endif %}{% endfor %}] : []">
+                </th>
+                <th class="px-4 py-3">Student</th>
+                <th class="px-4 py-3">ID Number</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for membership in memberships %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">
+                    <input type="checkbox" value="{{ membership.student.pk }}"
+                           @change="$event.target.checked ? selected.push({{ membership.student.pk }}) : selected = selected.filter(i => i !== {{ membership.student.pk }})"
+                           :checked="selected.includes({{ membership.student.pk }})">
+                </td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ membership.student.full_name }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ membership.student.id_number|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+</div>
 {% else %}
-{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="No active students are assigned to this section." %}
+{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="No students are in this section for this semester." %}
 {% endif %}
 
 <script>

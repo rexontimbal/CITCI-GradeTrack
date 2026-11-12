@@ -8,7 +8,7 @@ which is one transaction."""
 
 from django.db import transaction
 
-from .models import AcademicYear, Section, Semester, StudentProfile, Term
+from .models import AcademicYear, Section, SectionMembership, Semester, StudentProfile, Term
 
 
 def step1_preview(start_year):
@@ -43,24 +43,44 @@ def _section_key(program_id, major_id, year_level, name):
     return (program_id, major_id, year_level, name)
 
 
+def _latest_semester_membership_subquery(source_academic_year):
+    """The ONE semester of `source_academic_year` to read promotion-time
+    section membership from: the active one if it belongs to this
+    academic year, else the latest term that exists for it. A student can
+    have at most one membership per semester, but could have different
+    ones across 1st/2nd Sem -- this picks whichever semester is the
+    "current" snapshot of where students actually are."""
+    semester = Semester.objects.filter(academic_year=source_academic_year, is_active=True).first()
+    if semester is None:
+        semester = Semester.objects.filter(academic_year=source_academic_year).order_by("-term").first()
+    return semester
+
+
 def step3_preview_promotions(source_academic_year, new_sections):
-    """Every ACTIVE student currently in a section under source_academic_year:
-    resolves to either a promotion (year_level + 1, same program/major/name
-    in the new year) or COMPLETED (4th year, or no year_level at all — e.g.
-    TCP). `new_sections` is step 2's (not-yet-created) list — resolved by
-    key, never guessed. A promotion target not present in that list is
-    reported as unresolved rather than silently skipped or invented."""
+    """Every ACTIVE student with a SectionMembership in source_academic_year's
+    "current" semester (see _latest_semester_membership_subquery): resolves
+    to either a promotion (year_level + 1, same program/major/name in the
+    new year) or COMPLETED (4th year, or no year_level at all — e.g. TCP).
+    `new_sections` is step 2's (not-yet-created) list — resolved by key,
+    never guessed. A promotion target not present in that list is reported
+    as unresolved rather than silently skipped or invented."""
     new_section_keys = {
         _section_key(s["program_id"], s["major_id"], s["year_level"], s["name"]) for s in new_sections
     }
-    profiles = (
-        StudentProfile.objects.filter(status=StudentProfile.Status.ACTIVE, section__academic_year=source_academic_year)
-        .select_related("user", "section", "section__program", "section__major")
-        .order_by("section__program__code", "section__year_level", "user__last_name")
+    source_semester = _latest_semester_membership_subquery(source_academic_year)
+    if source_semester is None:
+        return []
+
+    memberships = (
+        SectionMembership.objects.filter(
+            semester=source_semester, student__student_profile__status=StudentProfile.Status.ACTIVE
+        )
+        .select_related("student", "section", "section__program", "section__major")
+        .order_by("section__program__code", "section__year_level", "student__last_name")
     )
     rows = []
-    for profile in profiles:
-        section = profile.section
+    for membership in memberships:
+        section = membership.section
         will_complete = section.year_level is None or section.year_level >= 4
         target_key = None
         unresolved = False
@@ -69,8 +89,8 @@ def step3_preview_promotions(source_academic_year, new_sections):
             unresolved = target_key not in new_section_keys
         rows.append(
             {
-                "profile_id": profile.id,
-                "student": profile.user,
+                "profile_id": membership.student_id,
+                "student": membership.student,
                 "current_section": section,
                 "will_complete": will_complete,
                 "target_key": target_key,
@@ -81,12 +101,15 @@ def step3_preview_promotions(source_academic_year, new_sections):
     return rows
 
 
-def step4_commit(start_year, term_values, sections_to_create, promotion_rows, actor, term_dates=None):
+def step4_commit(start_year, term_values, sections_to_create, promotion_rows, actor, term_dates=None, source_academic_year=None):
     """One atomic transaction: creates the AcademicYear + its Semesters,
     creates every previewed Section, promotes/completes every non-excluded
-    student, and writes one AuditLog row summarizing the run (counts only
-    — never a name/ID number). Never touches ClassOffering/GradeSheet/
-    GradeSheetEntry rows in any prior semester.
+    student (a promotion creates a SectionMembership in the new academic
+    year's semester matching the SOURCE semester's term -- e.g. a 1st Sem
+    promotion lands the student in the new year's own 1st Sem), and writes
+    one AuditLog row summarizing the run (counts only — never a name/ID
+    number). Never touches ClassOffering/GradeSheet/GradeSheetEntry rows
+    in any prior semester.
 
     `term_dates` (optional): {term_value: (start_iso_or_None, end_iso_or_None)}
     from step 1's date fields, already validated there (range, within the
@@ -100,17 +123,23 @@ def step4_commit(start_year, term_values, sections_to_create, promotion_rows, ac
     completed = 0
     excluded = 0
     term_dates = term_dates or {}
+    source_term = None
+    if source_academic_year is not None:
+        source_semester = _latest_semester_membership_subquery(source_academic_year)
+        source_term = source_semester.term if source_semester else None
 
     with transaction.atomic():
         academic_year = AcademicYear.objects.create(start_year=start_year)
+        created_semesters = {}
         for term in term_values:
             start_iso, end_iso = term_dates.get(term, (None, None))
-            Semester.objects.create(
+            created_semesters[term] = Semester.objects.create(
                 academic_year=academic_year,
                 term=term,
                 start_date=_date.fromisoformat(start_iso) if start_iso else None,
                 end_date=_date.fromisoformat(end_iso) if end_iso else None,
             )
+        target_semester = created_semesters.get(source_term) if source_term else None
 
         created_sections = {}
         for s in sections_to_create:
@@ -124,7 +153,7 @@ def step4_commit(start_year, term_values, sections_to_create, promotion_rows, ac
             if row["excluded"]:
                 excluded += 1
                 continue
-            profile = StudentProfile.objects.filter(pk=row["profile_id"]).first()
+            profile = StudentProfile.objects.filter(user_id=row["profile_id"]).first()
             if profile is None:
                 continue
             if row["will_complete"]:
@@ -133,11 +162,11 @@ def step4_commit(start_year, term_values, sections_to_create, promotion_rows, ac
                 completed += 1
             elif not row["unresolved"]:
                 target_section = created_sections.get(row["target_key"])
-                if target_section is None:
+                if target_section is None or target_semester is None:
                     continue
-                profile.section = target_section
-                profile.year_level = target_section.year_level
-                profile.save(update_fields=["section", "year_level"])
+                SectionMembership.objects.update_or_create(
+                    student_id=row["profile_id"], semester=target_semester, defaults={"section": target_section}
+                )
                 promoted += 1
 
         log_audit(

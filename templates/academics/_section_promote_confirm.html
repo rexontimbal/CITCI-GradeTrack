@@ -1,0 +1,53 @@
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Confirm promotion</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">&times;</button>
+</div>
+<form hx-post="{% url 'academics:section_promote' section.pk %}" hx-swap="none" class="mt-4 space-y-4">
+    {% csrf_token %}
+    <input type="hidden" name="semester" value="{{ semester.pk }}">
+    <input type="hidden" name="target_section" value="{{ target_section.pk }}">
+    <input type="hidden" name="target_semester" value="{{ target_semester.pk }}">
+    <input type="hidden" name="confirm" value="1">
+    <p class="text-sm text-gray-600">
+        Moving selected students from {{ section }} ({{ semester }}) to <span class="font-medium">{{ target_section }}</span>
+        ({{ target_semester }}). Students already marked "already placed" have a section for {{ target_semester }} already
+        — unchecked by default so they're not silently moved.
+    </p>
+    <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <tr>
+                    <th class="px-3 py-2"><input type="checkbox" aria-label="Select all" onclick="document.querySelectorAll('.promote-checkbox').forEach(c => { if (!c.disabled) c.checked = this.checked; })"></th>
+                    <th class="px-3 py-2">Student</th>
+                    <th class="px-3 py-2">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for row in rows %}
+                <tr>
+                    <td class="px-3 py-2">
+                        <input type="checkbox" name="student_ids" value="{{ row.student.pk }}" class="promote-checkbox"
+                               {% if not row.already_placed %}checked{% endif %} {% if row.already_placed %}disabled{% endif %}>
+                    </td>
+                    <td class="px-3 py-2 text-gray-900">{{ row.student.full_name }}</td>
+                    <td class="px-3 py-2">
+                        {% if row.already_placed %}
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Already placed — skip</span>
+                        {% else %}
+                        <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Will promote</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="3" class="px-3 py-4 text-center text-gray-600">No students to promote.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="submit" @click="modalOpen = false" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Confirm promotion
+        </button>
+    </div>
+</form>

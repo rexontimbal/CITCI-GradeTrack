@@ -12,7 +12,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from academics.models import ClassOffering, Major, Program, Section, Semester
+from academics.models import ClassOffering, Major, Program, Semester
 from core.crud import EntityListView, trigger_response
 from core.htmx import is_htmx
 from core.importing import SpreadsheetImportError
@@ -84,6 +84,14 @@ def profile(request):
     context = {"form": form}
     if request.user.is_instructor:
         context["classes_count"] = ClassOffering.objects.filter(instructor=request.user).count()
+    if request.user.is_student:
+        active_semester = Semester.objects.filter(is_active=True).first()
+        if active_semester:
+            from academics.models import SectionMembership
+
+            context["current_membership"] = SectionMembership.objects.filter(
+                student=request.user, semester=active_semester
+            ).select_related("section").first()
     return render(request, "accounts/profile.html", context)
 
 
@@ -178,7 +186,22 @@ class UserListView(RoleRequiredMixin, EntityListView):
     refresh_event = "refreshUsers"
 
     def apply_filters(self, request, qs):
-        qs = qs.select_related("student_profile", "student_profile__program", "student_profile__major", "student_profile__section")
+        from django.db.models import Prefetch
+
+        from academics.models import SectionMembership, Semester
+
+        qs = qs.select_related("student_profile", "student_profile__program", "student_profile__major")
+        active_semester = Semester.objects.filter(is_active=True).first()
+        if active_semester:
+            qs = qs.prefetch_related(
+                Prefetch(
+                    "section_memberships",
+                    queryset=SectionMembership.objects.filter(semester=active_semester).select_related(
+                        "section", "semester"
+                    ),
+                    to_attr="current_section_memberships",
+                )
+            )
         role = request.GET.get("role")
         if role:
             qs = qs.filter(role=role)
@@ -191,12 +214,6 @@ class UserListView(RoleRequiredMixin, EntityListView):
         major = request.GET.get("major")
         if major:
             qs = qs.filter(student_profile__major_id=major)
-        year_level = request.GET.get("year_level")
-        if year_level:
-            qs = qs.filter(student_profile__year_level=year_level)
-        section = request.GET.get("section")
-        if section:
-            qs = qs.filter(student_profile__section_id=section)
         return qs
 
     def get_extra_context(self, request):
@@ -208,7 +225,6 @@ class UserListView(RoleRequiredMixin, EntityListView):
             "active_tab": request.GET.get("role", ""),
             "programs": Program.objects.filter(is_active=True),
             "majors": Major.objects.filter(is_active=True),
-            "sections": Section.objects.select_related("program", "major"),
         }
 
 
@@ -253,8 +269,8 @@ def user_form(request, pk=None):
         )
 
     # GET: either the initial modal open, or an HTMX cascade refresh (role/
-    # program/major changed) — never validate on a GET, just re-render with
-    # the dependent dropdowns narrowed to what's currently selected.
+    # program changed) — never validate on a GET, just re-render with the
+    # dependent dropdowns narrowed to what's currently selected.
     form = UserForm(instance=user_obj)
     if is_htmx(request) and request.GET:
         for name in form.fields:
@@ -262,16 +278,8 @@ def user_form(request, pk=None):
                 form.initial[name] = request.GET[name]
         role = request.GET.get("role")
         program_id = request.GET.get("program")
-        major_id = request.GET.get("major")
-        year_level = request.GET.get("year_level")
         if program_id:
             form.fields["major"].queryset = Major.objects.filter(program_id=program_id, is_active=True)
-            section_qs = Section.objects.filter(program_id=program_id)
-            if major_id:
-                section_qs = section_qs.filter(major_id=major_id)
-            if year_level:
-                section_qs = section_qs.filter(year_level=year_level)
-            form.fields["section"].queryset = section_qs
     else:
         role = user_obj.role if user_obj else None
 
@@ -392,8 +400,7 @@ def import_students(request):
         return render(request, "accounts/_bulk_import_modal.html", {"kind": "students", "error": str(exc)})
 
     active_semester = Semester.objects.filter(is_active=True).select_related("academic_year").first()
-    active_academic_year = active_semester.academic_year if active_semester else None
-    preview = build_student_preview(index, data_rows, active_academic_year)
+    preview = build_student_preview(index, data_rows, active_semester)
     request.session[_STUDENT_IMPORT_SESSION_KEY] = preview
 
     return render(

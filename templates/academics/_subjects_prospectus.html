@@ -199,11 +199,7 @@
                     <tr class="hover:bg-gray-50">
                         {% if table.is_offering_term and offering_ok %}
                         <td class="px-3 py-2">
-                            {% if entry.offering %}
-                            <input type="checkbox" class="withdraw-checkbox" title="Select to withdraw"
-                                   :checked="isOfferingSelected('{{ entry.offering.pk }}')"
-                                   @change="toggleOffering('{{ entry.offering.pk }}')">
-                            {% else %}
+                            {% if not entry.offering %}
                             <input type="checkbox" name="entry_ids" value="{{ entry.pk }}" class="offer-checkbox"
                                    @change="toggle('{{ entry.pk }}')">
                             {% endif %}
@@ -278,29 +274,19 @@
 </form>
 
 {% if offering_ok %}
-<div x-show="count > 0 || offeringCount > 0" x-cloak
+<div x-show="count > 0" x-cloak
      class="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between border-t border-gray-200 bg-white px-6 py-3 shadow-lg md:left-64">
     <p class="text-sm font-medium text-gray-700">
-        <template x-if="count > 0"><span><span x-text="count"></span> subject<span x-show="count != 1">s</span> to offer · <span x-text="totalUnits"></span> units</span></template>
-        <template x-if="count > 0 && offeringCount > 0"><span> &nbsp;·&nbsp; </span></template>
-        <template x-if="offeringCount > 0"><span><span x-text="offeringCount"></span> offered subject<span x-show="offeringCount != 1">s</span> selected</span></template>
+        <span x-text="count"></span> subject<span x-show="count != 1">s</span> selected ·
+        <span x-text="totalUnits"></span> units
     </p>
     <div class="flex gap-2">
-        <button type="button" @click="clearAll(); clearOfferings()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        <button type="button" @click="clearAll()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             Clear
         </button>
-        <template x-if="offeringCount > 0">
-            <button type="button"
-                    @click="htmx.ajax('GET', '{% url 'academics:subject_offering_bulk_withdraw' %}?' + selectedOfferings.map(id => 'offering_ids=' + id).join('&') + '&program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}', {target: '#modal-content', swap: 'innerHTML'}); modalOpen = true"
-                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
-                Withdraw selected (<span x-text="offeringCount"></span>)
-            </button>
-        </template>
-        <template x-if="count > 0">
-            <button type="submit" form="subjects-offer-form" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-                Offer selected (<span x-text="count"></span>)
-            </button>
-        </template>
+        <button type="submit" form="subjects-offer-form" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Offer selected (<span x-text="count"></span>)
+        </button>
     </div>
 </div>
 {% endif %}

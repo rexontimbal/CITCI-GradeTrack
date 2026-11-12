@@ -2,35 +2,13 @@
 // table and per-year-level "select all" headers (indeterminate when only
 // some of their rows are checked), a page-wide "select all", and the
 // sticky bottom bar's running "n subjects selected · x units" total.
-// Already-offered rows are checked+disabled server-side and never appear
-// in `ids` arrays passed to this component, so every "select all" already
-// skips them.
+// Already-offered rows have no checkbox at all (withdrawing is bulk-only,
+// via the toolbar's "Withdraw all" / a card's "Withdraw all {Year}"), so
+// every "select all" here only ever touches offerable rows.
 document.addEventListener("alpine:init", () => {
     Alpine.data("subjectOffering", (unitsById) => ({
         selected: [],
-        selectedOfferings: [],
         unitsById: unitsById || {},
-
-        toggleOffering(id) {
-            const idx = this.selectedOfferings.indexOf(id);
-            if (idx === -1) {
-                this.selectedOfferings.push(id);
-            } else {
-                this.selectedOfferings.splice(idx, 1);
-            }
-        },
-
-        isOfferingSelected(id) {
-            return this.selectedOfferings.includes(id);
-        },
-
-        clearOfferings() {
-            this.selectedOfferings = [];
-        },
-
-        get offeringCount() {
-            return this.selectedOfferings.length;
-        },
 
         toggle(id) {
             const idx = this.selected.indexOf(id);

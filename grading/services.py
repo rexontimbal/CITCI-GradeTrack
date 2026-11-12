@@ -19,7 +19,6 @@ from typing import Optional
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Case, IntegerField, Prefetch, Value, When
-from django.utils import timezone
 
 from academics.models import ClassRosterEntry
 
@@ -108,7 +107,7 @@ EXAM_TITLE_TERM_MAP = {
 
 
 def _next_number_for_prefix(existing_titles, prefix):
-    pattern = re.compile(rf"^{re.escape(prefix)}\s+(\d+)$", re.IGNORECASE)
+    pattern = re.compile(rf"^{re.escape(prefix)}\s*(\d+)$", re.IGNORECASE)
     highest = 0
     for title in existing_titles:
         match = pattern.match(title.strip())
@@ -122,25 +121,21 @@ def suggest_item_titles(component):
     first one becomes the form's default so most items need no typing.
     Numbering is scoped to this one component (not the whole class),
     matching where the "+ Add" action that opens this form actually
-    lives in the Setup tab."""
+    lives in the Setup tab. Short letter+number codes (A1, Q1, R1, P1)
+    match CITCI's actual manual class record (grading-system.xlsx)
+    column headers exactly -- confirmed against a real printout, not the
+    more descriptive "Quiz 1"/"Attendance – Week 1" names an earlier pass
+    used before that comparison."""
     existing_titles = list(component.items.values_list("title", flat=True))
 
     if component.category == ComponentCategory.QUIZ:
-        return [
-            f"Quiz {_next_number_for_prefix(existing_titles, 'Quiz')}",
-            f"Long Quiz {_next_number_for_prefix(existing_titles, 'Long Quiz')}",
-        ]
+        return [f"Q{_next_number_for_prefix(existing_titles, 'Q')}"]
     if component.category == ComponentCategory.RECITATION:
-        return [f"Recitation {_next_number_for_prefix(existing_titles, 'Recitation')}"]
+        return [f"R{_next_number_for_prefix(existing_titles, 'R')}"]
     if component.category == ComponentCategory.PROJECT:
-        return [
-            f"Project {_next_number_for_prefix(existing_titles, 'Project')}",
-            f"Performance Task {_next_number_for_prefix(existing_titles, 'Performance Task')}",
-        ]
+        return [f"P{_next_number_for_prefix(existing_titles, 'P')}"]
     if component.category == ComponentCategory.ATTENDANCE:
-        week_n = _next_number_for_prefix(existing_titles, "Attendance – Week")
-        month_name = timezone.localdate().strftime("%B")
-        return [f"Attendance – Week {week_n}", f"Attendance – {month_name}"]
+        return [f"A{_next_number_for_prefix(existing_titles, 'A')}"]
     if component.category == ComponentCategory.EXAM:
         used = {t.strip() for t in existing_titles}
         return [title for title in EXAM_TITLE_TERM_MAP if title not in used]

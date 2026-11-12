@@ -963,28 +963,25 @@ class AssessmentItemSuggestionTests(GradingTestBase):
     term, and default max score."""
 
     def test_quiz_suggestions_start_at_1_and_advance_past_existing_items(self):
+        """Short letter+number codes (A1, Q1, R1, P1) -- matching CITCI's
+        actual manual class record (grading-system.xlsx) column headers
+        exactly, confirmed against a real printout."""
         from .services import suggest_item_titles
 
         quizzes = self.scheme_components["Quizzes"]
-        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 1", "Long Quiz 1"])
+        self.assertEqual(suggest_item_titles(quizzes), ["Q1"])
 
         AssessmentItem.objects.create(
-            class_offering=self.class_offering, component=quizzes, title="Quiz 1", max_score=20, term=AssessmentTerm.PRELIM
+            class_offering=self.class_offering, component=quizzes, title="Q1", max_score=20, term=AssessmentTerm.PRELIM
         )
-        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 2", "Long Quiz 1"])
+        self.assertEqual(suggest_item_titles(quizzes), ["Q2"])
 
-        AssessmentItem.objects.create(
-            class_offering=self.class_offering, component=quizzes, title="Long Quiz 1", max_score=50, term=AssessmentTerm.PRELIM
-        )
-        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 2", "Long Quiz 2"])
-
-    def test_recitation_and_project_and_other_suggestions(self):
+    def test_recitation_and_project_and_attendance_and_other_suggestions(self):
         from .services import suggest_item_titles
 
-        self.assertEqual(suggest_item_titles(self.scheme_components["Recitation"]), ["Recitation 1"])
-        self.assertEqual(
-            suggest_item_titles(self.scheme_components["Project"]), ["Project 1", "Performance Task 1"]
-        )
+        self.assertEqual(suggest_item_titles(self.scheme_components["Recitation"]), ["R1"])
+        self.assertEqual(suggest_item_titles(self.scheme_components["Project"]), ["P1"])
+        self.assertEqual(suggest_item_titles(self.scheme_components["Attendance"]), ["A1"])
 
         other = SchemeComponent.objects.create(scheme=self.scheme, name="Seatwork", category=ComponentCategory.OTHER, weight=0)
         self.assertEqual(suggest_item_titles(other), ["Seatwork 1"])
@@ -1121,7 +1118,7 @@ class AssessmentItemFormViewTests(GradingTestBase):
         self.client.force_login(self.instructor)
         url = reverse("grading:item_create", args=[self.class_offering.pk])
         response = self.client.get(url, {"component": self.scheme_components["Quizzes"].pk})
-        self.assertContains(response, 'value="Quiz 1"')
+        self.assertContains(response, 'value="Q1"')
         self.assertInHTML(
             f'<option value="{AssessmentTerm.PRELIM}" selected>Prelim</option>', response.content.decode()
         )

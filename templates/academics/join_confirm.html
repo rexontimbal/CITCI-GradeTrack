@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block page_title %}Join a Class{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-gray-200 bg-white p-6">
+        <h2 class="text-lg font-semibold text-gray-900">Join a class</h2>
+
+        {% if error %}
+        <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+        {% endif %}
+
+        {% if class_offering %}
+        <div class="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+            <div class="flex justify-between"><span class="text-gray-600">Subject</span><span class="font-medium text-gray-900">{{ class_offering.display_code }} — {{ class_offering.display_title }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Section(s)</span><span class="font-medium text-gray-900">{% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Instructor</span><span class="font-medium text-gray-900">{{ class_offering.instructor.full_name|default:"Unassigned" }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Semester</span><span class="font-medium text-gray-900">{{ class_offering.semester }}</span></div>
+        </div>
+
+        {% if not error %}
+        <form method="post" class="mt-5">
+            {% csrf_token %}
+            <p class="mb-3 text-xs text-gray-600">Your instructor still needs to approve this before you're added to the class.</p>
+            <button type="submit" class="w-full rounded-lg bg-brand-accent-600 px-4 py-2.5 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Request to join
+            </button>
+        </form>
+        {% endif %}
+        {% endif %}
+
+        <a href="{% url 'academics:student_my_classes' %}" class="mt-4 block text-center text-sm text-gray-600 hover:underline">Back to My Classes</a>
+    </div>
+</div>
+{% endblock %}

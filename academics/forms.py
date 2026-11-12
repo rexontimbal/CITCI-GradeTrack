@@ -432,3 +432,20 @@ class TeachingAssignmentForm(forms.Form):
     )
 
 
+
+
+class JoinCodeForm(forms.Form):
+    code = forms.CharField(
+        max_length=7,
+        label="Join code",
+        widget=forms.TextInput(
+            attrs={
+                "class": "w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-lg font-semibold uppercase tracking-widest",
+                "placeholder": "ABCD123",
+                "autocomplete": "off",
+            }
+        ),
+    )
+
+    def clean_code(self):
+        return self.cleaned_data["code"].strip().upper()

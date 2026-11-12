@@ -25,6 +25,7 @@ from .forms import (
     AdminSubjectForm,
     ClassOfferingForm,
     JoinClassForm,
+    JoinCodeForm,
     MajorForm,
     ProgramForm,
     ProgramHeadClassOfferingForm,
@@ -40,6 +41,7 @@ from . import services
 from .models import (
     AcademicSetupChangeLog,
     AcademicYear,
+    ClassJoinRequest,
     ClassOffering,
     ClassRosterEntry,
     CurriculumEntry,
@@ -80,6 +82,7 @@ from .services import (
 ADMIN = User.Role.ADMIN
 PROGRAM_HEAD = User.Role.PROGRAM_HEAD
 INSTRUCTOR = User.Role.INSTRUCTOR
+STUDENT = User.Role.STUDENT
 
 
 # ---------------------------------------------------------------------------
@@ -1769,17 +1772,130 @@ def class_roster(request, pk):
     class_offering = _get_class_offering_for_viewer(request, pk)
     roster_entries = class_offering.roster_entries.select_related("student", "student__student_profile__section")
     assignment_logs = class_offering.assignment_logs.select_related("old_instructor", "new_instructor", "changed_by")[:10]
+    is_owner = request.user.is_instructor and class_offering.instructor_id == request.user.id
+    pending_requests = []
+    if is_owner:
+        pending_requests = list(
+            class_offering.join_requests.filter(status=ClassJoinRequest.Status.PENDING)
+            .select_related("student", "student__student_profile__section")
+            .order_by("requested_at")
+        )
+        for join_request in pending_requests:
+            join_request.section_match = services.join_request_section_match(join_request)
     return render(
         request,
         "academics/class_roster.html",
         {
-            "page_title": f"Roster — {class_offering}",
+            "page_title": f"Class List — {class_offering}",
             "class_offering": class_offering,
             "roster_entries": roster_entries,
             "can_manage": _can_manage_roster(request.user, class_offering),
+            "is_owner": is_owner,
+            "pending_requests": pending_requests,
+            "join_code": services.ensure_join_code(class_offering) if is_owner else None,
             "assignment_logs": assignment_logs,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Class join codes — instructor side (invite card + pending requests on the
+# Class List page above); the student side (join modal, confirmation, /
+# join/<code>/) lives in its own section further down.
+# ---------------------------------------------------------------------------
+
+
+def _require_owner_instructor(request, pk):
+    class_offering = get_object_or_404(ClassOffering, pk=pk)
+    if not (request.user.is_instructor and class_offering.instructor_id == request.user.id):
+        raise PermissionDenied("This class is not assigned to you.")
+    return class_offering
+
+
+@role_required(INSTRUCTOR)
+def class_join_reset_code(request, pk):
+    class_offering = _require_owner_instructor(request, pk)
+    if request.method != "POST":
+        return render(request, "academics/_join_reset_confirm.html", {"class_offering": class_offering})
+    services.reset_join_code(class_offering, request.user)
+    return trigger_response("refreshRoster", toast="Join code reset — the old code no longer works.")
+
+
+@role_required(INSTRUCTOR)
+def class_join_toggle(request, pk):
+    class_offering = _require_owner_instructor(request, pk)
+    if request.method != "POST":
+        raise PermissionDenied
+    services.set_join_enabled(class_offering, not class_offering.join_enabled, request.user)
+    return trigger_response("refreshRoster")
+
+
+@role_required(INSTRUCTOR)
+def class_join_qr(request, pk):
+    """Server-side SVG QR code for this class's join URL — no external
+    service, no PIL (qrcode's SvgPathImage factory renders pure vector
+    paths)."""
+    import qrcode
+    import qrcode.image.svg
+
+    class_offering = _require_owner_instructor(request, pk)
+    code = services.ensure_join_code(class_offering)
+    join_url = request.build_absolute_uri(reverse("academics:join_with_code", args=[code]))
+    img = qrcode.make(join_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+    buffer = io.BytesIO()
+    img.save(buffer)
+    return HttpResponse(buffer.getvalue(), content_type="image/svg+xml")
+
+
+@role_required(INSTRUCTOR)
+def class_join_request_decide(request, pk):
+    """Approve/Reject one pending request — POST action=approve|reject
+    (+ optional reason for reject)."""
+    join_request = get_object_or_404(ClassJoinRequest, pk=pk)
+    class_offering = join_request.class_offering
+    if not (request.user.is_instructor and class_offering.instructor_id == request.user.id):
+        raise PermissionDenied("This class is not assigned to you.")
+    if request.method != "POST":
+        raise PermissionDenied
+
+    action = request.POST.get("action")
+    try:
+        if action == "approve":
+            services.approve_join_request(join_request, request.user)
+            toast = f"{join_request.student.full_name} approved."
+        elif action == "reject":
+            reason = request.POST.get("reason") or request.headers.get("HX-Prompt", "")
+            services.reject_join_request(join_request, request.user, reason)
+            toast = f"{join_request.student.full_name}'s request declined."
+        else:
+            raise PermissionDenied("Unknown action.")
+    except ValidationError as exc:
+        from django.contrib import messages as django_messages
+
+        django_messages.error(request, exc.messages[0])
+        return trigger_response("refreshRoster")
+
+    return trigger_response("refreshRoster", toast=toast)
+
+
+@role_required(INSTRUCTOR)
+def class_join_requests_bulk_decide(request, pk):
+    class_offering = _require_owner_instructor(request, pk)
+    if request.method != "POST":
+        raise PermissionDenied
+
+    action = request.POST.get("action")
+    request_ids = [int(i) for i in request.POST.getlist("request_ids") if i.isdigit()]
+    join_requests = ClassJoinRequest.objects.filter(
+        pk__in=request_ids, class_offering=class_offering, status=ClassJoinRequest.Status.PENDING
+    )
+    decided, skipped = services.bulk_decide_join_requests(
+        join_requests, request.user, approve=(action == "approve"), reason=request.POST.get("reason", "")
+    )
+    toast = f"{decided} request{'s' if decided != 1 else ''} {'approved' if action == 'approve' else 'declined'}."
+    if skipped:
+        toast += f" {len(skipped)} skipped."
+    return trigger_response("refreshRoster", toast=toast)
 
 
 # ---------------------------------------------------------------------------
@@ -1799,7 +1915,10 @@ def my_classes(request):
             .annotate(
                 roster_size=Count(
                     "roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True
-                )
+                ),
+                pending_join_count=Count(
+                    "join_requests", filter=Q(join_requests__status=ClassJoinRequest.Status.PENDING), distinct=True
+                ),
             )
         )
     return render(
@@ -1821,7 +1940,10 @@ def _program_head_class_queryset(user, active):
         .annotate(
             roster_size=Count(
                 "roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True
-            )
+            ),
+            pending_join_count=Count(
+                "join_requests", filter=Q(join_requests__status=ClassJoinRequest.Status.PENDING), distinct=True
+            ),
         )
         .distinct()
     )
@@ -2868,3 +2990,110 @@ def class_search(request):
         qs = qs.filter(Q(subject__code__icontains=query) | Q(subject__title__icontains=query))
     options = [(c.pk, str(c)) for c in qs.order_by("-semester__academic_year__start_year", "subject__code")[:20]]
     return render(request, "partials/_searchable_select_options.html", {"options": options})
+
+
+# ---------------------------------------------------------------------------
+# Class join codes — student side. /join/<code>/ is the single entry point
+# for both the typed-code modal (redirected here) and a scanned QR code;
+# GET shows a confirmation screen, POST actually files the request.
+# ---------------------------------------------------------------------------
+
+
+@role_required(STUDENT)
+def student_my_classes(request):
+    active = Semester.objects.filter(is_active=True).first()
+    roster_entries = ClassRosterEntry.objects.none()
+    join_requests = ClassJoinRequest.objects.none()
+    if active:
+        roster_entries = (
+            ClassRosterEntry.objects.filter(
+                student=request.user, class_offering__semester=active, status=ClassRosterEntry.Status.ACTIVE
+            )
+            .select_related("class_offering__subject", "class_offering__instructor")
+            .prefetch_related("class_offering__sections")
+        )
+        join_requests = (
+            ClassJoinRequest.objects.filter(student=request.user, class_offering__semester=active)
+            .filter(status__in=[ClassJoinRequest.Status.PENDING, ClassJoinRequest.Status.REJECTED])
+            .select_related("class_offering__subject", "class_offering__instructor")
+            .prefetch_related("class_offering__sections")
+        )
+    return render(
+        request,
+        "academics/student_my_classes.html",
+        {
+            "page_title": "My Classes",
+            "active_semester_set": bool(active),
+            "roster_entries": roster_entries,
+            "join_requests": join_requests,
+            "join_form": JoinCodeForm(),
+        },
+    )
+
+
+@role_required(STUDENT)
+def student_join_modal(request):
+    if request.method != "POST":
+        return render(request, "academics/_join_modal.html", {"form": JoinCodeForm()})
+    form = JoinCodeForm(request.POST)
+    if not form.is_valid():
+        return render(request, "academics/_join_modal.html", {"form": form})
+    code = form.cleaned_data["code"].strip().upper()
+    response = HttpResponse(status=204)
+    response["HX-Redirect"] = reverse("academics:join_with_code", args=[code])
+    return response
+
+
+@role_required(STUDENT)
+def student_join_cancel(request, pk):
+    join_request = get_object_or_404(ClassJoinRequest, pk=pk)
+    try:
+        services.cancel_join_request(join_request, request.user)
+    except PermissionError:
+        raise PermissionDenied("Not your request.")
+    except ValidationError as exc:
+        from django.contrib import messages as django_messages
+
+        django_messages.error(request, exc.messages[0])
+    return trigger_response("refreshMyClasses", toast="Request cancelled.")
+
+
+@role_required(STUDENT)
+def join_with_code(request, code):
+    """GET: resolve the code and show a confirmation screen (subject,
+    section, instructor, semester) before anything is submitted — the
+    page a scanned QR *or* the typed-code modal both land on. POST:
+    actually files the join request. Wrong-code attempts (not eligibility
+    failures on an otherwise-valid code) count toward the rate limit."""
+    if not services.check_join_rate_limit(request.user):
+        return render(
+            request,
+            "academics/join_confirm.html",
+            {"error": "Too many attempts — please try again in a few minutes.", "code": code},
+        )
+
+    try:
+        class_offering = services.resolve_join_code(code)
+    except ValidationError as exc:
+        services.record_join_attempt(request.user)
+        return render(request, "academics/join_confirm.html", {"error": exc.messages[0], "code": code})
+
+    if request.method == "POST":
+        try:
+            services.request_to_join(class_offering, request.user)
+        except ValidationError as exc:
+            return render(
+                request,
+                "academics/join_confirm.html",
+                {"error": exc.messages[0], "class_offering": class_offering, "code": code},
+            )
+        return render(request, "academics/join_submitted.html", {"class_offering": class_offering})
+
+    error = None
+    try:
+        services.check_join_eligibility(class_offering, request.user)
+    except ValidationError as exc:
+        error = exc.messages[0]
+    return render(
+        request, "academics/join_confirm.html", {"class_offering": class_offering, "code": code, "error": error}
+    )

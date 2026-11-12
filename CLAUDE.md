@@ -282,6 +282,65 @@
 > writes cleaned field values onto `form.instance` in place — the same object as `subject` here,
 > not a copy — so the "did the code actually change" check now captures `subject.code` *before*
 > binding the form to it.
+>
+> **2026-11-12 (Class join codes with QR + instructor approval, built):** a fourth path onto a
+> class's roster, alongside the existing Program-Head section auto-fill, instructor manual-add, and
+> import — a student can now self-join with a 7-character code (`academics.services.
+> generate_join_code`, `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — no `0/O/1/I`) or by scanning a QR code
+> that encodes `/join/<code>/`, generated server-side as pure-vector SVG via the `qrcode` package's
+> `SvgPathImage` factory (no PIL, no external service, no network call). **It is never an automatic
+> roster add** — every request is a `academics.ClassJoinRequest` row (PENDING/APPROVED/REJECTED/
+> CANCELLED) the owning instructor still approves or rejects; approval creates the
+> `ClassRosterEntry` with the new `source=JOIN_CODE` (alongside existing SECTION/MANUAL/IMPORT
+> values). `ClassOffering` gained `join_code` (unique, nullable until first viewed —
+> `services.ensure_join_code` lazily assigns one) and `join_enabled` (instructor's own on/off
+> switch, independent of resetting the code). The request row itself is the full audit trail
+> (status + `decided_by`/`decided_at`/`reject_reason`, never deleted) — no separate change-log
+> table needed, same philosophy as not duplicating state that's already fully represented elsewhere.
+>
+> Eligibility (`services.check_join_eligibility`) is checked at BOTH request time and approval time
+> (a grade sheet can be submitted in the gap between the two): join disabled, semester not the
+> active one, grade sheet already submitted-or-later (`approvals.services.is_class_editable`),
+> already on the roster, or an open request already pending — each its own clear message, never a
+> generic failure. Wrong-code attempts (not eligibility failures on an otherwise-valid code) are
+> rate-limited via Django's cache framework (`services.check_join_rate_limit`/`record_join_attempt`
+> — 10 per 15 minutes per user, LocMemCache is fine at this scale, same "no Celery/Redis" philosophy
+> as everywhere else in this codebase) — a legitimate repeat visit to a valid code's confirmation
+> page never counts against the limit, only genuine guesses do.
+>
+> **Instructor side**: the Class List page (`academics:class_roster`, "View Roster" renamed to
+> "Class List" with a red pending-count badge on My Classes) gained an "Invite Students" card (code
+> + copy button, inline QR `<img>` served by `academics:class_join_qr`, download/print, a join
+> on/off toggle, "Reset code" with a confirm modal) and a "Pending Requests" list (name/ID/program-
+> section/requested-time + a "Matches section ✓"/"Different section ⚠" badge off
+> `services.join_request_section_match` — queries `StudentProfile` directly rather than the
+> `student.student_profile` reverse accessor, which can cache stale on an in-memory `User` instance
+> created before Admin assigns its section) — row Approve/Reject (`hx-prompt` for an optional reject
+> reason) plus the project's standard checkbox + sticky-bottom-bar bulk pattern
+> (`services.bulk_decide_join_requests`, skip-with-reason per row, same shape as
+> `withdraw_offerings_bulk`). Program Head gets a read-only "+N pending" badge on the existing
+> Classes page (`academics:program_head_classes`) — no approve/reject access, just visibility.
+>
+> **Student side**: a new "My Classes" page (`academics:student_my_classes`, new sidebar item — did
+> not exist before this phase) lists joined classes plus any PENDING ("Pending approval", with
+> Cancel) or REJECTED ("Request declined" + reason) requests; "Join class" opens a code-entry modal
+> that redirects (`HX-Redirect`) to `/join/<code>/` — the same page a scanned QR lands on — so both
+> paths share one confirmation screen (subject/section/instructor/semester, shown before anything is
+> submitted) and one "Request sent" screen after. `/join/<code>/` is `@role_required(STUDENT)`,
+> which already sends an unauthenticated visitor to login with `?next=` back to itself — no custom
+> auth-redirect code needed. A student can never leave an approved class themselves (only the
+> instructor can remove or mark Dropped) — joining is one-directional from the student's side once
+> approved.
+>
+> Notifications (`dashboard.services.notify`, existing pattern): the instructor gets one per new
+> request, its message naming the current pending count (a lightweight "grouped" signal without
+> building real notification-batching machinery); the student gets one on approve or reject.
+> `requirements.txt` gained `qrcode==8.2`. See `academics/tests.py`'s `ClassJoinCode*`/`JoinRequest*`/
+> `ClassJoinViewTests` classes for the full coverage (join → pending → approve → in roster and
+> Class Record; reject with reason; duplicate pending request; already-on-roster; invalid/disabled/
+> reset code; inactive semester; locked grade sheet blocking both join and a since-submitted
+> approval; rate limiting; section-match badge; bulk skip-already-decided; and permissions — a
+> student can't decide requests, an unrelated instructor can't even view the class's roster page).
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official

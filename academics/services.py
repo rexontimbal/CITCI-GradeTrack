@@ -5,17 +5,20 @@ ability to set/change it too, as a logged "admin override". Pure functions
 a form error.
 """
 
+import re
+import secrets
 from decimal import Decimal
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
-
-import re
+from django.utils import timezone
 
 from .models import (
     AcademicSetupChangeLog,
     AcademicYear,
+    ClassJoinRequest,
     ClassOffering,
     ClassRosterEntry,
     CurriculumEntry,
@@ -812,3 +815,242 @@ def sync_offering_after_section_change(subject_offering):
         return
     if not subject_offering.class_offerings.exists():
         subject_offering.delete()
+
+
+# ---------------------------------------------------------------------------
+# Class join codes — a student self-join request that an instructor still
+# has to approve (never an automatic roster add). Complements the existing
+# Program-Head section auto-fill and instructor manual-add/import roster
+# paths, not a replacement for either.
+# ---------------------------------------------------------------------------
+
+# Uppercase letters + digits, excluding visually-ambiguous 0/O/1/I.
+JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+JOIN_CODE_LENGTH = 7
+_JOIN_RATE_LIMIT_MAX_ATTEMPTS = 10
+_JOIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+
+
+def generate_join_code():
+    """A random 7-char code, retried on the rare DB collision (unique
+    across every class ever, including classes whose code was reset —
+    the old code is simply abandoned, never reassigned)."""
+    for _ in range(20):
+        code = "".join(secrets.choice(JOIN_CODE_ALPHABET) for _ in range(JOIN_CODE_LENGTH))
+        if not ClassOffering.objects.filter(join_code=code).exists():
+            return code
+    raise RuntimeError("Could not generate a unique join code after 20 attempts.")
+
+
+def ensure_join_code(class_offering):
+    """Lazily assigns a join code the first time anyone opens the Invite
+    Students card for a class created before this feature, or that has
+    never had one for any other reason. Returns the (possibly freshly
+    assigned) code."""
+    if not class_offering.join_code:
+        class_offering.join_code = generate_join_code()
+        class_offering.save(update_fields=["join_code"])
+    return class_offering.join_code
+
+
+def reset_join_code(class_offering, actor):
+    """Old code stops working immediately (a pending request already
+    filed under the old code is untouched — it was validated against the
+    class, not the code string, at request time)."""
+    class_offering.join_code = generate_join_code()
+    class_offering.save(update_fields=["join_code"])
+    return class_offering.join_code
+
+
+def set_join_enabled(class_offering, enabled, actor):
+    class_offering.join_enabled = enabled
+    class_offering.save(update_fields=["join_enabled"])
+
+
+def _join_rate_limit_cache_key(user):
+    return f"join_code_attempts:{user.id}"
+
+
+def check_join_rate_limit(user):
+    """True if `user` may try another join code right now. Simple
+    fixed-window counter (cache.add/incr — no Celery/Redis in this
+    project, LocMemCache is fine at this scale, same philosophy as
+    everywhere else synchronous in this codebase) -- 10 attempts per 15
+    minutes, to slow down code-guessing without needing django-axes-style
+    infrastructure for what's a much lower-stakes guess space already
+    gated behind a logged-in STUDENT account."""
+    key = _join_rate_limit_cache_key(user)
+    count = cache.get(key, 0)
+    return count < _JOIN_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def record_join_attempt(user):
+    key = _join_rate_limit_cache_key(user)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, _JOIN_RATE_LIMIT_WINDOW_SECONDS)
+
+
+class JoinCodeError(ValidationError):
+    """Raised for every student-facing join-code rejection reason —
+    views catch this and show exc.messages[0] directly, same convention
+    as every other ValidationError-raising service in this module."""
+
+
+def resolve_join_code(code):
+    """Looks up a class by its join code (case/space-insensitive), or
+    raises JoinCodeError. Does not check eligibility -- callers that also
+    need join_enabled/semester/grade-sheet checks call
+    check_join_eligibility separately (the join confirmation page shows
+    the class before the student commits, so code-resolution and
+    eligibility are deliberately two steps)."""
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        raise JoinCodeError("Enter a join code.")
+    class_offering = ClassOffering.objects.filter(join_code=normalized).select_related("subject", "semester", "instructor").first()
+    if class_offering is None:
+        raise JoinCodeError("That join code isn't valid. Double-check it with your instructor.")
+    return class_offering
+
+
+def check_join_eligibility(class_offering, student):
+    """Raises JoinCodeError with a clear, specific reason if `student`
+    can't join `class_offering` right now; returns silently if they can."""
+    if not class_offering.join_enabled:
+        raise JoinCodeError("This class isn't accepting join requests right now.")
+    if not class_offering.semester.is_active:
+        raise JoinCodeError("This class isn't in the current active semester.")
+
+    from approvals.services import is_class_editable
+
+    if not is_class_editable(class_offering):
+        raise JoinCodeError("Grades for this class have already been submitted — ask your instructor to add you manually.")
+    if ClassRosterEntry.objects.filter(student=student, class_offering=class_offering).exists():
+        raise JoinCodeError("You're already in this class.")
+    if ClassJoinRequest.objects.filter(
+        student=student, class_offering=class_offering, status=ClassJoinRequest.Status.PENDING
+    ).exists():
+        raise JoinCodeError("You already have a pending request for this class.")
+
+
+def request_to_join(class_offering, student):
+    """Creates the PENDING ClassJoinRequest and notifies the instructor.
+    Raises JoinCodeError (never silently fails) if `student` isn't
+    eligible right now."""
+    from dashboard.services import notify
+
+    check_join_eligibility(class_offering, student)
+    join_request = ClassJoinRequest.objects.create(class_offering=class_offering, student=student)
+
+    if class_offering.instructor_id:
+        pending_count = ClassJoinRequest.objects.filter(
+            class_offering=class_offering, status=ClassJoinRequest.Status.PENDING
+        ).count()
+        notify(
+            class_offering.instructor,
+            f"New join request — {class_offering}",
+            f"{student.full_name} wants to join {class_offering}. {pending_count} request"
+            f"{'s' if pending_count != 1 else ''} pending.",
+            link="/academics/classes/%d/join-requests/" % class_offering.pk,
+        )
+    return join_request
+
+
+def cancel_join_request(join_request, student):
+    if join_request.student_id != student.id:
+        raise PermissionError("Not your request.")
+    if join_request.status != ClassJoinRequest.Status.PENDING:
+        raise JoinCodeError("This request has already been decided.")
+    join_request.status = ClassJoinRequest.Status.CANCELLED
+    join_request.decided_at = timezone.now()
+    join_request.save(update_fields=["status", "decided_at"])
+
+
+def approve_join_request(join_request, actor):
+    """Creates the roster entry (source=JOIN_CODE) and notifies the
+    student. Re-checks eligibility at decision time, not just at request
+    time -- the grade sheet could have been submitted in between."""
+    from dashboard.services import notify
+
+    if join_request.status != ClassJoinRequest.Status.PENDING:
+        raise JoinCodeError("This request has already been decided.")
+
+    from approvals.services import is_class_editable
+
+    if not is_class_editable(join_request.class_offering):
+        raise JoinCodeError("Grades for this class have already been submitted — this request can no longer be approved.")
+
+    with transaction.atomic():
+        ClassRosterEntry.objects.get_or_create(
+            student=join_request.student,
+            class_offering=join_request.class_offering,
+            defaults={"status": ClassRosterEntry.Status.ACTIVE, "source": ClassRosterEntry.Source.JOIN_CODE},
+        )
+        join_request.status = ClassJoinRequest.Status.APPROVED
+        join_request.decided_by = actor
+        join_request.decided_at = timezone.now()
+        join_request.save(update_fields=["status", "decided_by", "decided_at"])
+
+    notify(
+        join_request.student,
+        f"You're in — {join_request.class_offering}",
+        f"Your request to join {join_request.class_offering} was approved.",
+        link="/academics/my-classes/",
+    )
+
+
+def reject_join_request(join_request, actor, reason=""):
+    from dashboard.services import notify
+
+    if join_request.status != ClassJoinRequest.Status.PENDING:
+        raise JoinCodeError("This request has already been decided.")
+
+    join_request.status = ClassJoinRequest.Status.REJECTED
+    join_request.decided_by = actor
+    join_request.decided_at = timezone.now()
+    join_request.reject_reason = reason
+    join_request.save(update_fields=["status", "decided_by", "decided_at", "reject_reason"])
+
+    notify(
+        join_request.student,
+        f"Request declined — {join_request.class_offering}",
+        reason or f"Your request to join {join_request.class_offering} was declined.",
+        link="/academics/my-classes/",
+    )
+
+
+def bulk_decide_join_requests(join_requests, actor, approve, reason=""):
+    """Loops approve_join_request/reject_join_request per row so one
+    already-decided/no-longer-eligible request is skipped with a reason
+    instead of failing the whole batch -- same "skip with reason, never
+    fail the batch" shape as withdraw_offerings_bulk."""
+    decided = 0
+    skipped = []
+    for join_request in join_requests:
+        try:
+            if approve:
+                approve_join_request(join_request, actor)
+            else:
+                reject_join_request(join_request, actor, reason)
+            decided += 1
+        except JoinCodeError as exc:
+            skipped.append((join_request, str(exc.messages[0]) if hasattr(exc, "messages") else str(exc)))
+    return decided, skipped
+
+
+def join_request_section_match(join_request):
+    """True if the requesting student's own section is one of the
+    class's sections -- backs the Pending Requests list's "Matches
+    section X ✓" / "Different section ⚠" badge. None if the student has
+    no section assigned yet. Queries StudentProfile directly rather than
+    `join_request.student.student_profile` -- the reverse-OneToOne
+    accessor can be cached stale on an in-memory `student` instance
+    created before its profile was filled in (e.g. right after the
+    auto-create signal, before Admin assigns a section)."""
+    section_id = StudentProfile.objects.filter(user_id=join_request.student_id).values_list(
+        "section_id", flat=True
+    ).first()
+    if not section_id:
+        return None
+    return join_request.class_offering.sections.filter(pk=section_id).exists()

@@ -123,6 +123,7 @@ MENUS = {
         {
             "label": "Academics",
             "items": [
+                ("academics:student_my_classes", "My Classes", "chalkboard"),
                 ("grading:my_grades", "My Grades", "book"),
                 ("grading:my_progress", "My Progress", "chart"),
             ],

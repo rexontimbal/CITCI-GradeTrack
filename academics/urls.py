@@ -79,8 +79,23 @@ urlpatterns = [
     path("classes/<int:pk>/toggle-active/", views.ClassToggleActiveView.as_view(), name="class_toggle_active"),
     path("classes/<int:pk>/roster/", views.class_roster, name="class_roster"),
 
+    # Class join codes (instructor side)
+    path("classes/<int:pk>/join-code/reset/", views.class_join_reset_code, name="class_join_reset_code"),
+    path("classes/<int:pk>/join-code/toggle/", views.class_join_toggle, name="class_join_toggle"),
+    path("classes/<int:pk>/join-code/qr.svg", views.class_join_qr, name="class_join_qr"),
+    path("join-requests/<int:pk>/decide/", views.class_join_request_decide, name="class_join_request_decide"),
+    path(
+        "classes/<int:pk>/join-requests/bulk-decide/",
+        views.class_join_requests_bulk_decide,
+        name="class_join_requests_bulk_decide",
+    ),
+
     # Read-only, role-specific class lists
     path("my-classes/", views.my_classes, name="my_classes"),
+    path("my-classes/student/", views.student_my_classes, name="student_my_classes"),
+    path("my-classes/join/", views.student_join_modal, name="student_join_modal"),
+    path("my-classes/join-requests/<int:pk>/cancel/", views.student_join_cancel, name="student_join_cancel"),
+    path("join/<str:code>/", views.join_with_code, name="join_with_code"),
     path("program-head/classes/", views.program_head_classes, name="program_head_classes"),
     path("program-head/classes/create/", views.ph_class_create, name="ph_class_create"),
     path("program-head/classes/<int:pk>/edit/", views.ph_class_edit, name="ph_class_edit"),

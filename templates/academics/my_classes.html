@@ -19,8 +19,11 @@
         </dl>
         <div class="mt-4 flex gap-2">
             <a href="{% url 'academics:class_roster' class_offering.pk %}"
-               class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50">
-                View Roster
+               class="relative flex-1 rounded-lg border border-gray-300 px-3 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Class List
+                {% if class_offering.pending_join_count %}
+                <span class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-semibold text-white">{{ class_offering.pending_join_count }}</span>
+                {% endif %}
             </a>
             <a href="{% url 'grading:class_grading' class_offering.pk %}"
                class="flex-1 rounded-lg bg-brand-accent-600 px-3 py-2 text-center text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">

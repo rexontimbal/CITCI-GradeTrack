@@ -306,3 +306,24 @@ for suspicious instructor-name pairs.
 real-data load, not a feature the proposal described differently. If the final paper's ERD/data
 dictionary is regenerated from the models (`tools/generate_erd.py`), it will already reflect
 `CurriculumEntry` and the trimmed `Subject` automatically.
+
+## 14. Class join codes with QR + instructor approval (addition — a fourth, student-initiated
+roster-entry path the proposal never described)
+
+**Confirmed practice gap (2026-11-12):** the proposal's three roster paths (Program Head section
+auto-fill, instructor manual add, instructor spreadsheet import) all require the instructor or
+Program Head to act first. A student who enrolls late, or joins a class whose roster wasn't fully
+pre-populated, previously had no way to get themselves onto a class list without asking staff to
+act on their behalf. A new self-join flow closes that gap without weakening the existing
+instructor-controls-the-roster model: a student enters a 7-character class code (or scans a QR that
+encodes it, generated server-side as vector SVG — no PIL, no external QR service) and the request
+sits PENDING until the instructor approves or rejects it; nothing is added to the roster
+automatically. `academics.ClassJoinRequest` is the new model; `ClassRosterEntry` gained a `source`
+field (`SECTION`/`MANUAL`/`IMPORT`/`JOIN_CODE`) so an approved join-code student is distinguishable
+from the other three paths in reporting.
+
+**Revise:** None of §1–§3.13 require revision — enrollment itself is still entirely out of scope
+(see CLAUDE.md's standing note); this only adds a fourth way a student can appear on a class's
+*roster*, the same object the other three paths already populate. If the ERD/data dictionary is
+regenerated from the models, `ClassJoinRequest` and `ClassRosterEntry.source` will already reflect
+this.

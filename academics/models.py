@@ -367,6 +367,18 @@ class ClassOffering(TimeStampedModel):
     )
     subject_title_snapshot = models.CharField(max_length=200, blank=True)
     subject_units_snapshot = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+    join_code = models.CharField(
+        max_length=7,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Student self-join code (e.g. 'K7F3PQM') — students scan/enter this, the "
+        "instructor still approves every request. Unique across all classes, ever (a reset "
+        "generates a new one; the old code is never reassigned).",
+    )
+    join_enabled = models.BooleanField(
+        default=True, help_text="Instructor's on/off switch for the join code, independent of resetting it."
+    )
 
     class Meta:
         ordering = ["-semester__academic_year__start_year", "semester__term", "subject__code"]
@@ -416,6 +428,12 @@ class ClassRosterEntry(TimeStampedModel):
         ACTIVE = "ACTIVE", "Active"
         DROPPED = "DROPPED", "Dropped"
 
+    class Source(models.TextChoices):
+        SECTION = "SECTION", "Section auto-fill"
+        MANUAL = "MANUAL", "Added manually"
+        IMPORT = "IMPORT", "Imported"
+        JOIN_CODE = "JOIN_CODE", "Joined with code"
+
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -424,6 +442,7 @@ class ClassRosterEntry(TimeStampedModel):
     )
     class_offering = models.ForeignKey(ClassOffering, on_delete=models.PROTECT, related_name="roster_entries")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.SECTION)
     date_added = models.DateField(auto_now_add=True)
     date_dropped = models.DateField(null=True, blank=True)
     is_incomplete = models.BooleanField(
@@ -439,6 +458,48 @@ class ClassRosterEntry(TimeStampedModel):
 
     def __str__(self):
         return f"{self.student.full_name} – {self.class_offering}"
+
+
+class ClassJoinRequest(TimeStampedModel):
+    """A student's self-join attempt via a class's join code — never
+    auto-adds to the roster; the instructor still approves/rejects every
+    one. The row itself is the audit trail (status transitions +
+    decided_by/decided_at/reject_reason), never deleted, so there's no
+    separate join-request change-log table."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    class_offering = models.ForeignKey(ClassOffering, on_delete=models.CASCADE, related_name="join_requests")
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        limit_choices_to={"role": User.Role.STUDENT},
+        related_name="class_join_requests",
+    )
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    reject_reason = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["class_offering", "student"],
+                condition=models.Q(status="PENDING"),
+                name="unique_open_join_request_per_student_per_class",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.student.full_name} → {self.class_offering} ({self.get_status_display()})"
 
 
 class TeachingAssignmentLog(TimeStampedModel):

@@ -15,6 +15,7 @@ from accounts.models import User
 
 from .models import (
     AcademicYear,
+    ClassJoinRequest,
     ClassOffering,
     ClassRosterEntry,
     CurriculumEntry,
@@ -3604,3 +3605,276 @@ class BulkWithdrawOfferingTests(TestCase):
         self.assertIn("skipped", toast)
         self.assertTrue(SubjectOffering.objects.filter(pk=self.offering_1.pk).exists())
         self.assertFalse(SubjectOffering.objects.filter(pk=self.offering_2.pk).exists())
+
+
+class ClassJoinCodeTestBase(TestCase):
+    """One class, its instructor, a second (unrelated) instructor, and a
+    student -- the shared fixture for the class-join-code feature."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.academic_year = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.academic_year, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSIT", name="BS Information Technology")
+        self.section = Section.objects.create(program=self.program, academic_year=self.academic_year, year_level=1, name="A")
+        self.other_section = Section.objects.create(program=self.program, academic_year=self.academic_year, year_level=1, name="B")
+        self.subject = Subject.objects.create(code="IT101", title="Intro to Computing", units=Decimal("3.0"))
+        self.instructor = make_user(User.Role.INSTRUCTOR, "join_prof")
+        self.other_instructor = make_user(User.Role.INSTRUCTOR, "join_prof2")
+        self.class_offering = ClassOffering.objects.create(
+            subject=self.subject, semester=self.semester, instructor=self.instructor
+        )
+        self.class_offering.sections.set([self.section])
+
+        self.student = make_user(User.Role.STUDENT, "join_student", id_number="2026-0099")
+        StudentProfile.objects.update_or_create(
+            user=self.student, defaults={"program": self.program, "section": self.section}
+        )
+
+    def _request_join(self, student=None, code=None):
+        from .services import generate_join_code, request_to_join
+
+        self.class_offering.join_code = self.class_offering.join_code or generate_join_code()
+        self.class_offering.save(update_fields=["join_code"])
+        return request_to_join(self.class_offering, student or self.student)
+
+
+class JoinCodeGenerationTests(ClassJoinCodeTestBase):
+    def test_ensure_join_code_assigns_once(self):
+        from .services import ensure_join_code
+
+        code1 = ensure_join_code(self.class_offering)
+        self.class_offering.refresh_from_db()
+        code2 = ensure_join_code(self.class_offering)
+        self.assertEqual(code1, code2)
+        self.assertEqual(len(code1), 7)
+        self.assertTrue(set(code1) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"))
+
+    def test_reset_join_code_changes_it_and_old_code_stops_resolving(self):
+        from .services import ensure_join_code, reset_join_code, resolve_join_code
+
+        old_code = ensure_join_code(self.class_offering)
+        new_code = reset_join_code(self.class_offering, self.instructor)
+        self.assertNotEqual(old_code, new_code)
+        with self.assertRaises(ValidationError):
+            resolve_join_code(old_code)
+        self.assertEqual(resolve_join_code(new_code).pk, self.class_offering.pk)
+
+
+class JoinRequestFlowTests(ClassJoinCodeTestBase):
+    def test_join_then_approve_adds_to_roster_and_class_record(self):
+        from grading.services import compute_class, ensure_default_grading_template
+
+        ensure_default_grading_template()
+        join_request = self._request_join()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.PENDING)
+        self.assertFalse(
+            ClassRosterEntry.objects.filter(student=self.student, class_offering=self.class_offering).exists()
+        )
+
+        from .services import approve_join_request
+
+        approve_join_request(join_request, self.instructor)
+        join_request.refresh_from_db()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.APPROVED)
+        entry = ClassRosterEntry.objects.get(student=self.student, class_offering=self.class_offering)
+        self.assertEqual(entry.source, ClassRosterEntry.Source.JOIN_CODE)
+
+        results = compute_class(self.class_offering)
+        self.assertIn(self.student.id, [r.roster_entry.student_id for r in results])
+
+    def test_reject_does_not_add_to_roster_and_records_reason(self):
+        from .services import reject_join_request
+
+        join_request = self._request_join()
+        reject_join_request(join_request, self.instructor, "Wrong section.")
+        join_request.refresh_from_db()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.REJECTED)
+        self.assertEqual(join_request.reject_reason, "Wrong section.")
+        self.assertFalse(
+            ClassRosterEntry.objects.filter(student=self.student, class_offering=self.class_offering).exists()
+        )
+
+    def test_duplicate_pending_request_rejected(self):
+        self._request_join()
+        with self.assertRaises(ValidationError):
+            self._request_join()
+
+    def test_already_in_roster_rejected(self):
+        ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
+        with self.assertRaises(ValidationError):
+            self._request_join()
+
+    def test_invalid_code_rejected(self):
+        from .services import resolve_join_code
+
+        with self.assertRaises(ValidationError):
+            resolve_join_code("ZZZZZZZ")
+
+    def test_join_disabled_rejected(self):
+        self.class_offering.join_enabled = False
+        self.class_offering.save(update_fields=["join_enabled"])
+        with self.assertRaises(ValidationError):
+            self._request_join()
+
+    def test_inactive_semester_rejected(self):
+        self.semester.is_active = False
+        self.semester.save(update_fields=["is_active"])
+        with self.assertRaises(ValidationError):
+            self._request_join()
+
+    def test_locked_grade_sheet_blocks_join_and_approval(self):
+        from approvals.models import GradeSheet, GradeSheetStatus
+        from .services import approve_join_request
+
+        join_request = self._request_join()
+        GradeSheet.objects.create(class_offering=self.class_offering, status=GradeSheetStatus.SUBMITTED)
+
+        with self.assertRaises(ValidationError):
+            approve_join_request(join_request, self.instructor)
+
+        with self.assertRaises(ValidationError):
+            self._request_join(student=make_user(User.Role.STUDENT, "join_student2"))
+
+    def test_section_match_badge(self):
+        from .services import join_request_section_match
+
+        join_request = self._request_join()
+        self.assertTrue(join_request_section_match(join_request))
+
+        other_student = make_user(User.Role.STUDENT, "join_student_other")
+        StudentProfile.objects.update_or_create(
+            user=other_student, defaults={"program": self.program, "section": self.other_section}
+        )
+        other_request = self._request_join(student=other_student)
+        self.assertFalse(join_request_section_match(other_request))
+
+    def test_cancel_pending_request(self):
+        from .services import cancel_join_request
+
+        join_request = self._request_join()
+        cancel_join_request(join_request, self.student)
+        join_request.refresh_from_db()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.CANCELLED)
+
+    def test_bulk_approve_skips_already_decided(self):
+        from .services import bulk_decide_join_requests, reject_join_request
+
+        join_request = self._request_join()
+        reject_join_request(join_request, self.instructor)
+        decided, skipped = bulk_decide_join_requests([join_request], self.instructor, approve=True)
+        self.assertEqual(decided, 0)
+        self.assertEqual(len(skipped), 1)
+
+
+class JoinCodeRateLimitTests(ClassJoinCodeTestBase):
+    def test_wrong_codes_are_rate_limited(self):
+        from .services import check_join_rate_limit, record_join_attempt
+
+        for _ in range(10):
+            self.assertTrue(check_join_rate_limit(self.student))
+            record_join_attempt(self.student)
+        self.assertFalse(check_join_rate_limit(self.student))
+
+    def test_view_blocks_after_too_many_wrong_attempts(self):
+        from .services import ensure_join_code
+
+        ensure_join_code(self.class_offering)
+        self.client.force_login(self.student)
+        for _ in range(10):
+            self.client.get(reverse("academics:join_with_code", args=["BADCODE"]))
+        response = self.client.get(reverse("academics:join_with_code", args=["BADCODE"]))
+        self.assertContains(response, "Too many attempts")
+
+
+class ClassJoinViewTests(ClassJoinCodeTestBase):
+    def test_join_view_shows_confirmation_for_valid_code(self):
+        from .services import ensure_join_code
+
+        code = ensure_join_code(self.class_offering)
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("academics:join_with_code", args=[code]))
+        self.assertContains(response, self.subject.code)
+        self.assertContains(response, "Request to join")
+
+    def test_join_view_post_creates_request(self):
+        from .services import ensure_join_code
+
+        code = ensure_join_code(self.class_offering)
+        self.client.force_login(self.student)
+        response = self.client.post(reverse("academics:join_with_code", args=[code]))
+        self.assertContains(response, "Request sent")
+        self.assertTrue(ClassJoinRequest.objects.filter(student=self.student, class_offering=self.class_offering).exists())
+
+    def test_anonymous_user_redirected_to_login(self):
+        from .services import ensure_join_code
+
+        code = ensure_join_code(self.class_offering)
+        response = self.client.get(reverse("academics:join_with_code", args=[code]))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response.url)
+
+    def test_student_cannot_decide_requests(self):
+        join_request = self._request_join()
+        self.client.force_login(self.student)
+        response = self.client.post(
+            reverse("academics:class_join_request_decide", args=[join_request.pk]), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_other_instructor_cannot_see_or_decide_requests(self):
+        join_request = self._request_join()
+        self.client.force_login(self.other_instructor)
+        response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.post(
+            reverse("academics:class_join_request_decide", args=[join_request.pk]), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 403)
+        join_request.refresh_from_db()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.PENDING)
+
+    def test_owner_instructor_can_approve_via_view(self):
+        join_request = self._request_join()
+        self.client.force_login(self.instructor)
+        response = self.client.post(
+            reverse("academics:class_join_request_decide", args=[join_request.pk]), {"action": "approve"}
+        )
+        self.assertEqual(response.status_code, 204)
+        join_request.refresh_from_db()
+        self.assertEqual(join_request.status, ClassJoinRequest.Status.APPROVED)
+
+    def test_class_roster_page_shows_invite_card_and_pending_list_for_owner(self):
+        self._request_join()
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("academics:class_roster", args=[self.class_offering.pk]))
+        self.assertContains(response, "Invite Students")
+        self.assertContains(response, "Pending Requests")
+        self.assertContains(response, self.student.full_name)
+
+    def test_qr_endpoint_returns_svg(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("academics:class_join_qr", args=[self.class_offering.pk]))
+        self.assertEqual(response["Content-Type"], "image/svg+xml")
+        self.assertIn(b"<svg", response.content)
+
+    def test_student_my_classes_shows_joined_and_pending(self):
+        from .services import approve_join_request
+
+        join_request = self._request_join()
+        approve_join_request(join_request, self.instructor)
+
+        other_student = make_user(User.Role.STUDENT, "join_student_pending_view")
+        StudentProfile.objects.update_or_create(user=other_student, defaults={"program": self.program})
+        pending_request = self._request_join(student=other_student)
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("academics:student_my_classes"))
+        self.assertContains(response, "Joined")
+
+        self.client.force_login(other_student)
+        response = self.client.get(reverse("academics:student_my_classes"))
+        self.assertContains(response, "Pending approval")

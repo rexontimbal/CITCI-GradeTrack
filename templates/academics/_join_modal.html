@@ -1,0 +1,15 @@
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Join a class</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">&times;</button>
+</div>
+<form hx-post="{% url 'academics:student_join_modal' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-3">
+    {% csrf_token %}
+    <label class="block text-sm font-medium text-gray-700">{{ form.code.label }}</label>
+    {{ form.code }}
+    {% if form.code.errors %}<p class="text-sm text-red-600">{{ form.code.errors.0 }}</p>{% endif %}
+    <p class="text-xs text-gray-600">Or scan the QR code your instructor shared.</p>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">Continue</button>
+    </div>
+</form>

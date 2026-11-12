@@ -8,7 +8,29 @@
 document.addEventListener("alpine:init", () => {
     Alpine.data("subjectOffering", (unitsById) => ({
         selected: [],
+        selectedOfferings: [],
         unitsById: unitsById || {},
+
+        toggleOffering(id) {
+            const idx = this.selectedOfferings.indexOf(id);
+            if (idx === -1) {
+                this.selectedOfferings.push(id);
+            } else {
+                this.selectedOfferings.splice(idx, 1);
+            }
+        },
+
+        isOfferingSelected(id) {
+            return this.selectedOfferings.includes(id);
+        },
+
+        clearOfferings() {
+            this.selectedOfferings = [];
+        },
+
+        get offeringCount() {
+            return this.selectedOfferings.length;
+        },
 
         toggle(id) {
             const idx = this.selected.indexOf(id);

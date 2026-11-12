@@ -1313,7 +1313,15 @@ def subject_offering_bulk_withdraw(request):
         qs = qs.filter(pk__in=offering_ids)
     elif scope.startswith("year_level:"):
         qs = qs.filter(year_level=int(scope.split(":", 1)[1]))
-    elif scope != "all":
+    elif scope == "all":
+        # The toolbar's "Withdraw all" respects whatever year_level filter
+        # is currently active on the page; a card's own ⋯ menu action uses
+        # the explicit "year_level:<N>" token above instead, independent
+        # of the page filter.
+        year_level_param = data.get("year_level")
+        if year_level_param and year_level_param != "ALL":
+            qs = qs.filter(year_level=int(year_level_param))
+    else:
         raise PermissionDenied("Nothing to withdraw.")
     offerings = list(qs)
 

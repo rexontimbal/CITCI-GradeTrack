@@ -26,6 +26,7 @@ from .models import (
     GradingComponent,
     GradingTemplate,
     Score,
+    SchemeComponent,
     SchemeComponentChangeLog,
     ScoreChangeLog,
 )
@@ -621,7 +622,16 @@ class ComponentWeightTotalTests(GradingTestBase):
         rows = self._locked_plus_unlocked_rows([5, 30, 15, 5])
         self.client.force_login(self.instructor)
         response = self.client.post(self._save_url(), self.components_formset_payload(rows))
-        self.assertContains(response, "must total 100%")
+        self.assertContains(response, "Total is 95%")
+        self.assertContains(response, "add 5%")
+
+    def test_total_above_100_including_locked_is_rejected(self):
+        # 40 (locked) + 5+30+15+15 = 105, not 100.
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 15])
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), self.components_formset_payload(rows))
+        self.assertContains(response, "Total is 105%")
+        self.assertContains(response, "reduce by 5%")
 
     def test_total_exactly_100_including_locked_is_accepted(self):
         rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])  # 40 + 60 = 100
@@ -639,6 +649,39 @@ class ComponentWeightTotalTests(GradingTestBase):
         self.assertEqual(response.status_code, 200)  # redisplayed with a field error, not saved
         self.scheme_components["Project"].refresh_from_db()
         self.assertEqual(self.scheme_components["Project"].weight, 10)  # unchanged
+
+    def test_duplicate_component_name_case_insensitive_is_rejected(self):
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])
+        payload = self.components_formset_payload(rows)
+        payload["components-3-name"] = "quizzes"  # Project row renamed to clash with Quizzes, case-insensitively
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already exists in this class")
+        self.scheme_components["Project"].refresh_from_db()
+        self.assertEqual(self.scheme_components["Project"].name, "Project")  # unchanged
+
+    def test_partly_filled_new_row_is_rejected_but_fully_blank_one_is_ignored(self):
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])
+        payload = self.components_formset_payload(rows, extra_blanks=1)
+        # The one extra blank row gets a name but no weight -- "changed" from
+        # blank, so it must be validated (and rejected), not silently
+        # skipped the way a still-fully-blank row would be.
+        new_row_index = len(rows)
+        payload[f"components-{new_row_index}-name"] = "Bonus"
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This field is required")
+        self.assertFalse(SchemeComponent.objects.filter(scheme=self.scheme, name="Bonus").exists())
+
+    def test_fully_blank_extra_row_is_silently_ignored(self):
+        rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])  # totals exactly 100
+        payload = self.components_formset_payload(rows, extra_blanks=1)
+        self.client.force_login(self.instructor)
+        response = self.client.post(self._save_url(), payload)
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Refresh"], "true")
 
 
 class TwoInstructorsDifferentComponentsTests(TestCase):

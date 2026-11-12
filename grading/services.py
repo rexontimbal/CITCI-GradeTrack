@@ -78,6 +78,15 @@ def validate_component_weights(weights):
         raise ValidationError(f"Component weights must total 100% (currently {total}%).")
 
 
+def scheme_total_weight(scheme):
+    """Current sum of a class's grading components -- used to block
+    Submit Grades on legacy/corrupted data where the total isn't exactly
+    100% (the Setup tab's own formset already enforces 100% on every
+    save, but a scheme created before that rule existed, or edited
+    directly, could still be off)."""
+    return sum(c.weight for c in scheme.components.all())
+
+
 def save_score(roster_entry, item, new_value, user):
     """Create/update one Score, validating against item.max_score and
     writing a ScoreChangeLog entry whenever the value actually changes.

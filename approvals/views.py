@@ -9,7 +9,8 @@ from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
 from accounts.decorators import role_required
 from accounts.models import User
 from core.htmx import is_htmx
-from grading.services import compute_class
+from grading.models import ClassGradingScheme
+from grading.services import compute_class, scheme_total_weight
 
 from .forms import CorrectionForm, IncCompletionDecisionForm, IncCompletionFileForm, ReturnRemarksForm, SubmitConfirmForm
 from .models import GradeSheet, GradeSheetEntry, GradeSheetStatus, IncCompletion
@@ -76,11 +77,18 @@ def _build_submit_summary(class_offering):
         ):
             missing_results.append(result)
     average = sum(final_grades) / len(final_grades) if final_grades else None
+
+    scheme = ClassGradingScheme.objects.filter(class_offering=class_offering).first()
+    scheme_total = scheme_total_weight(scheme) if scheme else 0
+    scheme_complete = scheme_total == 100
+
     return {
         "counts": counts,
         "average": average,
         "missing_results": missing_results,
-        "can_submit": not missing_results,
+        "scheme_total": scheme_total,
+        "scheme_complete": scheme_complete,
+        "can_submit": not missing_results and scheme_complete,
     }
 
 
@@ -112,7 +120,13 @@ def submit(request, pk):
     summary = _build_submit_summary(class_offering)
     form = SubmitConfirmForm(request.POST)
     if not form.is_valid() or not summary["can_submit"]:
-        if form.is_valid() and not summary["can_submit"]:
+        if form.is_valid() and not summary["scheme_complete"]:
+            form.add_error(
+                None,
+                f"Grading components total {summary['scheme_total']}%, not 100% — fix this in "
+                "Grading Components before submitting.",
+            )
+        elif form.is_valid() and not summary["can_submit"]:
             form.add_error(None, "Some active students still have missing scores — encode them or mark INC first.")
         return render(
             request,

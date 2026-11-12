@@ -18,7 +18,8 @@ from django.utils import timezone
 
 from academics.models import ClassOffering, ClassRosterEntry
 from dashboard.services import notify, notify_many
-from grading.services import compute_class, released_entries_for
+from grading.models import ClassGradingScheme
+from grading.services import compute_class, released_entries_for, scheme_total_weight
 
 from .models import (
     GradeCorrection,
@@ -147,6 +148,12 @@ def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
     if missing_score_students(class_offering):
         raise ValidationError(
             "Some active students still have missing scores — encode them or mark the student INC first."
+        )
+
+    scheme = ClassGradingScheme.objects.filter(class_offering=class_offering).first()
+    if scheme and scheme_total_weight(scheme) != 100:
+        raise ValidationError(
+            f"Grading components total {scheme_total_weight(scheme)}%, not 100% — fix this in Grading Components before submitting."
         )
 
     results = compute_class(class_offering)

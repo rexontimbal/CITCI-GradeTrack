@@ -22,8 +22,14 @@
                 {% else %}
                 <span class="w-4"></span>
                 {% endif %}
-                <div class="min-w-[9rem] flex-1">{{ form.name }}</div>
-                <div class="w-44">{{ form.category }}</div>
+                <div class="min-w-[9rem] flex-1">
+                    {{ form.name }}
+                    {% for error in form.name.errors %}<p class="mt-0.5 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="w-44">
+                    {{ form.category }}
+                    {% for error in form.category.errors %}<p class="mt-0.5 text-xs text-red-600">{{ error }}</p>{% endfor %}
+                </div>
                 <div class="flex w-28 items-center gap-1">
                     {{ form.weight }}<span class="text-sm text-gray-600">%</span>
                 </div>
@@ -34,6 +40,7 @@
                     {% sidebar_icon "trash" "w-4 h-4" %}
                 </button>
                 {% endif %}
+                {% for error in form.weight.errors %}<p class="w-full text-xs text-red-600">{{ error }}</p>{% endfor %}
                 {% for error in form.non_field_errors %}<p class="w-full text-xs text-red-600">{{ error }}</p>{% endfor %}
             </div>
             {% endfor %}
@@ -59,13 +66,22 @@
             {% sidebar_icon "plus" "w-4 h-4" %} Add component
         </button>
 
-        <div class="mt-4 max-w-sm">
-            <div class="mb-1 flex justify-between text-sm text-gray-600">
-                <span>Instructor share</span>
-                <span id="components-total-label">— / {{ instructor_share }}%</span>
+        <div class="mt-4 max-w-sm" data-locked-total="{{ locked_total }}">
+            <div class="mb-1 flex justify-between text-sm font-medium text-gray-800">
+                <span>Total</span>
+                <span id="components-overall-label">— / 100%</span>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-gray-200">
-                <div id="components-total-bar" class="h-2 rounded-full bg-amber-400 transition-all" style="width: 0%"></div>
+                <div id="components-overall-bar" class="h-2 rounded-full bg-amber-400 transition-all" style="width: 0%"></div>
+            </div>
+            <p id="components-overall-message" class="mt-1 text-xs text-amber-700"></p>
+
+            <div class="mb-1 mt-3 flex justify-between text-xs text-gray-600">
+                <span>Your share</span>
+                <span id="components-total-label">— / {{ instructor_share }}%</span>
+            </div>
+            <div class="h-1.5 overflow-hidden rounded-full bg-gray-200">
+                <div id="components-total-bar" class="h-1.5 rounded-full bg-amber-400 transition-all" style="width: 0%"></div>
             </div>
         </div>
 

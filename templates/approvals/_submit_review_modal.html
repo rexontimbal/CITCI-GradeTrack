@@ -30,6 +30,18 @@
         </div>
     </div>
 
+    {% if not summary.scheme_complete %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+        <p class="font-semibold">Grading components total {{ summary.scheme_total }}%, not 100%.</p>
+        <p class="mt-1">Fix this in Grading Components before grades can be submitted.</p>
+        <button type="button"
+                hx-get="{% url 'grading:class_components_save' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML"
+                class="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">
+            Open Grading Components
+        </button>
+    </div>
+    {% endif %}
+
     {% if summary.missing_results %}
     <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
         <p class="font-semibold">{{ summary.missing_results|length }} student(s) have missing scores:</p>
@@ -40,7 +52,7 @@
         </ul>
         <p class="mt-1">Encode these scores or mark each student INC (with a reason) before submitting.</p>
     </div>
-    {% else %}
+    {% elif summary.scheme_complete %}
     <form method="post" hx-post="{% url 'approvals:submit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="space-y-4">
         {% csrf_token %}
         <label class="flex items-start gap-2 text-sm text-gray-700">

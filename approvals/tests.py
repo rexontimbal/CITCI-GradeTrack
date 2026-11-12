@@ -149,6 +149,32 @@ class SubmitBlockingTests(ApprovalsTestBase):
         with self.assertRaises(ValidationError):
             submit_grade_sheet(self.class_offering, self.instructor)
 
+    def test_submit_blocked_when_scheme_does_not_total_100_percent(self):
+        self.fully_score_class()
+        # Push the total to 105% by bumping Project's weight (legacy/
+        # corrupted-data scenario -- the Setup tab's own formset already
+        # stops a NEW edit from landing here, but an existing scheme could
+        # still be off).
+        project = self.scheme_components["Project"]
+        project.weight = 15
+        project.save(update_fields=["weight"])
+
+        with self.assertRaises(ValidationError) as ctx:
+            submit_grade_sheet(self.class_offering, self.instructor)
+        self.assertIn("105%", str(ctx.exception))
+
+    def test_submit_review_modal_shows_scheme_warning_and_settings_link(self):
+        self.fully_score_class()
+        project = self.scheme_components["Project"]
+        project.weight = 15
+        project.save(update_fields=["weight"])
+
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("approvals:submit_review", args=[self.class_offering.pk]))
+        self.assertContains(response, "105%")
+        self.assertContains(response, "Open Grading Components")
+        self.assertNotContains(response, "I certify these grades are final and correct")
+
     def test_submit_allowed_when_the_missing_student_is_marked_inc(self):
         self.make_items("Attendance", [10])
         self.roster_entry.is_incomplete = True

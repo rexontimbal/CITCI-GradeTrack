@@ -102,6 +102,7 @@ class _SchemeComponentBaseFormSet(forms.BaseInlineFormSet):
             return
 
         total_weight = 0
+        seen_names = {}
         for form in self.forms:
             if not form.cleaned_data or form.cleaned_data.get("DELETE"):
                 if form.cleaned_data.get("DELETE") and form.instance.pk:
@@ -111,11 +112,21 @@ class _SchemeComponentBaseFormSet(forms.BaseInlineFormSet):
                 continue
             total_weight += form.cleaned_data.get("weight") or 0
 
+            name = (form.cleaned_data.get("name") or "").strip()
+            key = name.lower()
+            if key in seen_names:
+                form.add_error(None, "A component with this name already exists in this class.")
+                seen_names[key].add_error(None, "A component with this name already exists in this class.")
+            else:
+                seen_names[key] = form
+
         if any(self.errors):
             return
 
-        if total_weight != 100:
-            raise forms.ValidationError(f"Components must total 100% (currently {total_weight}%).")
+        if total_weight > 100:
+            raise forms.ValidationError(f"Total is {total_weight}% — reduce by {total_weight - 100}%.")
+        if total_weight < 100:
+            raise forms.ValidationError(f"Total is {total_weight}% — add {100 - total_weight}%.")
 
 
 SchemeComponentFormSet = forms.inlineformset_factory(
@@ -124,7 +135,7 @@ SchemeComponentFormSet = forms.inlineformset_factory(
     form=SchemeComponentForm,
     formset=_SchemeComponentBaseFormSet,
     fk_name="scheme",
-    extra=2,
+    extra=0,
     can_delete=True,
 )
 

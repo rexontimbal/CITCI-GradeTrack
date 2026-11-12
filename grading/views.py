@@ -42,6 +42,7 @@ from .services import (
     get_scheme_components,
     log_component_change,
     save_score,
+    scheme_total_weight,
 )
 
 ADMIN = User.Role.ADMIN
@@ -400,6 +401,7 @@ def class_grading(request, pk):
         context["record"] = _build_class_record_context(class_offering, term_filter)
         context["summary"] = _build_summary_context(class_offering)
         context["components"] = _build_components_panel_context(scheme, can_edit)
+        context["scheme_total"] = scheme_total_weight(scheme)
 
     return render(request, "grading/class_grading.html", context)
 
@@ -407,7 +409,7 @@ def class_grading(request, pk):
 def _build_components_panel_context(scheme, can_edit, formset=None):
     if formset is None and can_edit:
         formset = SchemeComponentFormSet(
-            instance=scheme, queryset=scheme.components.order_by("order", "id"), prefix="components"
+            instance=scheme, queryset=scheme.components.order_by("-is_locked", "order", "id"), prefix="components"
         )
     locked_total = sum(c.weight for c in scheme.components.all() if c.is_locked)
     return {
@@ -422,13 +424,24 @@ def _build_components_panel_context(scheme, can_edit, formset=None):
 
 @role_required(INSTRUCTOR)
 def class_components_save(request, pk):
+    """GET opens the "Grading Components" modal (gear icon on the Setup
+    tab's Assessment Items card); POST saves it. Both share this one view
+    since the save target and the modal-open target are the same URL —
+    a validation error on save re-renders just #components-panel inside
+    the still-open modal, the same convention every other modal form in
+    this codebase uses."""
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_edit(request.user, class_offering):
         raise PermissionDenied
     scheme = ClassGradingScheme.get_or_create_default(class_offering)
 
+    if request.method != "POST":
+        context = _build_components_panel_context(scheme, True)
+        context["class_offering"] = class_offering
+        return render(request, "grading/_components_modal.html", context)
+
     formset = SchemeComponentFormSet(
-        request.POST, instance=scheme, queryset=scheme.components.order_by("order", "id"), prefix="components"
+        request.POST, instance=scheme, queryset=scheme.components.order_by("-is_locked", "order", "id"), prefix="components"
     )
     if formset.is_valid():
         for form in formset.forms:
@@ -454,6 +467,9 @@ def class_components_save(request, pk):
                 saved.save()
                 log_component_change(scheme, SchemeComponentChangeLog.Action.ADDED, saved.name, request.user, before=None, after=component_snapshot(saved))
 
+        from django.contrib import messages as django_messages
+
+        django_messages.success(request, "Grading components updated.")
         response = HttpResponse(status=204)
         response["HX-Refresh"] = "true"
         return response
@@ -523,7 +539,11 @@ class AssessmentItemFormView(View):
     def get(self, request, class_pk=None, pk=None):
         obj, class_offering = self._resolve(request, class_pk, pk)
         scheme = ClassGradingScheme.get_or_create_default(class_offering)
-        form = AssessmentItemForm(instance=obj, scheme=scheme)
+        initial = {}
+        component_id = request.GET.get("component")
+        if not obj and component_id and scheme.components.filter(pk=component_id).exists():
+            initial["component"] = component_id
+        form = AssessmentItemForm(instance=obj, scheme=scheme, initial=initial)
         return render(
             request,
             "partials/_entity_form_modal.html",

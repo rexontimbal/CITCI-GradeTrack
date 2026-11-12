@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -954,3 +955,181 @@ class GwaDisplayTests(StudentPortalTestBase):
         response = self.client.get(reverse("dashboard:home"))
         self.assertTrue(response.context["gwa"]["is_complete"])
         self.assertContains(response, response.context["gwa"]["gwa"].__str__())
+
+
+class AssessmentItemSuggestionTests(GradingTestBase):
+    """suggest_item_titles/default_term_for_new_item/default_max_score_for_
+    component -- the Add Item form's suggested-title combobox, default
+    term, and default max score."""
+
+    def test_quiz_suggestions_start_at_1_and_advance_past_existing_items(self):
+        from .services import suggest_item_titles
+
+        quizzes = self.scheme_components["Quizzes"]
+        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 1", "Long Quiz 1"])
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering, component=quizzes, title="Quiz 1", max_score=20, term=AssessmentTerm.PRELIM
+        )
+        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 2", "Long Quiz 1"])
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering, component=quizzes, title="Long Quiz 1", max_score=50, term=AssessmentTerm.PRELIM
+        )
+        self.assertEqual(suggest_item_titles(quizzes), ["Quiz 2", "Long Quiz 2"])
+
+    def test_recitation_and_project_and_other_suggestions(self):
+        from .services import suggest_item_titles
+
+        self.assertEqual(suggest_item_titles(self.scheme_components["Recitation"]), ["Recitation 1"])
+        self.assertEqual(
+            suggest_item_titles(self.scheme_components["Project"]), ["Project 1", "Performance Task 1"]
+        )
+
+        other = SchemeComponent.objects.create(scheme=self.scheme, name="Seatwork", category=ComponentCategory.OTHER, weight=0)
+        self.assertEqual(suggest_item_titles(other), ["Seatwork 1"])
+
+    def test_exam_titles_hide_once_used(self):
+        from .services import suggest_item_titles
+
+        exam = self.scheme_components["Examination"]
+        self.assertEqual(
+            suggest_item_titles(exam), ["Prelim Exam", "Midterm Exam", "Semi-final Exam", "Final Exam"]
+        )
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering, component=exam, title="Prelim Exam", max_score=100, term=AssessmentTerm.PRELIM
+        )
+        self.assertEqual(suggest_item_titles(exam), ["Midterm Exam", "Semi-final Exam", "Final Exam"])
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering, component=exam, title="Final Exam", max_score=100, term=AssessmentTerm.FINAL
+        )
+        self.assertEqual(suggest_item_titles(exam), ["Midterm Exam", "Semi-final Exam"])
+
+    def test_default_term_is_prelim_when_no_items_yet(self):
+        from .services import default_term_for_new_item
+
+        self.assertEqual(default_term_for_new_item(self.class_offering), AssessmentTerm.PRELIM)
+
+    def test_default_term_matches_most_recently_added_item(self):
+        from .services import default_term_for_new_item
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering,
+            component=self.scheme_components["Quizzes"],
+            title="Quiz 1",
+            max_score=20,
+            term=AssessmentTerm.MIDTERM,
+        )
+        self.assertEqual(default_term_for_new_item(self.class_offering), AssessmentTerm.MIDTERM)
+
+    def test_default_max_score_remembers_last_value_per_component(self):
+        from .services import default_max_score_for_component
+
+        quizzes = self.scheme_components["Quizzes"]
+        self.assertIsNone(default_max_score_for_component(quizzes))
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering, component=quizzes, title="Quiz 1", max_score=20, term=AssessmentTerm.PRELIM
+        )
+        self.assertEqual(default_max_score_for_component(quizzes), 20)
+
+
+class AssessmentItemFormValidationTests(GradingTestBase):
+    """The Add/Edit Assessment Item form: duplicate titles rejected,
+    exam titles force their matching term server-side, and `order` is
+    gone -- ordering is now automatic (term, date, creation)."""
+
+    def _base_data(self, **overrides):
+        data = {
+            "component": self.scheme_components["Quizzes"].pk,
+            "title": "Quiz 1",
+            "max_score": "20",
+            "term": AssessmentTerm.PRELIM,
+            "date": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_order_field_is_gone(self):
+        from .forms import AssessmentItemForm
+
+        form = AssessmentItemForm(scheme=self.scheme)
+        self.assertNotIn("order", form.fields)
+
+    def test_duplicate_title_within_same_component_rejected_case_insensitively(self):
+        from .forms import AssessmentItemForm
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering,
+            component=self.scheme_components["Quizzes"],
+            title="Quiz 1",
+            max_score=20,
+            term=AssessmentTerm.PRELIM,
+        )
+        form = AssessmentItemForm(data=self._base_data(title="quiz 1"), scheme=self.scheme)
+        self.assertFalse(form.is_valid())
+        self.assertIn("title", form.errors)
+
+    def test_duplicate_title_in_a_different_component_is_allowed(self):
+        from .forms import AssessmentItemForm
+
+        AssessmentItem.objects.create(
+            class_offering=self.class_offering,
+            component=self.scheme_components["Recitation"],
+            title="Quiz 1",
+            max_score=20,
+            term=AssessmentTerm.PRELIM,
+        )
+        form = AssessmentItemForm(data=self._base_data(), scheme=self.scheme)
+        self.assertTrue(form.is_valid())
+
+    def test_editing_an_item_does_not_clash_with_its_own_title(self):
+        from .forms import AssessmentItemForm
+
+        item = AssessmentItem.objects.create(
+            class_offering=self.class_offering,
+            component=self.scheme_components["Quizzes"],
+            title="Quiz 1",
+            max_score=20,
+            term=AssessmentTerm.PRELIM,
+        )
+        form = AssessmentItemForm(data=self._base_data(), instance=item, scheme=self.scheme)
+        self.assertTrue(form.is_valid())
+
+    def test_exam_title_forces_its_matching_term_even_if_a_different_term_was_posted(self):
+        from .forms import AssessmentItemForm
+
+        data = self._base_data(
+            component=self.scheme_components["Examination"].pk, title="Midterm Exam", term=AssessmentTerm.FINAL
+        )
+        form = AssessmentItemForm(data=data, scheme=self.scheme)
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["term"], AssessmentTerm.MIDTERM)
+
+    def test_non_exam_title_leaves_posted_term_untouched(self):
+        from .forms import AssessmentItemForm
+
+        form = AssessmentItemForm(data=self._base_data(term=AssessmentTerm.SEMIFINAL), scheme=self.scheme)
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["term"], AssessmentTerm.SEMIFINAL)
+
+
+class AssessmentItemFormViewTests(GradingTestBase):
+    def test_add_item_view_prefills_first_suggestion_and_default_term(self):
+        self.client.force_login(self.instructor)
+        url = reverse("grading:item_create", args=[self.class_offering.pk])
+        response = self.client.get(url, {"component": self.scheme_components["Quizzes"].pk})
+        self.assertContains(response, 'value="Quiz 1"')
+        self.assertInHTML(
+            f'<option value="{AssessmentTerm.PRELIM}" selected>Prelim</option>', response.content.decode()
+        )
+
+    def test_term_dropdown_has_no_blank_choice(self):
+        self.client.force_login(self.instructor)
+        url = reverse("grading:item_create", args=[self.class_offering.pk])
+        response = self.client.get(url, {"component": self.scheme_components["Quizzes"].pk})
+        term_select = re.search(r'<select name="term".*?</select>', response.content.decode(), re.DOTALL).group()
+        self.assertNotIn("---------", term_select)
+        self.assertNotIn('value=""', term_select)

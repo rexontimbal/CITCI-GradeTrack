@@ -1,0 +1,85 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">{{ modal_title }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+<form method="post" hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4" id="item-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div>
+        <label for="{{ form.component.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Component</label>
+        {{ form.component }}
+        {% for error in form.component.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+
+    <div>
+        <label for="{{ form.title.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Title</label>
+        {{ form.title }}
+        <datalist id="title-suggestions">
+            {% for suggestion in title_suggestions %}<option value="{{ suggestion }}"></option>{% endfor %}
+        </datalist>
+        {% for error in form.title.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+
+    <div>
+        <label for="{{ form.max_score.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Max Score</label>
+        {{ form.max_score }}
+        {% if form.max_score.help_text %}<p class="mt-1 text-xs text-gray-600">{{ form.max_score.help_text }}</p>{% endif %}
+        {% for error in form.max_score.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+
+    <div>
+        <label for="{{ form.term.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Term</label>
+        {{ form.term }}
+        <p class="mt-1 text-xs text-gray-600">Grading period this item belongs to — also drives forecasting checkpoints later. Choosing an exam title sets this automatically.</p>
+        {% for error in form.term.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+
+    <div>
+        <label for="{{ form.date.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Date</label>
+        {{ form.date }}
+        {% for error in form.date.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+    </div>
+
+    {{ exam_title_term_map|json_script:"exam-title-term-map" }}
+
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Save
+        </button>
+    </div>
+</form>
+<script>
+(function () {
+    var form = document.getElementById("item-form");
+    if (!form) return;
+    var titleInput = form.querySelector('[name="title"]');
+    var termSelect = form.querySelector('[name="term"]');
+    var mapEl = document.getElementById("exam-title-term-map");
+    var map = mapEl ? JSON.parse(mapEl.textContent) : {};
+
+    function applyExamTermLock() {
+        var key = (titleInput.value || "").trim();
+        if (Object.prototype.hasOwnProperty.call(map, key)) {
+            termSelect.value = map[key];
+            termSelect.classList.add("bg-gray-100", "text-gray-500");
+        } else {
+            termSelect.classList.remove("bg-gray-100", "text-gray-500");
+        }
+    }
+
+    if (titleInput && termSelect) {
+        titleInput.addEventListener("input", applyExamTermLock);
+        titleInput.addEventListener("change", applyExamTermLock);
+        applyExamTermLock();
+    }
+})();
+</script>

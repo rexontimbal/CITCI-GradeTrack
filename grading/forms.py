@@ -3,8 +3,13 @@ from django.core.exceptions import ValidationError
 
 from core.forms import StyledModelForm
 
-from .models import AssessmentItem, ClassGradingScheme, GradingComponent, GradingTemplate, SchemeComponent
-from .services import check_can_delete_scheme_component, ensure_locked_component_unchanged, validate_component_weights
+from .models import AssessmentItem, AssessmentTerm, ClassGradingScheme, GradingComponent, GradingTemplate, SchemeComponent
+from .services import (
+    EXAM_TITLE_TERM_MAP,
+    check_can_delete_scheme_component,
+    ensure_locked_component_unchanged,
+    validate_component_weights,
+)
 
 
 class GradingTemplateForm(StyledModelForm):
@@ -141,11 +146,22 @@ SchemeComponentFormSet = forms.inlineformset_factory(
 
 
 class AssessmentItemForm(StyledModelForm):
+    """Add/Edit Assessment Item. `order` is deliberately not a field here
+    any more -- items are ordered automatically (term, then date, then
+    creation, see grading.services.ordered_items_by_component); a future
+    drag-to-reorder UI is the field's next intended use, not something an
+    instructor sets by typing a number."""
+
     max_score = forms.IntegerField(min_value=1, label="Max Score", help_text="Whole numbers only.")
+    title = forms.CharField(
+        label="Title",
+        widget=forms.TextInput(attrs={"list": "title-suggestions", "autocomplete": "off"}),
+    )
+    term = forms.ChoiceField(choices=AssessmentTerm.choices, label="Term")
 
     class Meta:
         model = AssessmentItem
-        fields = ["component", "title", "max_score", "term", "date", "order"]
+        fields = ["component", "title", "max_score", "term", "date"]
         widgets = {"date": forms.DateInput(attrs={"type": "date"})}
 
     def __init__(self, *args, scheme=None, **kwargs):
@@ -154,6 +170,29 @@ class AssessmentItemForm(StyledModelForm):
             self.fields["component"].queryset = scheme.components.all()
         elif self.instance and self.instance.pk:
             self.fields["component"].queryset = self.instance.component.scheme.components.all()
+
+    def clean_title(self):
+        return self.cleaned_data["title"].strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        title = cleaned_data.get("title")
+        component = cleaned_data.get("component")
+
+        if title and component:
+            duplicate_qs = AssessmentItem.objects.filter(component=component, title__iexact=title)
+            if self.instance.pk:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            if duplicate_qs.exists():
+                self.add_error("title", "An item with this title already exists in this component.")
+
+        # An exam title ("Prelim Exam", ...) always implies its matching
+        # term -- enforced server-side too, not just by the form's JS
+        # auto-set/lock, so a tampered POST can't desync the two.
+        if title in EXAM_TITLE_TERM_MAP:
+            cleaned_data["term"] = EXAM_TITLE_TERM_MAP[title]
+
+        return cleaned_data
 
 
 class MarkIncompleteForm(forms.Form):

@@ -1,4 +1,4 @@
-{% load sidebar_icons grading_extras %}
+{% load sidebar_icons grading_extras core_extras %}
 <div class="rounded-2xl border border-gray-200 bg-white p-4">
     <div class="mb-3 flex items-center justify-between">
         <h3 class="text-sm font-semibold text-gray-900">Assessment Items</h3>
@@ -34,6 +34,7 @@
     </div>
 
     {% for component in scheme.components.all %}
+    {% with items=items_by_component|dict_get:component.pk %}
     <div class="mb-5 last:mb-0">
         <div class="mb-2 flex items-center justify-between">
             <span class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ component.name }} ({{ component.weight }}%)</span>
@@ -44,7 +45,7 @@
             </button>
             {% endif %}
         </div>
-        {% if component.items.all %}
+        {% if items %}
         <div class="overflow-x-auto rounded-xl border border-gray-200">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -57,7 +58,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    {% for item in component.items.all %}
+                    {% for item in items %}
                     <tr class="hover:bg-gray-50">
                         <td class="px-3 py-2 font-medium text-gray-900">{{ item.title }}</td>
                         <td class="px-3 py-2"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ item.get_term_display }}</span></td>
@@ -82,5 +83,6 @@
         <p class="rounded-xl border border-dashed border-gray-200 px-3 py-3 text-xs text-gray-500">No items yet for {{ component.name }}.</p>
         {% endif %}
     </div>
+    {% endwith %}
     {% endfor %}
 </div>

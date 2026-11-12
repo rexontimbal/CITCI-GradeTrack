@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
@@ -33,16 +34,21 @@ from .models import (
     SchemeComponentChangeLog,
 )
 from .services import (
+    EXAM_TITLE_TERM_MAP,
     PASSING_THRESHOLD,
     compute_class,
     compute_student,
     component_snapshot,
+    default_max_score_for_component,
+    default_term_for_new_item,
     delete_scheme_component,
     get_encoded_item_ids,
     get_scheme_components,
     log_component_change,
+    ordered_items_by_component,
     save_score,
     scheme_total_weight,
+    suggest_item_titles,
 )
 
 ADMIN = User.Role.ADMIN
@@ -402,6 +408,7 @@ def class_grading(request, pk):
         context["summary"] = _build_summary_context(class_offering)
         context["components"] = _build_components_panel_context(scheme, can_edit)
         context["scheme_total"] = scheme_total_weight(scheme)
+        context["items_by_component"] = ordered_items_by_component(scheme)
 
     return render(request, "grading/class_grading.html", context)
 
@@ -536,18 +543,59 @@ class AssessmentItemFormView(View):
             raise PermissionDenied
         return obj, class_offering
 
+    def _url(self, class_pk, pk):
+        return reverse("grading:item_edit", args=[pk]) if pk else reverse("grading:item_create", args=[class_pk])
+
     def get(self, request, class_pk=None, pk=None):
         obj, class_offering = self._resolve(request, class_pk, pk)
         scheme = ClassGradingScheme.get_or_create_default(class_offering)
-        initial = {}
+
+        component = None
         component_id = request.GET.get("component")
-        if not obj and component_id and scheme.components.filter(pk=component_id).exists():
-            initial["component"] = component_id
+        if component_id and scheme.components.filter(pk=component_id).exists():
+            component = scheme.components.get(pk=component_id)
+        elif obj:
+            component = obj.component
+
+        initial = {}
+        title_suggestions = []
+        if component:
+            # Set even in edit mode -- the component field's own
+            # hx-get re-fetches this same view on change, and without
+            # this the re-render would fall back to the instance's
+            # ORIGINAL component (model_to_dict), silently undoing the
+            # user's in-progress dropdown change.
+            initial["component"] = component.pk
+        if not obj:
+            initial["term"] = default_term_for_new_item(class_offering)
+            initial["date"] = timezone.localdate()
+            if component:
+                title_suggestions = suggest_item_titles(component)
+                if title_suggestions:
+                    initial["title"] = title_suggestions[0]
+                default_max = default_max_score_for_component(component)
+                if default_max:
+                    initial["max_score"] = default_max
+
         form = AssessmentItemForm(instance=obj, scheme=scheme, initial=initial)
+        form.fields["component"].widget.attrs.update(
+            {
+                "hx-get": self._url(class_pk, pk),
+                "hx-target": "#modal-content",
+                "hx-swap": "innerHTML",
+                "hx-trigger": "change",
+            }
+        )
         return render(
             request,
-            "partials/_entity_form_modal.html",
-            {"form": form, "object": obj, "modal_title": "Edit Assessment Item" if obj else "Add Assessment Item"},
+            "grading/_item_form_modal.html",
+            {
+                "form": form,
+                "object": obj,
+                "modal_title": "Edit Assessment Item" if obj else "Add Assessment Item",
+                "title_suggestions": title_suggestions,
+                "exam_title_term_map": dict(EXAM_TITLE_TERM_MAP),
+            },
         )
 
     def post(self, request, class_pk=None, pk=None):
@@ -561,10 +609,29 @@ class AssessmentItemFormView(View):
             response = HttpResponse(status=204)
             response["HX-Refresh"] = "true"
             return response
+
+        title_suggestions = []
+        posted_component_id = request.POST.get("component")
+        if posted_component_id and scheme.components.filter(pk=posted_component_id).exists():
+            title_suggestions = suggest_item_titles(scheme.components.get(pk=posted_component_id))
+        form.fields["component"].widget.attrs.update(
+            {
+                "hx-get": self._url(class_pk, pk),
+                "hx-target": "#modal-content",
+                "hx-swap": "innerHTML",
+                "hx-trigger": "change",
+            }
+        )
         return render(
             request,
-            "partials/_entity_form_modal.html",
-            {"form": form, "object": obj, "modal_title": "Edit Assessment Item" if obj else "Add Assessment Item"},
+            "grading/_item_form_modal.html",
+            {
+                "form": form,
+                "object": obj,
+                "modal_title": "Edit Assessment Item" if obj else "Add Assessment Item",
+                "title_suggestions": title_suggestions,
+                "exam_title_term_map": dict(EXAM_TITLE_TERM_MAP),
+            },
         )
 
 

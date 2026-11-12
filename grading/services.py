@@ -11,18 +11,21 @@ All arithmetic is Decimal — never float — per CLAUDE.md's "Use Decimal
 everywhere" rule, so results are exact and reproducible.
 """
 
+import re
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db.models import Prefetch
+from django.db.models import Case, IntegerField, Prefetch, Value, When
+from django.utils import timezone
 
 from academics.models import ClassRosterEntry
 
 from .models import (
     AssessmentItem,
+    AssessmentTerm,
     ClassGradingScheme,
     ComponentCategory,
     GradingComponent,
@@ -85,6 +88,110 @@ def scheme_total_weight(scheme):
     save, but a scheme created before that rule existed, or edited
     directly, could still be off)."""
     return sum(c.weight for c in scheme.components.all())
+
+
+# ---------------------------------------------------------------------------
+# Add/Edit Assessment Item — suggested titles, default term/max score, and
+# the exam-title-to-term mapping the item form locks onto. Suggestions are
+# keyed off `category`, never a component's free-text `name` (same rule as
+# the forecasting feature extraction — an instructor-renamed component
+# still gets sensible suggestions), except for OTHER, where the name is the
+# only signal available.
+# ---------------------------------------------------------------------------
+
+EXAM_TITLE_TERM_MAP = {
+    "Prelim Exam": AssessmentTerm.PRELIM,
+    "Midterm Exam": AssessmentTerm.MIDTERM,
+    "Semi-final Exam": AssessmentTerm.SEMIFINAL,
+    "Final Exam": AssessmentTerm.FINAL,
+}
+
+
+def _next_number_for_prefix(existing_titles, prefix):
+    pattern = re.compile(rf"^{re.escape(prefix)}\s+(\d+)$", re.IGNORECASE)
+    highest = 0
+    for title in existing_titles:
+        match = pattern.match(title.strip())
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return highest + 1
+
+
+def suggest_item_titles(component):
+    """Ordered title suggestions for a new item in `component` -- the
+    first one becomes the form's default so most items need no typing.
+    Numbering is scoped to this one component (not the whole class),
+    matching where the "+ Add" action that opens this form actually
+    lives in the Setup tab."""
+    existing_titles = list(component.items.values_list("title", flat=True))
+
+    if component.category == ComponentCategory.QUIZ:
+        return [
+            f"Quiz {_next_number_for_prefix(existing_titles, 'Quiz')}",
+            f"Long Quiz {_next_number_for_prefix(existing_titles, 'Long Quiz')}",
+        ]
+    if component.category == ComponentCategory.RECITATION:
+        return [f"Recitation {_next_number_for_prefix(existing_titles, 'Recitation')}"]
+    if component.category == ComponentCategory.PROJECT:
+        return [
+            f"Project {_next_number_for_prefix(existing_titles, 'Project')}",
+            f"Performance Task {_next_number_for_prefix(existing_titles, 'Performance Task')}",
+        ]
+    if component.category == ComponentCategory.ATTENDANCE:
+        week_n = _next_number_for_prefix(existing_titles, "Attendance – Week")
+        month_name = timezone.localdate().strftime("%B")
+        return [f"Attendance – Week {week_n}", f"Attendance – {month_name}"]
+    if component.category == ComponentCategory.EXAM:
+        used = {t.strip() for t in existing_titles}
+        return [title for title in EXAM_TITLE_TERM_MAP if title not in used]
+    # OTHER — the component's own (instructor-chosen) name is the only
+    # signal available, so it's the suggestion stem here instead of a
+    # fixed word like "Quiz"/"Recitation".
+    return [f"{component.name} {_next_number_for_prefix(existing_titles, component.name)}"]
+
+
+def default_term_for_new_item(class_offering):
+    """The term of the most recently added item in this class, or Prelim
+    if this is the very first item -- the Add Item form's term default."""
+    last_item = AssessmentItem.objects.filter(class_offering=class_offering).order_by("-created_at").first()
+    return last_item.term if last_item else AssessmentTerm.PRELIM
+
+
+def default_max_score_for_component(component):
+    """The max score of the most recently added item in this component
+    (e.g. quizzes are usually all /20), or None if it has no items yet."""
+    last_item = component.items.order_by("-created_at").first()
+    return last_item.max_score if last_item else None
+
+
+_TERM_RANK = {
+    AssessmentTerm.PRELIM: 0,
+    AssessmentTerm.MIDTERM: 1,
+    AssessmentTerm.SEMIFINAL: 2,
+    AssessmentTerm.FINAL: 3,
+}
+
+
+def ordered_items_by_component(scheme):
+    """Every item in `scheme`'s class, grouped by component id and
+    ordered term -> date -> creation (chronological, not the old
+    free-text `order` field -- removed from the Add/Edit Assessment Item
+    form; a future drag-to-reorder UI is the field's next intended use,
+    not a numeric input an instructor has to maintain by hand)."""
+    term_rank_case = Case(
+        *[When(term=term, then=Value(rank)) for term, rank in _TERM_RANK.items()],
+        default=Value(len(_TERM_RANK)),
+        output_field=IntegerField(),
+    )
+    items = (
+        AssessmentItem.objects.filter(component__scheme=scheme)
+        .annotate(term_rank=term_rank_case)
+        .order_by("term_rank", "date", "created_at")
+    )
+    by_component = {}
+    for item in items:
+        by_component.setdefault(item.component_id, []).append(item)
+    return by_component
 
 
 def save_score(roster_entry, item, new_value, user):

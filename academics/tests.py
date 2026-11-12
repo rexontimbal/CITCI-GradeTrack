@@ -2577,7 +2577,7 @@ class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
         self.assertEqual(preview["missing_section_rows"], [])
         self.assertIsNone(preview["plan_rows"][0]["conflict_class"])
 
-        result = commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        result = commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         self.assertEqual(result, {"offerings_created": 1, "classes_created": 1, "students_added": 2})
 
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
@@ -2609,14 +2609,15 @@ class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         first_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(first_preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(first_preview["plan_rows"], self.semester, self.admin)
 
         second_preview = preview_subject_offerings([self.entry_ss.pk], self.semester)
         self.assertEqual(len(second_preview["plan_rows"]), 1)
         conflict_class = second_preview["plan_rows"][0]["conflict_class"]
         self.assertIsNotNone(conflict_class)
+        second_preview["plan_rows"][0]["combine"] = True
 
-        result = commit_subject_offerings(second_preview["plan_rows"], {}, self.semester, self.admin)
+        result = commit_subject_offerings(second_preview["plan_rows"], self.semester, self.admin)
         self.assertEqual(result["classes_created"], 0)
         self.assertEqual(result["offerings_created"], 1)
 
@@ -2636,12 +2637,12 @@ class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         first_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(first_preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(first_preview["plan_rows"], self.semester, self.admin)
 
         second_preview = preview_subject_offerings([self.entry_ss.pk], self.semester)
         conflict_class = second_preview["plan_rows"][0]["conflict_class"]
 
-        commit_subject_offerings(second_preview["plan_rows"], {str(conflict_class.id): "separate"}, self.semester, self.admin)
+        commit_subject_offerings(second_preview["plan_rows"], self.semester, self.admin)
 
         self.assertEqual(ClassOffering.objects.count(), 2)
         new_class = ClassOffering.objects.exclude(pk=conflict_class.pk).get()
@@ -2653,7 +2654,7 @@ class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
 
         second_preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
         self.assertEqual(second_preview["plan_rows"], [])
@@ -2670,7 +2671,7 @@ class WithdrawOfferingTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         return SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
 
     def test_withdraw_succeeds_when_no_scores_or_submitted_sheet(self):
@@ -2724,7 +2725,7 @@ class ClassOfferingSnapshotTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         class_offering = ClassOffering.objects.get()
         self.assertEqual(class_offering.display_code, "GE 2")
         self.assertEqual(class_offering.display_title, "Purposive Communication")
@@ -2801,7 +2802,7 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Confirm Offering", response.content.decode())
 
-        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {})
+        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {"sections_0": [self.section_eng.pk]})
         self.assertEqual(commit_response.status_code, 204)
         self.assertIn("refreshSubjects", commit_response.headers.get("HX-Trigger", ""))
 
@@ -2812,7 +2813,7 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
 
         self.client.force_login(self.admin)
         params = self._post_params()
@@ -2835,7 +2836,7 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
 
         self.client.force_login(self.admin)
@@ -2851,7 +2852,7 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
 
         outside_head = make_user(User.Role.PROGRAM_HEAD, "offering_outside_head")
@@ -2870,7 +2871,7 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Confirm Offering", response.content.decode())
 
-        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {})
+        commit_response = self.client.post(reverse("academics:subject_offering_commit"), {"sections_0": [self.section_eng.pk]})
         self.assertEqual(commit_response.status_code, 204)
         self.assertTrue(ClassOffering.objects.filter(offering__subject=other_subject).exists())
         # Offering it didn't touch the curriculum itself.
@@ -3013,7 +3014,7 @@ class SubjectsPageOfferingRenderTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
 
         self.client.force_login(self.admin)
         response = self.client.get(
@@ -3260,7 +3261,7 @@ class SyncOfferingAfterSectionChangeTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings, sync_offering_after_section_change
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
         class_offering = ClassOffering.objects.get(offering=offering)
 
@@ -3273,7 +3274,7 @@ class SyncOfferingAfterSectionChangeTests(SubjectOfferingTestBase):
         from .services import commit_subject_offerings, preview_subject_offerings, sync_offering_after_section_change
 
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
-        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
 
         sync_offering_after_section_change(offering)
@@ -3283,3 +3284,207 @@ class SyncOfferingAfterSectionChangeTests(SubjectOfferingTestBase):
         from .services import sync_offering_after_section_change
 
         sync_offering_after_section_change(None)  # must not raise
+
+
+class OfferingMatrixAndManageSectionsTests(TestCase):
+    """Two sections under one program/year_level -- the minimal shape the
+    matrix's "combine toggle" and Manage Sections' add/withdraw diffing
+    need, which SubjectOfferingTestBase's one-section-per-major fixture
+    can't exercise on its own."""
+
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSIT4", name="BS Information Technology")
+        self.section_a = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="A")
+        self.section_b = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="B")
+        self.subject = Subject.objects.create(code="GE 9", title="Life and Works of Rizal", units=Decimal("3.0"))
+        self.entry = CurriculumEntry.objects.create(
+            program=self.program, major=None, year_level=1, term=Term.FIRST, subject=self.subject
+        )
+        self.admin = make_user(User.Role.ADMIN, "matrix_admin", is_staff=True, is_superuser=True)
+
+        self.student = make_user(User.Role.STUDENT, "matrix_student")
+        profile = self.student.student_profile
+        profile.program = self.program
+        profile.year_level = 1
+        profile.section = self.section_a
+        profile.status = StudentProfile.Status.ACTIVE
+        profile.save()
+
+    def test_default_combine_off_creates_one_class_per_section(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry.pk], self.semester)
+        self.assertEqual(len(preview["plan_rows"]), 2)
+        self.assertFalse(any(row["combine"] for row in preview["plan_rows"]))
+
+        result = commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+        self.assertEqual(result["classes_created"], 2)
+        self.assertEqual(ClassOffering.objects.filter(subject=self.subject).count(), 2)
+
+    def test_combine_true_merges_both_sections_into_one_class(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry.pk], self.semester)
+        for row in preview["plan_rows"]:
+            row["combine"] = True
+
+        result = commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+        self.assertEqual(result["classes_created"], 1)
+        class_offering = ClassOffering.objects.get(subject=self.subject)
+        self.assertEqual(set(class_offering.sections.all()), {self.section_a, self.section_b})
+
+    def test_already_offered_cell_is_skipped_by_commit(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+
+        from .services import build_offering_rows
+
+        offering = SubjectOffering.objects.get(program=self.program, subject=self.subject)
+        rows, _ = build_offering_rows(self.subject, self.program, None, 1, self.semester)
+        self.assertTrue(all(row["already_offered"] for row in rows))
+
+        result = commit_subject_offerings(rows, self.semester, self.admin)
+        self.assertEqual(result["classes_created"], 0)
+        self.assertEqual(ClassOffering.objects.filter(offering=offering).count(), 2)
+
+    def test_manage_sections_view_adds_and_withdraws_sections(self):
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry.pk], self.semester)
+        section_a_only = [row for row in preview["plan_rows"] if row["section"] == self.section_a]
+        commit_subject_offerings(section_a_only, self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, subject=self.subject)
+        self.assertEqual(ClassOffering.objects.filter(offering=offering).count(), 1)
+
+        self.client.force_login(self.admin)
+        get_response = self.client.get(reverse("academics:subject_offering_manage", args=[offering.pk]))
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "Manage Sections")
+
+        # Tick both sections -- A stays (already offered), B is newly added.
+        add_response = self.client.post(
+            reverse("academics:subject_offering_manage", args=[offering.pk]),
+            {"sections_0": [self.section_a.pk, self.section_b.pk]},
+        )
+        self.assertEqual(add_response.status_code, 204)
+        self.assertEqual(ClassOffering.objects.filter(offering=offering).count(), 2)
+
+        # Re-open and untick A -- withdraws just that section's class.
+        self.client.get(reverse("academics:subject_offering_manage", args=[offering.pk]))
+        withdraw_response = self.client.post(
+            reverse("academics:subject_offering_manage", args=[offering.pk]),
+            {"sections_0": [self.section_b.pk]},
+        )
+        self.assertEqual(withdraw_response.status_code, 204)
+        offering.refresh_from_db()
+        self.assertEqual(set(offering.covered_sections), {self.section_b})
+
+    def test_manage_sections_withdraw_blocked_by_scores_is_skipped_with_reason(self):
+        from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, Score
+        from grading.services import ensure_default_grading_template
+
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        ensure_default_grading_template()
+        preview = preview_subject_offerings([self.entry.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, subject=self.subject)
+        class_a = ClassOffering.objects.get(offering=offering, sections=self.section_a)
+        scheme = ClassGradingScheme.get_or_create_default(class_a)
+        component = scheme.components.first()
+        item = AssessmentItem.objects.create(
+            class_offering=class_a, component=component, title="Quiz 1", max_score=10, term=AssessmentTerm.PRELIM
+        )
+        roster_entry = class_a.roster_entries.first()
+        Score.objects.create(roster_entry=roster_entry, item=item, score=8)
+
+        self.client.force_login(self.admin)
+        self.client.get(reverse("academics:subject_offering_manage", args=[offering.pk]))
+        response = self.client.post(
+            reverse("academics:subject_offering_manage", args=[offering.pk]),
+            {"sections_0": [self.section_b.pk]},  # untick A -- should be skipped, not withdrawn
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("skipped", response.headers.get("HX-Trigger", ""))
+        self.assertEqual(ClassOffering.objects.filter(offering=offering).count(), 2)
+        self.assertTrue(ClassOffering.objects.filter(pk=class_a.pk, sections=self.section_a).exists())
+
+
+class BulkWithdrawOfferingTests(TestCase):
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
+        self.program = Program.objects.create(code="BSIT5", name="BS Information Technology")
+        self.section_1a = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="A")
+        self.section_2a = Section.objects.create(program=self.program, academic_year=self.ay, year_level=2, name="A")
+        self.subject_1 = Subject.objects.create(code="SUBY1", title="Year 1 Subject", units=Decimal("3.0"))
+        self.subject_2 = Subject.objects.create(code="SUBY2", title="Year 2 Subject", units=Decimal("3.0"))
+        self.entry_1 = CurriculumEntry.objects.create(
+            program=self.program, major=None, year_level=1, term=Term.FIRST, subject=self.subject_1
+        )
+        self.entry_2 = CurriculumEntry.objects.create(
+            program=self.program, major=None, year_level=2, term=Term.FIRST, subject=self.subject_2
+        )
+        self.admin = make_user(User.Role.ADMIN, "bulk_withdraw_admin", is_staff=True, is_superuser=True)
+
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_1.pk, self.entry_2.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+        self.offering_1 = SubjectOffering.objects.get(subject=self.subject_1)
+        self.offering_2 = SubjectOffering.objects.get(subject=self.subject_2)
+
+    def _post_params(self, **extra):
+        params = {"program": self.program.pk, "major": "", "ay": self.ay.pk, "sem_term": Term.FIRST}
+        params.update(extra)
+        return params
+
+    def test_bulk_withdraw_by_explicit_offering_ids(self):
+        self.client.force_login(self.admin)
+        params = self._post_params(offering_ids=[self.offering_1.pk])
+        preview_response = self.client.post(reverse("academics:subject_offering_bulk_withdraw"), params)
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertIn(self.subject_1.code, preview_response.content.decode())
+
+        confirm_params = self._post_params(offering_ids=[self.offering_1.pk], confirmed="1")
+        confirm_response = self.client.post(reverse("academics:subject_offering_bulk_withdraw"), confirm_params)
+        self.assertEqual(confirm_response.status_code, 204)
+        self.assertIn("Withdrew 1 subject", confirm_response.headers.get("HX-Trigger", ""))
+        self.assertFalse(SubjectOffering.objects.filter(pk=self.offering_1.pk).exists())
+        self.assertTrue(SubjectOffering.objects.filter(pk=self.offering_2.pk).exists())
+
+    def test_bulk_withdraw_by_year_level_scope(self):
+        self.client.force_login(self.admin)
+        params = self._post_params(scope="year_level:1", confirmed="1")
+        response = self.client.post(reverse("academics:subject_offering_bulk_withdraw"), params)
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(SubjectOffering.objects.filter(pk=self.offering_1.pk).exists())
+        self.assertTrue(SubjectOffering.objects.filter(pk=self.offering_2.pk).exists())
+
+    def test_bulk_withdraw_all_scope_skips_with_reason_when_scores_exist(self):
+        from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, Score
+        from grading.services import ensure_default_grading_template
+
+        ensure_default_grading_template()
+        class_1 = ClassOffering.objects.get(offering=self.offering_1)
+        scheme = ClassGradingScheme.get_or_create_default(class_1)
+        component = scheme.components.first()
+        item = AssessmentItem.objects.create(
+            class_offering=class_1, component=component, title="Quiz 1", max_score=10, term=AssessmentTerm.PRELIM
+        )
+        student = make_user(User.Role.STUDENT, "bulk_withdraw_student")
+        roster_entry = ClassRosterEntry.objects.create(student=student, class_offering=class_1)
+        Score.objects.create(roster_entry=roster_entry, item=item, score=8)
+
+        self.client.force_login(self.admin)
+        params = self._post_params(scope="all", confirmed="1")
+        response = self.client.post(reverse("academics:subject_offering_bulk_withdraw"), params)
+        self.assertEqual(response.status_code, 204)
+        toast = response.headers.get("HX-Trigger", "")
+        self.assertIn("skipped", toast)
+        self.assertTrue(SubjectOffering.objects.filter(pk=self.offering_1.pk).exists())
+        self.assertFalse(SubjectOffering.objects.filter(pk=self.offering_2.pk).exists())

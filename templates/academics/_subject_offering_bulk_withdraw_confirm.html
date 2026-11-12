@@ -1,0 +1,38 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Withdraw {{ offerings|length }} subject{{ offerings|length|pluralize }}?</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<div class="mt-4 space-y-4">
+    {% if not offerings %}
+    <p class="text-sm text-gray-600">Nothing selected.</p>
+    <div class="flex justify-end pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Close
+        </button>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-600">
+        This removes every class these offerings created, unless a class already has scores or a submitted grade sheet — those are skipped with a reason.
+    </p>
+    <ul class="max-h-48 list-inside list-disc space-y-1 overflow-y-auto text-sm text-gray-700">
+        {% for offering in offerings %}<li>{{ offering.subject.code }} — {{ offering }}</li>{% endfor %}
+    </ul>
+    <form hx-post="{% url 'academics:subject_offering_bulk_withdraw' %}" hx-target="#modal-content" hx-swap="innerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="confirmed" value="1">
+        {% for id in offering_ids %}<input type="hidden" name="offering_ids" value="{{ id }}">{% endfor %}
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+                Withdraw
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>

@@ -1,0 +1,68 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Manage Sections — {{ offering.subject.code }}</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<div class="mt-4 space-y-4">
+    {% if error %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+    {% else %}
+    <p class="text-sm text-gray-600">
+        Tick a section to add a class for it; untick an already-offered section to withdraw it.
+    </p>
+
+    <form hx-post="{% url 'academics:subject_offering_manage' offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML">
+        {% csrf_token %}
+        <div class="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
+            {% for group in groups %}
+            <div class="rounded-lg border border-gray-200">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-max text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200 bg-gray-50">
+                                <th class="px-3 py-2 text-left font-semibold text-gray-700">Subject</th>
+                                {% for section in group.sections %}
+                                <th class="px-3 py-2 text-center font-semibold text-gray-700">{{ section.short_label }}</th>
+                                {% endfor %}
+                                <th class="px-3 py-2 text-left font-semibold text-gray-700">Combine newly-added sections</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in group.subject_rows %}
+                            <tr class="border-b border-gray-100 last:border-0">
+                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} — {{ row.subject.title }}</td>
+                                {% for cell in row.cells %}
+                                <td class="px-3 py-2 text-center">
+                                    <input type="checkbox" name="sections_{{ row.row_index }}" value="{{ cell.section.pk }}"
+                                           {% if cell.already_offered %}checked title="Currently offered — untick to withdraw"{% endif %}>
+                                </td>
+                                {% endfor %}
+                                <td class="px-3 py-2">
+                                    <label class="flex items-center gap-1.5 text-gray-700">
+                                        <input type="checkbox" name="combine_{{ row.row_index }}">
+                                        Combine
+                                    </label>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Save
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>

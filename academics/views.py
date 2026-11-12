@@ -964,64 +964,144 @@ def subject_search(request):
 # ---------------------------------------------------------------------------
 
 _OFFERING_PREVIEW_SESSION_KEY = "subject_offering_preview"
+_MANAGE_SECTIONS_SESSION_KEY = "subject_offering_manage"
 
 
-def _serialize_plan_rows(plan_rows):
-    return [
-        {
-            "curriculum_entry_id": row["curriculum_entry"].pk if row["curriculum_entry"] else None,
-            "subject_id": row["subject"].pk,
-            "program_id": row["program"].pk,
-            "major_id": row["major"].pk if row["major"] else None,
-            "year_level": row["year_level"],
-            "section_id": row["section"].pk,
-            "conflict_class_id": row["conflict_class"].pk if row["conflict_class"] else None,
-        }
-        for row in plan_rows
-    ]
+def _build_matrix_groups(plan_rows):
+    """Pivots flat (subject, section) plan_rows into the editable matrix:
+    one group per (program, major, year_level) -- a group's sections are
+    resolved purely from that scope (build_offering_rows), so every
+    subject row in a group shares the exact same section columns -- each
+    holding one row per subject with a `cells` list in that column order."""
+    groups = {}
+    order = []
+    for row in plan_rows:
+        key = (row["program"].id, row["major"].id if row["major"] else None, row["year_level"])
+        if key not in groups:
+            groups[key] = {
+                "program": row["program"],
+                "major": row["major"],
+                "year_level": row["year_level"],
+                "sections": [],
+                "_section_ids_seen": set(),
+                "_subject_rows": {},
+            }
+            order.append(key)
+        group = groups[key]
+        if row["section"].id not in group["_section_ids_seen"]:
+            group["_section_ids_seen"].add(row["section"].id)
+            group["sections"].append(row["section"])
+        subj_key = row["subject"].id
+        if subj_key not in group["_subject_rows"]:
+            group["_subject_rows"][subj_key] = {
+                "subject": row["subject"],
+                "curriculum_entry": row.get("curriculum_entry"),
+                "cells": [],
+            }
+        group["_subject_rows"][subj_key]["cells"].append(row)
+
+    result = []
+    for key in order:
+        group = groups[key]
+        group["subject_rows"] = list(group["_subject_rows"].values())
+        del group["_subject_rows"]
+        del group["_section_ids_seen"]
+        result.append(group)
+    return result
 
 
-def _deserialize_plan_rows(serialized):
-    rows = []
-    for item in serialized:
-        rows.append(
+def _flatten_matrix_rows(groups):
+    """Assigns each subject row a flat `row_index` shared by the template
+    (checkbox/toggle field names `sections_<i>`/`combine_<i>`) and the
+    session stash (so the commit view can map posted field names back to
+    the right row without trusting any posted subject/program/section id
+    outside what was actually previewed)."""
+    flat = []
+    for group in groups:
+        for row in group["subject_rows"]:
+            row["row_index"] = len(flat)
+            flat.append(row)
+    return flat
+
+
+def _serialize_matrix_rows(flat_rows):
+    serialized = []
+    for row in flat_rows:
+        first_cell = row["cells"][0]
+        serialized.append(
             {
-                "curriculum_entry": (
-                    CurriculumEntry.objects.filter(pk=item["curriculum_entry_id"]).first()
-                    if item["curriculum_entry_id"]
-                    else None
-                ),
-                "subject": Subject.objects.get(pk=item["subject_id"]),
-                "program": Program.objects.get(pk=item["program_id"]),
-                "major": Major.objects.get(pk=item["major_id"]) if item["major_id"] else None,
-                "year_level": item["year_level"],
-                "section": Section.objects.get(pk=item["section_id"]),
-                "conflict_class": (
-                    ClassOffering.objects.filter(pk=item["conflict_class_id"]).first()
-                    if item["conflict_class_id"]
-                    else None
-                ),
+                "subject_id": row["subject"].pk,
+                "curriculum_entry_id": row["curriculum_entry"].pk if row.get("curriculum_entry") else None,
+                "program_id": first_cell["program"].pk,
+                "major_id": first_cell["major"].pk if first_cell["major"] else None,
+                "year_level": first_cell["year_level"],
+                "cells": [
+                    {
+                        "section_id": cell["section"].pk,
+                        "already_offered": cell["already_offered"],
+                        "conflict_class_id": cell["conflict_class"].pk if cell["conflict_class"] else None,
+                    }
+                    for cell in row["cells"]
+                ],
             }
         )
-    return rows
+    return serialized
+
+
+def _plan_rows_from_posted_matrix(stashed_rows, post_data):
+    """Reads back `sections_<i>`/`combine_<i>` for every stashed row,
+    skipping already_offered cells (nothing new to do there) and cells
+    that were never ticked. Shared by subject_offering_commit and
+    subject_offering_manage's "add newly-ticked sections" half."""
+    plan_rows = []
+    for i, row in enumerate(stashed_rows):
+        ticked = {int(x) for x in post_data.getlist(f"sections_{i}") if x.isdigit()}
+        combine = post_data.get(f"combine_{i}") == "on"
+        subject = Subject.objects.get(pk=row["subject_id"])
+        program = Program.objects.get(pk=row["program_id"])
+        major = Major.objects.get(pk=row["major_id"]) if row["major_id"] else None
+        for cell in row["cells"]:
+            if cell["already_offered"] or cell["section_id"] not in ticked:
+                continue
+            plan_rows.append(
+                {
+                    "subject": subject,
+                    "program": program,
+                    "major": major,
+                    "year_level": row["year_level"],
+                    "section": Section.objects.get(pk=cell["section_id"]),
+                    "conflict_class": (
+                        ClassOffering.objects.filter(pk=cell["conflict_class_id"]).first()
+                        if cell["conflict_class_id"]
+                        else None
+                    ),
+                    "already_offered": False,
+                    "combine": combine,
+                }
+            )
+    return plan_rows
 
 
 def _offering_confirm_response(request, preview, program, major, selected_semester, next_url):
+    groups = _build_matrix_groups(preview["plan_rows"])
+    flat_rows = _flatten_matrix_rows(groups)
     request.session[_OFFERING_PREVIEW_SESSION_KEY] = {
         "semester_id": selected_semester.pk,
-        "plan_rows": _serialize_plan_rows(preview["plan_rows"]),
+        "rows": _serialize_matrix_rows(flat_rows),
         "next_url": next_url,
     }
+    section_count = len({cell["section"].id for row in flat_rows for cell in row["cells"]})
     return render(
         request,
         "academics/_subject_offering_confirm.html",
         {
-            "plan_rows": preview["plan_rows"],
+            "groups": groups,
             "missing_section_rows": preview["missing_section_rows"],
             "already_offered_rows": preview["already_offered_rows"],
             "program": program,
             "major": major,
             "semester": selected_semester,
+            "section_count": section_count,
         },
     )
 
@@ -1091,14 +1171,12 @@ def subject_offering_adhoc(request):
 
 @role_required(ADMIN, PROGRAM_HEAD)
 def subject_offering_commit(request):
-    from django.contrib import messages as django_messages
-
     stashed = request.session.get(_OFFERING_PREVIEW_SESSION_KEY)
     if not stashed:
         response = render(
             request,
             "academics/_subject_offering_confirm.html",
-            {"plan_rows": [], "missing_section_rows": [], "already_offered_rows": [], "error": "Your preview expired — try again."},
+            {"groups": [], "missing_section_rows": [], "already_offered_rows": [], "error": "Your preview expired — try again."},
         )
         response["HX-Retarget"] = "#modal-content"
         response["HX-Reswap"] = "innerHTML"
@@ -1108,23 +1186,88 @@ def subject_offering_commit(request):
     if not services.offering_allowed(semester):
         raise PermissionDenied("Offering is not allowed for this semester.")
 
-    plan_rows = _deserialize_plan_rows(stashed["plan_rows"])
-    decisions = {}
-    for row in plan_rows:
-        conflict = row["conflict_class"]
-        if conflict is not None:
-            decisions[str(conflict.id)] = request.POST.get(f"decision_{conflict.id}", "combine")
-
-    is_admin_override = request.user.is_admin_role
-    result = commit_subject_offerings(plan_rows, decisions, semester, request.user, is_admin_override=is_admin_override)
+    plan_rows = _plan_rows_from_posted_matrix(stashed["rows"], request.POST)
     del request.session[_OFFERING_PREVIEW_SESSION_KEY]
 
-    django_messages.success(
-        request,
-        f"{result['offerings_created']} subject(s) offered → {result['classes_created']} class(es) created, "
-        f"{result['students_added']} student(s) added.",
+    if not plan_rows:
+        return trigger_response("refreshSubjects", toast="Nothing offered — no sections were selected.")
+
+    is_admin_override = request.user.is_admin_role
+    result = commit_subject_offerings(plan_rows, semester, request.user, is_admin_override=is_admin_override)
+    toast = (
+        f"{result['offerings_created']} subject(s) offered · {result['classes_created']} class(es) created, "
+        f"{result['students_added']} student(s) added."
     )
-    return trigger_response("refreshSubjects", toast="Subjects offered.")
+    return trigger_response("refreshSubjects", toast=toast)
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_manage(request, pk):
+    """"Manage sections" — re-opens the same matrix for one already-offered
+    subject, pre-checked to match current coverage. Ticking a new section
+    adds a class (or joins the row's combine group) the same way a fresh
+    offer does; unticking an already-covered section withdraws just that
+    section via withdraw_offering_section, skip-with-reason if blocked."""
+    offering = get_object_or_404(SubjectOffering, pk=pk)
+    if not request.user.is_admin_role and not scoping.is_in_scope(request.user, offering.program_id, offering.major_id):
+        raise PermissionDenied("This offering is not under your program.")
+    if services.is_semester_locked(offering.semester):
+        raise PermissionDenied("This semester is closed.")
+
+    preview = services.preview_manage_sections(offering)
+    groups = _build_matrix_groups(preview["plan_rows"])
+    flat_rows = _flatten_matrix_rows(groups)
+
+    if request.method != "POST":
+        request.session[_MANAGE_SECTIONS_SESSION_KEY] = {
+            "offering_id": offering.pk,
+            "rows": _serialize_matrix_rows(flat_rows),
+        }
+        return render(
+            request,
+            "academics/_subject_offering_manage.html",
+            {"offering": offering, "groups": groups, "semester": offering.semester},
+        )
+
+    stashed = request.session.get(_MANAGE_SECTIONS_SESSION_KEY)
+    if not stashed or stashed["offering_id"] != offering.pk:
+        response = render(
+            request,
+            "academics/_subject_offering_manage.html",
+            {"offering": offering, "groups": [], "semester": offering.semester, "error": "Your session expired — reopen Manage Sections."},
+        )
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    stashed_rows = stashed["rows"]
+    added_rows = _plan_rows_from_posted_matrix(stashed_rows, request.POST)
+    withdrawn_count = 0
+    skip_reasons = []
+    for i, row in enumerate(stashed_rows):
+        ticked = {int(x) for x in request.POST.getlist(f"sections_{i}") if x.isdigit()}
+        for cell in row["cells"]:
+            if cell["already_offered"] and cell["section_id"] not in ticked:
+                section = Section.objects.get(pk=cell["section_id"])
+                ok, reason = services.withdraw_offering_section(offering, section, request.user)
+                if ok:
+                    withdrawn_count += 1
+                else:
+                    skip_reasons.append(reason)
+
+    if added_rows:
+        commit_subject_offerings(added_rows, offering.semester, request.user, is_admin_override=request.user.is_admin_role)
+    del request.session[_MANAGE_SECTIONS_SESSION_KEY]
+
+    parts = []
+    if added_rows:
+        parts.append(f"added {len(added_rows)} section(s)")
+    if withdrawn_count:
+        parts.append(f"withdrew {withdrawn_count} section(s)")
+    if skip_reasons:
+        parts.append(f"{len(skip_reasons)} skipped: {'; '.join(skip_reasons)}")
+    toast = ("; ".join(parts) if parts else "No changes.").capitalize()
+    return trigger_response("refreshSubjects", toast=toast)
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
@@ -1142,6 +1285,53 @@ def subject_offering_withdraw(request, pk):
     return render(
         request, "academics/_subject_offering_withdraw_confirm.html", {"offering": offering, "error": reason}
     )
+
+
+@role_required(ADMIN, PROGRAM_HEAD)
+def subject_offering_bulk_withdraw(request):
+    """One withdraw-many endpoint for all three bulk-withdraw entry points:
+    an explicit `offering_ids` list (the selection-aware sticky bar), or a
+    `scope` token resolved server-side — "year_level:<N>" for a card's
+    ⋯ menu, "all" for the toolbar — matching the "never trust a scope the
+    client computed, resolve it again here" pattern the rest of this
+    module already follows (e.g. subject_offering_preview's offerable_ids
+    re-check). GET/unconfirmed POST renders a preview; POST with
+    confirmed=1 actually withdraws."""
+    program, major = _resolve_program_major_from_request(request, request.user)
+    if program is None:
+        raise PermissionDenied("You have no program/major in scope.")
+    selected_semester = _resolve_semester_from_request(request)
+    if selected_semester is None:
+        raise PermissionDenied("No semester selected.")
+
+    data = request.POST if request.method == "POST" else request.GET
+    offering_ids = [int(i) for i in data.getlist("offering_ids") if i.isdigit()]
+    scope = data.get("scope", "")
+
+    qs = SubjectOffering.objects.filter(semester=selected_semester, program=program, major=major).select_related("subject")
+    if offering_ids:
+        qs = qs.filter(pk__in=offering_ids)
+    elif scope.startswith("year_level:"):
+        qs = qs.filter(year_level=int(scope.split(":", 1)[1]))
+    elif scope != "all":
+        raise PermissionDenied("Nothing to withdraw.")
+    offerings = list(qs)
+
+    if request.method != "POST" or request.POST.get("confirmed") != "1":
+        return render(
+            request,
+            "academics/_subject_offering_bulk_withdraw_confirm.html",
+            {"offerings": offerings, "offering_ids": [o.pk for o in offerings], "scope": scope},
+        )
+
+    class_counts = {o.pk: o.class_offerings.count() for o in offerings}
+    withdrawn, skipped = services.withdraw_offerings_bulk(offerings, request.user)
+    classes_withdrawn = sum(class_counts[offering_id] for offering_id in withdrawn)
+
+    toast = f"Withdrew {len(withdrawn)} subject{'' if len(withdrawn) == 1 else 's'} ({classes_withdrawn} class{'' if classes_withdrawn == 1 else 'es'})."
+    if skipped:
+        toast += f" {len(skipped)} skipped: " + "; ".join(reason for _, reason in skipped)
+    return trigger_response("refreshSubjects", toast=toast)
 
 
 def _subject_add_search_results(query, program, major, limit=8):

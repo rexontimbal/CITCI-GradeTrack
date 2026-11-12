@@ -32,45 +32,56 @@
     </div>
     {% endif %}
 
-    {% if plan_rows %}
+    {% if groups %}
     <form hx-post="{% url 'academics:subject_offering_commit' %}" hx-target="#modal-content" hx-swap="innerHTML">
         {% csrf_token %}
-        <div class="space-y-3">
-            {% regroup plan_rows by conflict_class as conflict_groups %}
-            {% for group in conflict_groups %}
-            {% if group.grouper %}
-            <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm">
-                <p class="mb-2 font-semibold text-blue-900">
-                    Combine with the existing {{ group.grouper }} class?
-                </p>
-                <ul class="mb-2 list-inside list-disc text-blue-800">
-                    {% for row in group.list %}
-                    <li>{{ row.subject.code }} — {{ row.section }}</li>
-                    {% endfor %}
-                </ul>
-                <div class="flex gap-4">
-                    <label class="flex items-center gap-1.5 text-blue-900">
-                        <input type="radio" name="decision_{{ group.grouper.id }}" value="combine" checked>
-                        Combine (add to existing class)
-                    </label>
-                    <label class="flex items-center gap-1.5 text-blue-900">
-                        <input type="radio" name="decision_{{ group.grouper.id }}" value="separate">
-                        Keep separate (new class)
-                    </label>
+        <div class="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
+            {% for group in groups %}
+            <div class="rounded-lg border border-gray-200">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-max text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200 bg-gray-50">
+                                <th class="px-3 py-2 text-left font-semibold text-gray-700">Subject</th>
+                                {% for section in group.sections %}
+                                <th class="px-3 py-2 text-center font-semibold text-gray-700">
+                                    <label class="flex items-center justify-center gap-1">
+                                        <input type="checkbox" checked
+                                               @change="document.querySelectorAll('[data-section-col=\'{{ section.pk }}\']').forEach(cb => { if (!cb.disabled) cb.checked = $event.target.checked })">
+                                        {{ section.short_label }}
+                                    </label>
+                                </th>
+                                {% endfor %}
+                                <th class="px-3 py-2 text-left font-semibold text-gray-700">Combine into one class</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in group.subject_rows %}
+                            <tr class="border-b border-gray-100 last:border-0">
+                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} — {{ row.subject.title }}</td>
+                                {% for cell in row.cells %}
+                                <td class="px-3 py-2 text-center" data-section-col="{{ cell.section.pk }}">
+                                    <input type="checkbox" name="sections_{{ row.row_index }}" value="{{ cell.section.pk }}"
+                                           data-section-col="{{ cell.section.pk }}"
+                                           {% if cell.already_offered %}checked disabled title="Already offered"{% else %}checked{% endif %}>
+                                </td>
+                                {% endfor %}
+                                <td class="px-3 py-2">
+                                    <label class="flex items-center gap-1.5 text-gray-700">
+                                        <input type="checkbox" name="combine_{{ row.row_index }}">
+                                        Combine selected sections into one class
+                                    </label>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            {% else %}
-            <div class="rounded-lg border border-gray-200 px-3 py-3 text-sm text-gray-700">
-                <p class="mb-1 font-semibold text-gray-900">Will create:</p>
-                <ul class="list-inside list-disc">
-                    {% for row in group.list %}
-                    <li>{{ row.subject.code }} — {{ row.section }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
             {% endfor %}
         </div>
+
+        <p class="mt-3 text-xs text-gray-500">Will create up to {{ section_count }} class(es) across {{ section_count }} section(s), fewer if any row is combined.</p>
 
         <div class="mt-4 flex justify-end gap-2">
             <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">

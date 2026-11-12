@@ -286,6 +286,14 @@ class SubjectOffering(TimeStampedModel):
         scope = f"{self.program.code}-{self.major.code}" if self.major else self.program.code
         return f"{self.subject.code} offered for {scope} ({self.semester})"
 
+    @property
+    def covered_sections(self):
+        """Every section currently covered by this offering's classes --
+        derived, never stored (Principle 0: an offering's coverage is
+        whatever its classes say, nothing more). Backs the Subjects page's
+        "Offered · 1-A, 1-B" badge and Manage Sections' pre-checked state."""
+        return Section.objects.filter(class_offerings__offering=self).distinct().order_by("year_level", "name")
+
 
 class StudentProfile(TimeStampedModel):
     class Status(models.TextChoices):

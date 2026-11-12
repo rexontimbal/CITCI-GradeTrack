@@ -373,17 +373,30 @@ def offerable_subjects_for(program, major, semester):
     return [entry for entry in entries if entry.subject_id not in offered_subject_ids]
 
 
-def _resolve_offering_sections_and_conflicts(subject, program, major, year_level, semester):
-    """Shared by preview_subject_offerings (curriculum-driven) and
+def build_offering_rows(subject, program, major, year_level, semester):
+    """Shared by preview_subject_offerings (curriculum-driven),
     preview_adhoc_offering ("Offer another subject…", not in the
-    curriculum) — resolves the active section(s) for this scope/year_level
-    in the semester's academic year and flags a "shared subject" conflict
-    per section. Returns (plan_rows, has_sections)."""
+    curriculum), and preview_manage_sections (re-opening an existing
+    offering) — resolves every active section for this scope/year_level in
+    the semester's academic year, one row per section, and flags:
+    - `conflict_class`: an existing class for the same subject+semester+
+      year_level from a DIFFERENT program/major (the Combine toggle's
+      backend metadata).
+    - `already_offered`: this section is already covered by a class
+      belonging to THIS subject's existing SubjectOffering for this scope,
+      if one exists — checked+disabled in the matrix, never re-created.
+    Each row also carries `combine: False` as the default the matrix form
+    will override. Returns (rows, has_sections)."""
     sections = Section.objects.filter(program=program, major=major, year_level=year_level, academic_year=semester.academic_year)
     if not sections.exists():
         return [], False
 
-    plan_rows = []
+    existing_offering = SubjectOffering.objects.filter(
+        semester=semester, program=program, major=major, year_level=year_level, subject=subject
+    ).first()
+    covered_section_ids = set(existing_offering.covered_sections.values_list("pk", flat=True)) if existing_offering else set()
+
+    rows = []
     for section in sections:
         conflict_class = (
             ClassOffering.objects.filter(subject=subject, semester=semester, sections__year_level=year_level)
@@ -392,7 +405,7 @@ def _resolve_offering_sections_and_conflicts(subject, program, major, year_level
             .distinct()
             .first()
         )
-        plan_rows.append(
+        rows.append(
             {
                 "subject": subject,
                 "program": program,
@@ -400,9 +413,11 @@ def _resolve_offering_sections_and_conflicts(subject, program, major, year_level
                 "year_level": year_level,
                 "section": section,
                 "conflict_class": conflict_class,
+                "already_offered": section.pk in covered_section_ids,
+                "combine": False,
             }
         )
-    return plan_rows, True
+    return rows, True
 
 
 def preview_subject_offerings(curriculum_entry_ids, semester):
@@ -434,7 +449,7 @@ def preview_subject_offerings(curriculum_entry_ids, semester):
             already_offered_rows.append({"curriculum_entry": entry, "subject": entry.subject})
             continue
 
-        entry_rows, has_sections = _resolve_offering_sections_and_conflicts(
+        entry_rows, has_sections = build_offering_rows(
             entry.subject, entry.program, entry.major, entry.year_level, semester
         )
         if not has_sections:
@@ -471,7 +486,7 @@ def preview_adhoc_offering(subject, program, major, year_level, semester):
     if already_offered:
         return {"plan_rows": [], "missing_section_rows": [], "already_offered_rows": [{"subject": subject}]}
 
-    plan_rows, has_sections = _resolve_offering_sections_and_conflicts(subject, program, major, year_level, semester)
+    plan_rows, has_sections = build_offering_rows(subject, program, major, year_level, semester)
     for row in plan_rows:
         row["curriculum_entry"] = None
     missing_section_rows = (
@@ -480,6 +495,19 @@ def preview_adhoc_offering(subject, program, major, year_level, semester):
         else [{"curriculum_entry": None, "subject": subject, "program": program, "major": major, "year_level": year_level}]
     )
     return {"plan_rows": plan_rows, "missing_section_rows": missing_section_rows, "already_offered_rows": []}
+
+
+def preview_manage_sections(offering):
+    """Re-opens the matrix for one already-offered subject: same rows as a
+    fresh offer, but with already-covered sections pre-checked+disabled.
+    Ticking a new section adds a class/joins the combine group the same
+    way commit_subject_offerings always has; unticking one already
+    `already_offered` is a withdraw, resolved by the caller via the same
+    per-section removal `withdraw_offering_sections` uses."""
+    rows, has_sections = build_offering_rows(offering.subject, offering.program, offering.major, offering.year_level, offering.semester)
+    for row in rows:
+        row["curriculum_entry"] = None
+    return {"plan_rows": rows, "missing_section_rows": [] if has_sections else [{"subject": offering.subject}], "already_offered_rows": []}
 
 
 def fill_roster_from_section(class_offering, section):
@@ -499,10 +527,15 @@ def fill_roster_from_section(class_offering, section):
     return added
 
 
-def commit_subject_offerings(plan_rows, decisions, semester, actor, is_admin_override=False):
-    """One atomic transaction. `decisions` is {str(conflict_class_id):
-    "combine"|"separate"} — a conflicting row with no decision defaults to
-    "combine" per spec. Returns counts for the summary toast. Logs one
+def commit_subject_offerings(plan_rows, semester, actor, is_admin_override=False):
+    """One atomic transaction. Each row carries its own `combine` flag
+    (default False — one class per ticked section); a row already flagged
+    `already_offered` is skipped (nothing to create, matrix cells for
+    covered sections are checked+disabled and never reach here as new
+    work). combine=True rows for the same (program, major, year_level,
+    subject) all land on one class, reusing `conflict_class` if the matrix
+    detected an existing cross-program class to join instead of creating a
+    fresh one. Returns counts for the summary toast. Logs one
     AcademicSetupChangeLog row per newly-created SubjectOffering (not per
     class — the classes it spawns are an implicit detail of the offering,
     recorded in that row's `details`, to avoid doubling up with the
@@ -511,31 +544,47 @@ def commit_subject_offerings(plan_rows, decisions, semester, actor, is_admin_ove
     classes_created = 0
     students_added = 0
     offering_by_key = {}
+    combine_class_by_key = {}
 
     with transaction.atomic():
         for row in plan_rows:
+            if row.get("already_offered"):
+                continue
+
             subject = row["subject"]
             program = row["program"]
             major = row["major"]
             year_level = row["year_level"]
             section = row["section"]
             conflict_class = row["conflict_class"]
+            combine = row.get("combine", False)
 
             key = (program.id, major.id if major else None, year_level, subject.id)
             subject_offering = offering_by_key.get(key)
+            if subject_offering is None:
+                subject_offering = SubjectOffering.objects.filter(
+                    semester=semester, program=program, major=major, year_level=year_level, subject=subject
+                ).first()
             is_new_offering = subject_offering is None
             if is_new_offering:
                 subject_offering = SubjectOffering.objects.create(
                     semester=semester, program=program, major=major, year_level=year_level, subject=subject, created_by=actor
                 )
-                offering_by_key[key] = subject_offering
                 offerings_created += 1
-
-            decision = decisions.get(str(conflict_class.id), "combine") if conflict_class else None
-            combine = conflict_class is not None and decision != "separate"
+            offering_by_key[key] = subject_offering
 
             if combine:
-                class_offering = conflict_class
+                class_offering = combine_class_by_key.get(key)
+                if class_offering is None:
+                    class_offering = conflict_class
+                    if class_offering is None:
+                        class_offering = ClassOffering.objects.create(subject=subject, semester=semester, offering=subject_offering)
+                        class_offering.snapshot_subject()
+                        class_offering.save(
+                            update_fields=["subject_code_snapshot", "subject_title_snapshot", "subject_units_snapshot"]
+                        )
+                        classes_created += 1
+                    combine_class_by_key[key] = class_offering
                 if not class_offering.sections.filter(pk=section.pk).exists():
                     class_offering.sections.add(section)
                 if class_offering.offering_id is None:
@@ -565,6 +614,30 @@ def commit_subject_offerings(plan_rows, decisions, semester, actor, is_admin_ove
                 )
 
     return {"offerings_created": offerings_created, "classes_created": classes_created, "students_added": students_added}
+
+
+def withdraw_offering_section(offering, section, actor):
+    """Removes just `section`'s class coverage from `offering` — the
+    Manage Sections / Classes-page per-badge "x" primitive. Skipped (with
+    a reason) if that section's class has scores or a submitted-or-later
+    grade sheet; a shared/combined class only loses this one section, it
+    is never deleted outright unless this was its last section. Calls
+    sync_offering_after_section_change afterward so Principle 0 holds.
+    Returns (True, None) or (False, reason)."""
+    class_offering = ClassOffering.objects.filter(offering=offering, sections=section).first()
+    if class_offering is None:
+        return True, None
+    if class_has_scores_or_submitted_sheet(class_offering):
+        return False, f"{offering.subject.code} · {section.short_label} has scores or a submitted grade sheet."
+
+    with transaction.atomic():
+        class_offering.sections.remove(section)
+        if class_offering.sections.count() == 0:
+            class_offering.roster_entries.all().delete()
+            class_offering.delete()
+        sync_offering_after_section_change(offering)
+
+    return True, None
 
 
 def class_has_scores_or_submitted_sheet(class_offering):
@@ -613,6 +686,26 @@ def withdraw_offering(offering, actor):
         offering.delete()
 
     return True, None
+
+
+def withdraw_offerings_bulk(offerings, actor):
+    """Loops withdraw_offering over many offerings for the three bulk-
+    withdraw entry points (selected rows, a Year Level card's "Withdraw
+    all", the toolbar's "Withdraw all") — one skip-with-reason per
+    offering that can't be withdrawn, never a partial withdraw of a single
+    offering's own classes. Returns (withdrawn, skipped) where `skipped`
+    is a list of (offering, reason) tuples, for the result toast's
+    "X skipped: ..." list."""
+    withdrawn = []
+    skipped = []
+    for offering in offerings:
+        offering_id = offering.pk  # withdraw_offering() deletes the row -- .pk goes None after
+        ok, reason = withdraw_offering(offering, actor)
+        if ok:
+            withdrawn.append(offering_id)
+        else:
+            skipped.append((offering, reason))
+    return withdrawn, skipped
 
 
 def close_semester(semester, actor):

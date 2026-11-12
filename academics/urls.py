@@ -65,6 +65,8 @@ urlpatterns = [
     path("subjects/offer/adhoc/", views.subject_offering_adhoc, name="subject_offering_adhoc"),
     path("subjects/offer/commit/", views.subject_offering_commit, name="subject_offering_commit"),
     path("subjects/offerings/<int:pk>/withdraw/", views.subject_offering_withdraw, name="subject_offering_withdraw"),
+    path("subjects/offerings/<int:pk>/manage/", views.subject_offering_manage, name="subject_offering_manage"),
+    path("subjects/offerings/bulk-withdraw/", views.subject_offering_bulk_withdraw, name="subject_offering_bulk_withdraw"),
 
     # Subjects (Program Head — same prospectus view, scoped by default)
     path("my-program/subjects/", views.subjects_home, name="ph_subjects"),

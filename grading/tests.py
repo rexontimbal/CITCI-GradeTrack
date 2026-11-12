@@ -31,8 +31,17 @@ from .models import (
     SchemeComponentChangeLog,
     ScoreChangeLog,
 )
-from .services import compute_class, compute_student, format_grade, save_score, validate_component_weights
-from .views import _build_class_record_context
+from .services import (
+    compute_class,
+    compute_student,
+    format_grade,
+    get_scheme_components,
+    item_short_label,
+    ordered_items_by_component,
+    save_score,
+    validate_component_weights,
+)
+from .views import _build_class_record_context, _item_columns
 
 
 def make_user(role, username, **extra):
@@ -188,6 +197,74 @@ class DelaCruzFinalGradeTests(GradingTestBase):
     def test_passing_threshold_is_3_00(self):
         result = compute_student(self.roster_entry)
         self.assertLessEqual(result.final_grade, Decimal("3.00"))
+
+
+class ClassRecordExcelLayoutTests(DelaCruzFinalGradeTests):
+    """The Class Record grid's Excel-style columns (short labels, Setup-
+    matching column order, per-component TOTAL/100%/weight) against the
+    same hand-verified Dela Cruz fixture as DelaCruzFinalGradeTests."""
+
+    def test_short_labels_are_category_letter_plus_position(self):
+        components = get_scheme_components(self.class_offering)
+        by_name = {c.name: c for c in components}
+
+        attendance = by_name["Attendance"]
+        labels = [item_short_label(attendance, item, i) for i, item in enumerate(attendance.items.all(), start=1)]
+        self.assertEqual(labels, ["A1", "A2", "A3", "A4", "A5"])
+
+        quizzes = by_name["Quizzes"]
+        labels = [item_short_label(quizzes, item, i) for i, item in enumerate(quizzes.items.all(), start=1)]
+        self.assertEqual(labels, ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"])
+
+        project = by_name["Project"]
+        labels = [item_short_label(project, item, i) for i, item in enumerate(project.items.all(), start=1)]
+        self.assertEqual(labels, ["P1", "P2", "P3", "P4", "P5"])
+
+    def test_exam_short_labels_are_term_letters_not_positional(self):
+        components = get_scheme_components(self.class_offering)
+        exam = next(c for c in components if c.name == "Examination")
+        labels = {item_short_label(exam, item, i) for i, item in enumerate(exam.items.all(), start=1)}
+        self.assertEqual(labels, {"P", "M", "S", "F"})
+
+    def test_grid_columns_match_setup_order_exactly(self):
+        """The same shared ordering (_term_ordered_items_qs) backs both
+        Setup's ordered_items_by_component and the grid's _item_columns —
+        this is the fix for the Setup/Class Record drift report."""
+        scheme = ClassGradingScheme.get_or_create_default(self.class_offering)
+        setup_items_by_component = ordered_items_by_component(scheme)
+        columns = _item_columns(get_scheme_components(self.class_offering), None)
+        for col in columns:
+            setup_ids = [i.id for i in setup_items_by_component.get(col["component"].id, [])]
+            self.assertEqual([i.id for i in col["items"]], setup_ids)
+
+    def test_grid_renders_hand_verified_component_and_weight_columns(self):
+        result = compute_student(self.roster_entry)
+        by_name = {c.component.name: c for c in result.components}
+
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]) + "?tab=record")
+        content = response.content.decode()
+
+        self.assertContains(response, format_grade(by_name["Attendance"].final_grade))
+        self.assertContains(response, format_grade(by_name["Attendance"].weighted_contribution))
+        self.assertContains(response, format_grade(by_name["Examination"].final_grade))
+        self.assertContains(response, format_grade(result.final_grade))
+        self.assertIn(">A1<", content)
+        self.assertIn(">Q1<", content)
+        self.assertIn(">P1<", content)
+
+    def test_empty_roster_shows_empty_state_not_a_blank_table(self):
+        self.roster_entry.delete()
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]) + "?tab=record")
+        self.assertContains(response, "No students in this class yet")
+        self.assertContains(response, str(self.section))
+
+    def test_fullscreen_toggle_markup_present(self):
+        self.client.force_login(self.instructor)
+        response = self.client.get(reverse("grading:class_grading", args=[self.class_offering.pk]) + "?tab=record")
+        self.assertContains(response, "classRecordFullScreen")
+        self.assertContains(response, "Exit full screen")
 
 
 class ComponentWeightValidationTests(GradingTestBase):

@@ -11,12 +11,14 @@ import io
 
 from django.http import HttpResponse
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import PageSetupProperties
 
 from academics.models import ClassRosterEntry
-from grading.models import ClassGradingScheme, Score
+from grading.models import ClassGradingScheme, ComponentCategory, Score
+from grading.services import item_short_label, ordered_items_by_component
 
 from .models import InstitutionSettings
 
@@ -24,6 +26,19 @@ THIN = Side(style="thin", color="999999")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 HEADER_FILL = PatternFill("solid", fgColor="E8E8E8")
 MAX_ROW_FILL = PatternFill("solid", fgColor="F5F5F5")
+FINAL_GRADE_FILL = PatternFill("solid", fgColor="FCE7F3")
+
+# Same category -> color mapping as the Class Record screen's header
+# bands (grading.services.COMPONENT_COLOR_CLASSES), as hex fills instead
+# of Tailwind classes -- so the exported file looks like the screen.
+COMPONENT_FILLS = {
+    ComponentCategory.ATTENDANCE: PatternFill("solid", fgColor="FEF3C7"),
+    ComponentCategory.QUIZ: PatternFill("solid", fgColor="DBEAFE"),
+    ComponentCategory.RECITATION: PatternFill("solid", fgColor="FFEDD5"),
+    ComponentCategory.PROJECT: PatternFill("solid", fgColor="CFFAFE"),
+    ComponentCategory.EXAM: PatternFill("solid", fgColor="DCFCE7"),
+    ComponentCategory.OTHER: HEADER_FILL,
+}
 
 
 def workbook_response(workbook, filename):
@@ -41,7 +56,10 @@ def build_class_record_workbook(class_offering, blank=False):
     inst = InstitutionSettings.get_solo()
     scheme = ClassGradingScheme.get_or_create_default(class_offering)
     components = list(scheme.components.order_by("order", "id"))
-    component_items = {c.id: list(c.items.order_by("order", "id")) for c in components}
+    # Same shared term -> date -> creation ordering the Class Record screen
+    # uses (grading.services._term_ordered_items_qs) -- the export's column
+    # order can never drift from what Setup/the screen show.
+    component_items = ordered_items_by_component(scheme)
 
     wb = Workbook()
     ws = wb.active
@@ -52,7 +70,7 @@ def build_class_record_workbook(class_offering, blank=False):
     col = 4
     component_ranges = []
     for component in components:
-        items = component_items[component.id]
+        items = component_items.get(component.id, [])
         first_item_col = col
         last_item_col = first_item_col + max(len(items), 1) - 1
         total_col, grade_col, weighted_col = last_item_col + 1, last_item_col + 2, last_item_col + 3
@@ -93,13 +111,21 @@ def build_class_record_workbook(class_offering, blank=False):
     header_cell(header_row1, header_row2, 3, 3, "Name of Students")
     ws.cell(max_row, 3, "MAX SCORE")
 
+    component_fills = {}
     for component, items, first_item_col, last_item_col, total_col, grade_col, weighted_col in component_ranges:
         ws.merge_cells(start_row=header_row1, start_column=first_item_col, end_row=header_row1, end_column=weighted_col)
         ws.cell(header_row1, first_item_col, f"{component.name} ({component.weight}%)")
+        fill = COMPONENT_FILLS.get(component.category, HEADER_FILL)
+        for c in range(first_item_col, weighted_col + 1):
+            component_fills[c] = fill
 
         if items:
             for i, item in enumerate(items):
-                ws.cell(header_row2, first_item_col + i, item.title)
+                label_cell = ws.cell(header_row2, first_item_col + i, item_short_label(component, item, i + 1))
+                label_cell.comment = Comment(
+                    f"{item.title} — {item.get_term_display()}" + (f" — {item.date}" if item.date else ""),
+                    "CITCI GradeTrack",
+                )
                 ws.cell(max_row, first_item_col + i, float(item.max_score))
             item_range = f"{get_column_letter(first_item_col)}{max_row}:{get_column_letter(last_item_col)}{max_row}"
             ws.cell(max_row, total_col, f"=SUM({item_range})")
@@ -114,12 +140,17 @@ def build_class_record_workbook(class_offering, blank=False):
     header_cell(header_row1, header_row2, final_grade_col, final_grade_col, "FINAL GRADE")
     header_cell(header_row1, header_row2, remarks_col, remarks_col, "REMARKS")
 
+    component_fills[final_grade_col] = FINAL_GRADE_FILL
+
     for row in (header_row1, header_row2, max_row):
         for c in range(1, last_col + 1):
             cell = ws.cell(row, c)
             cell.font = Font(bold=(row != max_row))
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.fill = HEADER_FILL if row != max_row else MAX_ROW_FILL
+            if row == max_row:
+                cell.fill = MAX_ROW_FILL
+            else:
+                cell.fill = component_fills.get(c, HEADER_FILL)
             cell.border = BORDER
 
     # --- Student rows ---

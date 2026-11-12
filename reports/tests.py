@@ -179,6 +179,31 @@ class ClassRecordExcelTests(ReportsTestBase):
         reloaded = load_workbook(buffer)
         self.assertIn("Class Record", reloaded.sheetnames)
 
+    def test_header_shows_short_code_not_full_title(self):
+        """make_items' fixture titles ("Attendance 1") deliberately differ
+        from their short codes ("A1") -- matching the Class Record screen's
+        header (grading.services.item_short_label), the real title moves to
+        a cell comment instead."""
+        workbook = build_class_record_workbook(self.class_offering)
+        ws = workbook.active
+        header_row2_values = [ws.cell(9, c).value for c in range(4, ws.max_column + 1)]
+        self.assertIn("A1", header_row2_values)
+        self.assertNotIn("Attendance 1", header_row2_values)
+        attendance_cell = ws.cell(9, 4)
+        self.assertEqual(attendance_cell.value, "A1")
+        self.assertIn("Attendance 1", attendance_cell.comment.text)
+
+    def test_header_bands_are_filled_by_category(self):
+        from openpyxl.styles import PatternFill
+
+        from .excel import COMPONENT_FILLS
+        from grading.models import ComponentCategory
+
+        workbook = build_class_record_workbook(self.class_offering)
+        ws = workbook.active
+        attendance_header = ws.cell(8, 4)
+        self.assertEqual(attendance_header.fill.fgColor.rgb[-6:], COMPONENT_FILLS[ComponentCategory.ATTENDANCE].fgColor.rgb[-6:])
+
 
 class ClassRecordImportTests(ReportsTestBase):
     def _exported_file(self, blank=False):
@@ -227,6 +252,15 @@ class ClassRecordImportTests(ReportsTestBase):
         self.client.force_login(self.instructor)
         response = self.client.get(reverse("reports:class_record_import", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 200)
+
+    def test_short_code_header_still_resolves_to_the_right_item(self):
+        """The export's header now shows "A1" while the item's stored title
+        is "Attendance 1" (see test_header_shows_short_code_not_full_title)
+        -- a re-imported file must still match it back to the SAME item by
+        short-label fallback, never create a duplicate/unmatched column."""
+        buffer = self._exported_file()
+        preview = build_import_preview(self.class_offering, buffer)
+        self.assertEqual(preview.unmatched_items, [])
 
 
 class ClassRecordImportCreateItemTests(ReportsTestBase):

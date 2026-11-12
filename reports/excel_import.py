@@ -19,7 +19,7 @@ from django.db import transaction
 from openpyxl import load_workbook
 
 from grading.models import AssessmentItem, AssessmentTerm, Score
-from grading.services import save_score
+from grading.services import item_short_label, ordered_items_by_component, save_score
 
 _WEIGHT_SUFFIX = re.compile(r"\s*\(\d+%\)\s*$")
 
@@ -159,9 +159,28 @@ def build_import_preview(class_offering, uploaded_file):
     )
     scheme_components = list(class_offering.grading_scheme.components.all())
 
+    # The export's header row now shows each item's short code (A1/Q1/.../
+    # P/M/S/F — reports.excel.build_class_record_workbook) instead of its
+    # full title, so a re-imported file commonly won't match by title alone
+    # any more. Build a short-label lookup alongside the title one, off the
+    # same shared ordering the export itself uses, so either an old-style
+    # (full-title) or current (short-code) export round-trips correctly.
+    short_label_by_item_id = {}
+    for items in ordered_items_by_component(class_offering.grading_scheme).values():
+        for position, item in enumerate(items, start=1):
+            short_label_by_item_id[item.id] = item_short_label(item.component, item, position)
+
     def _lookup_item(component_name, title):
+        normalized_component = component_name.strip().upper()
+        normalized_title = title.strip().upper()
         for item in existing_items:
-            if item.component.name.strip().upper() == component_name.strip().upper() and item.title.strip().upper() == title.strip().upper():
+            if item.component.name.strip().upper() == normalized_component and item.title.strip().upper() == normalized_title:
+                return item
+        for item in existing_items:
+            if (
+                item.component.name.strip().upper() == normalized_component
+                and short_label_by_item_id.get(item.id, "").strip().upper() == normalized_title
+            ):
                 return item
         return None
 

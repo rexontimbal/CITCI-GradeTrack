@@ -41,6 +41,8 @@ _PATHS = {
     "dots-vertical": '<path d="M12 5h.01M12 12h.01M12 19h.01" stroke-width="3"/>',
     "refresh": '<path d="M20 11A8 8 0 1 0 18.5 16.5"/><path d="M20 5v6h-6"/>',
     "upload": '<path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+    "expand": '<path d="M9 4.5H4.5V9M15 4.5h4.5V9M9 19.5H4.5V15M15 19.5h4.5V15"/>',
+    "collapse": '<path d="M4.5 9V4.5H9M19.5 9V4.5H15M4.5 15v4.5H9M19.5 15v4.5H15"/>',
 }
 
 

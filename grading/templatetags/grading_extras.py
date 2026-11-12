@@ -39,3 +39,14 @@ def trim_decimal(value):
         return "—"
     text = f"{Decimal(value):.2f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+@register.filter
+def weight_decimal(value):
+    """A whole-number percent weight as a 0-1 decimal fraction, 2 places
+    -- the Class Record grid's header-row-3 label under each component's
+    weight column (e.g. 5% -> "0.05", 30% -> "0.30"), matching the CITCI
+    class record's own header row exactly."""
+    if value is None:
+        return "—"
+    return f"{(Decimal(value) / Decimal('100')):.2f}"

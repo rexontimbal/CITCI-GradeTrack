@@ -35,7 +35,9 @@ from .models import (
 )
 from .services import (
     EXAM_TITLE_TERM_MAP,
+    FINAL_GRADE_COLOR_CLASSES,
     PASSING_THRESHOLD,
+    component_color_classes,
     compute_class,
     compute_student,
     component_snapshot,
@@ -44,6 +46,7 @@ from .services import (
     delete_scheme_component,
     get_encoded_item_ids,
     get_scheme_components,
+    item_short_label,
     log_component_change,
     ordered_items_by_component,
     save_score,
@@ -217,10 +220,23 @@ class GradingComponentDeleteView(RoleRequiredMixin, EntityDeleteView):
 def _item_columns(components, term_filter):
     columns = []
     for component in components:
-        items = list(component.items.all())
-        if term_filter:
-            items = [i for i in items if i.term == term_filter]
-        columns.append({"component": component, "items": items})
+        all_items = list(component.items.all())
+        # Short labels (A1/Q1/.../P/M/S/F) are positional within the
+        # component's FULL item list, not the term-filtered one -- so an
+        # item's label never changes depending on which term filter is
+        # currently selected.
+        short_labels = {item.id: item_short_label(component, item, position) for position, item in enumerate(all_items, start=1)}
+        items = [i for i in all_items if not term_filter or i.term == term_filter]
+        for item in items:
+            item.short_label = short_labels[item.id]
+        columns.append(
+            {
+                "component": component,
+                "items": items,
+                "color_classes": component_color_classes(component),
+                "max_total": sum(i.max_score for i in items),
+            }
+        )
     return columns
 
 
@@ -320,6 +336,13 @@ def _build_class_record_context(class_offering, term_filter=None):
             row["forecast_probability_pct"] = round(float(forecast.probability) * 100, 1)
             row["forecast_reasons"] = (forecast.contributions_json or {}).get("reasons", [])[:3]
 
+    section_names = ", ".join(str(s) for s in class_offering.sections.all())
+    no_students_description = (
+        f"Ask your Program Head to add students to section {section_names}."
+        if section_names
+        else "Ask your Program Head to add students to this class's section(s)."
+    )
+
     return {
         "columns": columns,
         "rows": rows,
@@ -327,6 +350,9 @@ def _build_class_record_context(class_offering, term_filter=None):
         "selected_term_label": selected_term_label,
         "not_yet_set_up": not_yet_set_up,
         "forecast_checkpoint": forecast_checkpoint,
+        "final_grade_color_classes": FINAL_GRADE_COLOR_CLASSES,
+        "has_students": bool(rows),
+        "no_students_description": no_students_description,
     }
 
 

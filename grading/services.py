@@ -145,6 +145,59 @@ def suggest_item_titles(component):
     return [f"{component.name} {_next_number_for_prefix(existing_titles, component.name)}"]
 
 
+_EXAM_TERM_LETTER = {
+    AssessmentTerm.PRELIM: "P",
+    AssessmentTerm.MIDTERM: "M",
+    AssessmentTerm.SEMIFINAL: "S",
+    AssessmentTerm.FINAL: "F",
+}
+_CATEGORY_SHORT_PREFIX = {
+    ComponentCategory.ATTENDANCE: "A",
+    ComponentCategory.QUIZ: "Q",
+    ComponentCategory.RECITATION: "R",
+    ComponentCategory.PROJECT: "P",
+}
+
+# Category -> (header band classes, short-label text classes) -- light
+# tints with dark text (AA contrast), matching the CITCI class record's
+# own color-coded section headers (Attendance yellow, Quizzes blue,
+# Recitation orange, Project cyan, Examination green, Final Grade pink).
+# Keyed off `category`, never a component's free-text name, same rule as
+# forecasting's feature extraction (section 7) -- a renamed component
+# still gets the right color band.
+COMPONENT_COLOR_CLASSES = {
+    ComponentCategory.ATTENDANCE: "bg-amber-100 text-amber-900",
+    ComponentCategory.QUIZ: "bg-blue-100 text-blue-900",
+    ComponentCategory.RECITATION: "bg-orange-100 text-orange-900",
+    ComponentCategory.PROJECT: "bg-cyan-100 text-cyan-900",
+    ComponentCategory.EXAM: "bg-green-100 text-green-900",
+    ComponentCategory.OTHER: "bg-gray-100 text-gray-900",
+}
+FINAL_GRADE_COLOR_CLASSES = "bg-pink-100 text-pink-900"
+
+
+def component_color_classes(component):
+    return COMPONENT_COLOR_CLASSES.get(component.category, COMPONENT_COLOR_CLASSES[ComponentCategory.OTHER])
+
+
+def item_short_label(component, item, position):
+    """The Class Record grid's compact column header -- "A1"/"Q1"/"R1"/
+    "P1" (category letter + this item's 1-based position among its
+    component's items, regardless of its actual title, so it's stable
+    for both new short-code titles and older descriptive ones) or "P"/
+    "M"/"S"/"F" for an Examination item (keyed off its term, not a
+    position, since an exam item IS a specific term's exam). The item's
+    full title/term/date belong in a tooltip, never dropped -- this is
+    purely a display compaction, matching CITCI's manual class record's
+    own column headers (grading-system.xlsx)."""
+    if component.category == ComponentCategory.EXAM:
+        return _EXAM_TERM_LETTER.get(item.term, item.term[:1])
+    prefix = _CATEGORY_SHORT_PREFIX.get(component.category)
+    if prefix:
+        return f"{prefix}{position}"
+    return item.title
+
+
 def default_term_for_new_item(class_offering):
     """The term of the most recently added item in this class, or Prelim
     if this is the very first item -- the Add Item form's term default."""
@@ -167,22 +220,29 @@ _TERM_RANK = {
 }
 
 
-def ordered_items_by_component(scheme):
-    """Every item in `scheme`'s class, grouped by component id and
-    ordered term -> date -> creation (chronological, not the old
+def _term_ordered_items_qs():
+    """Base queryset every "list this class's assessment items" caller
+    shares, ordered term -> date -> creation (chronological, not the old
     free-text `order` field -- removed from the Add/Edit Assessment Item
     form; a future drag-to-reorder UI is the field's next intended use,
-    not a numeric input an instructor has to maintain by hand)."""
+    not a numeric input an instructor has to maintain by hand). One
+    shared ordering means the Setup tab's list and the Class Record
+    grid's columns can never drift apart -- they're literally the same
+    query, just filtered differently (ordered_items_by_component filters
+    by scheme, _get_scheme_components' Prefetch filters implicitly by
+    component via the FK)."""
     term_rank_case = Case(
         *[When(term=term, then=Value(rank)) for term, rank in _TERM_RANK.items()],
         default=Value(len(_TERM_RANK)),
         output_field=IntegerField(),
     )
-    items = (
-        AssessmentItem.objects.filter(component__scheme=scheme)
-        .annotate(term_rank=term_rank_case)
-        .order_by("term_rank", "date", "created_at")
-    )
+    return AssessmentItem.objects.annotate(term_rank=term_rank_case).order_by("term_rank", "date", "created_at")
+
+
+def ordered_items_by_component(scheme):
+    """Every item in `scheme`'s class, grouped by component id, in the
+    shared term -> date -> creation order (see _term_ordered_items_qs)."""
+    items = _term_ordered_items_qs().filter(component__scheme=scheme)
     by_component = {}
     for item in items:
         by_component.setdefault(item.component_id, []).append(item)
@@ -288,6 +348,18 @@ class ComponentBreakdown:
         if not self.running_included:
             return None
         return _component_grade(self.running_earned, self.running_possible)
+
+    @property
+    def weighted_contribution(self) -> Optional[Decimal]:
+        """component grade x weight (as a 0-1 fraction) -- the Class
+        Record grid's Excel-matching "weight%" column (e.g. 0.07 for an
+        Attendance component weighted 5%), always off the FINAL grade
+        (never the running one, same as StudentGradeResult.final_grade's
+        own per-component term in its sum)."""
+        grade = self.final_grade
+        if grade is None:
+            return None
+        return grade * (self.component.weight / Decimal("100"))
 
 
 @dataclass
@@ -432,9 +504,9 @@ def _build_breakdown(components, scores_by_item, encoded_item_ids):
 def _get_scheme_components(class_offering):
     scheme = ClassGradingScheme.get_or_create_default(class_offering)
     return list(
-        scheme.components.prefetch_related(
-            Prefetch("items", queryset=AssessmentItem.objects.order_by("order", "id"))
-        ).order_by("order", "id")
+        scheme.components.prefetch_related(Prefetch("items", queryset=_term_ordered_items_qs())).order_by(
+            "order", "id"
+        )
     )
 
 

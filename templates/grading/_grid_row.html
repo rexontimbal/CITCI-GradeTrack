@@ -1,8 +1,8 @@
 {% load grading_extras sidebar_icons %}
 <tr id="row-{{ row.result.roster_entry.id }}"
     class="h-10 {% if not row.is_active %}bg-gray-100 text-gray-600{% else %}odd:bg-white even:bg-gray-50/70 hover:bg-brand-primary-50/50{% endif %} transition-colors">
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;">{{ row.row_number|default:"—" }}</td>
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;min-width:48px;max-width:48px;">{{ row.row_number|default:"—" }}</td>
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;min-width:96px;max-width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
     <td class="sticky-shadow sticky z-10 border-r border-gray-200 bg-inherit px-2 py-1.5 text-sm font-medium text-gray-900" style="left:144px;min-width:160px;">
         {{ row.result.roster_entry.student.last_name }}, {{ row.result.roster_entry.student.first_name }}
         {% if not row.is_active %}<span class="ml-1 text-xs text-gray-600">(Dropped)</span>{% endif %}
@@ -30,8 +30,11 @@
         <td class="border-l border-gray-100 bg-gray-100/70 px-2 py-1.5 text-center text-xs tabular-nums text-gray-600" title="All terms">
             {% if block.breakdown.running_included %}{{ block.breakdown.final_earned|trim_decimal }}/{{ block.breakdown.final_possible|trim_decimal }}{% else %}—{% endif %}
         </td>
-        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-sm font-semibold text-gray-900" title="All terms">
+        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-xs tabular-nums text-gray-700" title="All terms">
             {% if block.breakdown.running_included %}{{ block.breakdown.final_grade|grade_display }}{% else %}—{% endif %}
+        </td>
+        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-sm font-semibold text-gray-900" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.weighted_contribution|grade_display }}{% else %}—{% endif %}
         </td>
     {% endfor %}
 

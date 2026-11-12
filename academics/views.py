@@ -1790,15 +1790,24 @@ def ph_class_leave(request, pk):
     if not own_sections_in_class.exists():
         raise PermissionDenied("You have no sections in this class.")
     _require_semester_unlocked(class_offering)
+    blocked = services.class_has_scores_or_submitted_sheet(class_offering)
 
     if request.method != "POST":
         return render(
             request,
             "academics/_ph_class_leave_confirm.html",
-            {"class_offering": class_offering, "sections": own_sections_in_class},
+            {"class_offering": class_offering, "sections": own_sections_in_class, "blocked": blocked},
+        )
+
+    if blocked:
+        return render(
+            request,
+            "academics/_ph_class_leave_confirm.html",
+            {"class_offering": class_offering, "sections": own_sections_in_class, "blocked": True},
         )
 
     section_ids = list(own_sections_in_class.values_list("pk", flat=True))
+    offering = class_offering.offering
     class_offering.sections.remove(*own_sections_in_class)
     _log_academic_setup_change(
         AcademicSetupChangeLog.ModelName.CLASS,
@@ -1819,6 +1828,7 @@ def ph_class_leave(request, pk):
             is_admin_override=False,
             reason="last section removed",
         )
+        services.sync_offering_after_section_change(offering)
     return trigger_response("refreshClasses", toast=f"Left {class_offering}.")
 
 

@@ -204,7 +204,7 @@
                             {% endwith %}
                             {% if entry.offering %}
                             <span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                                Offered · {{ entry.offering.class_offerings.count }} class{{ entry.offering.class_offerings.count|pluralize }}
+                                Offered · {{ entry.offering.class_offerings.count }} class{{ entry.offering.class_offerings.count|pluralize:"es" }}
                             </span>
                             {% endif %}
                         </td>

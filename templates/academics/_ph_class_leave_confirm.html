@@ -6,10 +6,16 @@
     </button>
 </div>
 <div class="mt-4 space-y-4">
+    {% if blocked %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        Can't leave — {{ class_offering }} already has scores or a submitted grade sheet.
+    </div>
+    {% else %}
     <p class="text-sm text-gray-600">
         This removes your own section(s) from this class — it stays for any other Program Head still sharing it.
         If you're the last one, the class is deactivated.
     </p>
+    {% endif %}
     <ul class="list-inside list-disc text-sm text-gray-700">
         {% for section in sections %}<li>{{ section }}</li>{% endfor %}
     </ul>
@@ -17,9 +23,11 @@
         <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             Cancel
         </button>
+        {% if not blocked %}
         <button hx-post="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML"
                 class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
             Leave
         </button>
+        {% endif %}
     </div>
 </div>

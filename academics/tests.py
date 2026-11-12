@@ -1877,6 +1877,17 @@ class SharedClassJoinLeaveTests(TeachingAssignmentTestBase):
         response = self.client.get(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
         self.assertEqual(response.status_code, 403)
 
+    def test_leave_blocked_when_grade_sheet_submitted(self):
+        self.make_submitted_sheet(self.class_offering)
+        self.client.force_login(self.head_a)
+        get_response = self.client.get(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertContains(get_response, "already has scores or a submitted grade sheet")
+
+        post_response = self.client.post(reverse("academics:ph_class_leave", args=[self.class_offering.pk]))
+        self.assertEqual(post_response.status_code, 200)
+        self.class_offering.refresh_from_db()
+        self.assertIn(self.section_a, self.class_offering.sections.all())
+
 
 class ProgramHeadClassListsScopeTests(TeachingAssignmentTestBase):
     """Class Lists page + roster actions, scoped via _can_manage_roster."""
@@ -3220,3 +3231,55 @@ class SectionsPageRedesignTests(TeachingAssignmentTestBase):
         self.assertEqual(response.status_code, 204)
         profile.refresh_from_db()
         self.assertEqual(profile.section, target)
+
+
+class SectionShortLabelTests(TestCase):
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(start_year=2026)
+        self.program = Program.objects.create(code="BSED", name="BS Education")
+
+    def test_year_level_and_letter(self):
+        section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="A")
+        self.assertEqual(section.short_label, "1-A")
+
+    def test_year_level_only(self):
+        section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="")
+        self.assertEqual(section.short_label, "1")
+
+    def test_letter_only(self):
+        section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=None, name="A")
+        self.assertEqual(section.short_label, "A")
+
+    def test_neither_falls_back_to_program_code(self):
+        section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=None, name="")
+        self.assertEqual(section.short_label, "BSED")
+
+
+class SyncOfferingAfterSectionChangeTests(SubjectOfferingTestBase):
+    def test_deletes_offering_once_no_classes_remain(self):
+        from .services import commit_subject_offerings, preview_subject_offerings, sync_offering_after_section_change
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+        class_offering = ClassOffering.objects.get(offering=offering)
+
+        class_offering.roster_entries.all().delete()
+        class_offering.delete()
+        sync_offering_after_section_change(offering)
+        self.assertFalse(SubjectOffering.objects.filter(pk=offering.pk).exists())
+
+    def test_noop_while_classes_remain(self):
+        from .services import commit_subject_offerings, preview_subject_offerings, sync_offering_after_section_change
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], {}, self.semester, self.admin)
+        offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+
+        sync_offering_after_section_change(offering)
+        self.assertTrue(SubjectOffering.objects.filter(pk=offering.pk).exists())
+
+    def test_none_is_a_noop(self):
+        from .services import sync_offering_after_section_change
+
+        sync_offering_after_section_change(None)  # must not raise

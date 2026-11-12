@@ -168,6 +168,20 @@ class Section(TimeStampedModel):
             label += f"-{self.name}"
         return label
 
+    @property
+    def short_label(self):
+        """Compact identifier for badges/chips on the Subjects/Classes
+        pages -- "1-A" (year_level-letter), "1" (year_level alone), "A"
+        (letter alone), or the program code as a last resort (e.g. a
+        TCP-style section with neither)."""
+        if self.year_level and self.name:
+            return f"{self.year_level}-{self.name}"
+        if self.year_level:
+            return str(self.year_level)
+        if self.name:
+            return self.name
+        return self.program.code
+
 
 class Subject(TimeStampedModel):
     """The school-wide subject catalog — `code` is unique across every

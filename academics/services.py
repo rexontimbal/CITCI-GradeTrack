@@ -567,21 +567,28 @@ def commit_subject_offerings(plan_rows, decisions, semester, actor, is_admin_ove
     return {"offerings_created": offerings_created, "classes_created": classes_created, "students_added": students_added}
 
 
+def class_has_scores_or_submitted_sheet(class_offering):
+    """The one predicate every "can this class/section safely be torn
+    down" check in this module shares: a score encoded, or a grade sheet
+    that's already left DRAFT/RETURNED. Used by withdraw_offering,
+    ph_class_leave ("withdraw this section"), and split_class/
+    combine_classes."""
+    from approvals.services import is_class_editable
+    from grading.models import Score
+
+    return (
+        Score.objects.filter(roster_entry__class_offering=class_offering, score__isnull=False).exists()
+        or not is_class_editable(class_offering)
+    )
+
+
 def withdraw_offering(offering, actor):
     """Deletes `offering` and every class it created, but only if none of
     those classes has a score encoded or a submitted-or-later grade sheet.
     Returns (True, None) on success, or (False, reason) if blocked — never
     partially deletes."""
-    from approvals.services import is_class_editable
-    from grading.models import Score
-
     classes = list(offering.class_offerings.all())
-    blocking = [
-        class_offering
-        for class_offering in classes
-        if Score.objects.filter(roster_entry__class_offering=class_offering, score__isnull=False).exists()
-        or not is_class_editable(class_offering)
-    ]
+    blocking = [class_offering for class_offering in classes if class_has_scores_or_submitted_sheet(class_offering)]
     if blocking:
         names = ", ".join(str(c) for c in blocking)
         return False, f"Can't withdraw — {names} already has scores or a submitted grade sheet."
@@ -696,3 +703,19 @@ def move_students_to_section(student_profile_ids, target_section, actor):
             details={"moved_count": moved, "to_section_id": target_section.pk},
         )
     return moved
+
+
+def sync_offering_after_section_change(subject_offering):
+    """The single chokepoint for Principle 0: a SubjectOffering exists iff
+    it still has at least one class. Every code path that can reduce a
+    SubjectOffering's class count to zero (Split, Combine, "withdraw this
+    section", Manage Sections) calls this afterward -- not just the
+    dedicated withdraw-offering button -- so the Subjects page's "Offered"
+    state can never drift out of sync with what Classes actually shows.
+    Deletes `subject_offering` if it has no classes left; a no-op
+    otherwise. Safe to call with None (a class not linked to any
+    offering, e.g. a manually-created one)."""
+    if subject_offering is None:
+        return
+    if not subject_offering.class_offerings.exists():
+        subject_offering.delete()

@@ -71,8 +71,8 @@
     Once a component has at least one score anywhere in the class, any remaining blank cell counts as 0.
 </p>
 
-<div class="grid-scroll gold-scroll overflow-auto rounded-2xl border border-gray-200 bg-white"
-     :style="fullScreen ? 'max-height: calc(100vh - 11rem)' : 'max-height: 75vh'"
+<div class="grid-scroll gold-scroll overflow-auto rounded-2xl border border-gray-200 bg-white" style="max-width: 100%;"
+     :style="(fullScreen ? 'max-height: calc(100vh - 11rem);' : 'max-height: 75vh;') + 'max-width: 100%;'"
      x-data x-init="$el.addEventListener('scroll', () => $el.classList.toggle('scrolled-x', $el.scrollLeft > 0))">
     <table class="min-w-full border-collapse text-xs leading-tight" style="border-spacing:0;">
         <colgroup>

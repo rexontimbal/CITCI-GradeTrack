@@ -357,6 +357,27 @@ Extracted from `static/img/citci-logo.png` via a Pillow dominant-color scan:
 - White text on `brand-primary-600`/`-700` and dark text on `brand-accent-600` both clear WCAG AA
   (11–15:1 measured) — no adjustment was needed.
 
+## Layout & scroll conventions (page-level horizontal scroll fix)
+
+A wide table (the Class Record grid, Subjects, Classes, Teaching Loads, any admin list) must never
+force the whole PAGE to scroll horizontally — only the table's own container may. The document
+(`<body>`) stays `overflow-x: hidden` as a safety net, but the real fix is structural: `base.html`'s
+app shell is `<div class="min-h-full md:flex">` (sidebar + main column) and the main column
+**must** carry `min-w-0` alongside `flex-1` (`<div class="flex min-h-screen min-w-0 flex-1
+flex-col">`) — without it, a flex child's default `min-width: auto` lets it grow to fit its widest
+descendant (a wide table), which pushes the whole shell wider than the viewport and drags the
+sidebar along with it when the user scrolls. The sidebar itself is already `sticky top-0 shrink-0`
+and needs no change. Every wide-table wrapper still needs its own `overflow-x-auto` (or
+`overflow-auto` for a grid that also scrolls vertically) + `max-width: 100%` so IT absorbs the
+overflow instead of the page.
+
+**`.gold-scroll`** (`.django_tailwind_cli/source.css`) is the ONE shared thin-scrollbar class for
+every scroll container in the system — the sidebar `<nav>`, the Class Record grid, and every
+wide-table wrapper (`overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll` is
+the standard combination). 6px thin, brand-accent gold thumb (`rgba(245, 231, 102, …)`, brighter on
+hover), transparent track, no arrow buttons, `scrollbar-width: thin` for Firefox. Never write a new
+one-off scrollbar rule — add `gold-scroll` to the container instead.
+
 ---
 
 ## 3. User Roles & Accounts

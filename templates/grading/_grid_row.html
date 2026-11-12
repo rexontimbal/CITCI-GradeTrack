@@ -78,8 +78,12 @@
     </td>
     <td x-show="showForecast" class="border-l border-gray-200 px-2 py-1.5 text-center"
         {% if row.forecast_probability_pct is not None %}title="{{ row.forecast_probability_pct }}% — {{ row.forecast_reasons|join:"; " }}"{% endif %}>
-        {% if row.forecast_level %}
+        {% if row.forecast_level == "AT_RISK" or row.forecast_level == "WATCH" or row.forecast_level == "ON_TRACK" %}
         {% include "forecasting/_risk_badge.html" with level=row.forecast_level %}
+        {% elif row.forecast_level == "not_enough_data" %}
+        <span class="text-xs text-gray-300" title="Not enough data yet">—</span>
+        {% elif row.forecast_level == "unavailable" %}
+        <span class="text-xs text-gray-300" title="Forecast unavailable">—</span>
         {% else %}
         <span class="text-xs text-gray-300">—</span>
         {% endif %}

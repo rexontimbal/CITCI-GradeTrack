@@ -38,7 +38,7 @@
     <script src="{% static 'vendor/chartjs/chart.umd.min.js' %}" defer></script>
     <script src="{% static 'vendor/alpinejs/alpine.min.js' %}" defer></script>
 </head>
-<body class="h-full font-sans text-gray-800 antialiased"
+<body class="h-full overflow-x-hidden font-sans text-gray-800 antialiased"
       x-data="{
           collapsed: (() => { try { return localStorage.getItem('citci_sidebar_collapsed') === '1'; } catch (e) { return false; } })(),
           mobileOpen: false,
@@ -82,7 +82,7 @@ readers without moving focus.
 <div class="min-h-full md:flex">
     {% include "partials/_sidebar.html" %}
 
-    <div class="flex min-h-screen flex-1 flex-col">
+    <div class="flex min-h-screen min-w-0 flex-1 flex-col">
         <header class="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 md:px-6">
             <div class="flex items-center gap-3">
                 <button type="button" @click="mobileOpen = true" aria-label="Open menu" class="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 md:hidden">

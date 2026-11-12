@@ -26,7 +26,7 @@
 {% if classes %}
 {{ class_ids_json|json_script:"all-class-ids" }}
 <div x-data="classBulkSelect('{% url 'academics:class_update_field' 0 %}')" class="relative" style="padding-bottom: 4.5rem;">
-    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>

@@ -1,6 +1,6 @@
 {% load sidebar_icons dict_extras %}
 <div id="{{ table_id }}">
-    <div class="mb-4 flex gap-1 overflow-x-auto border-b border-gray-200">
+    <div class="mb-4 flex gap-1 overflow-x-auto gold-scroll border-b border-gray-200">
         {% for value, label in tabs %}
         <button hx-get="{% url 'accounts:users' %}" hx-vals='{"role": "{{ value }}"}' hx-target="#{{ table_id }}" hx-swap="outerHTML"
                 class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition
@@ -48,7 +48,7 @@
     </form>
 
     {% if page_obj.object_list %}
-    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <div class="overflow-x-auto gold-scroll rounded-2xl border border-gray-200 bg-white">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <tr>

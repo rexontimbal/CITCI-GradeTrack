@@ -48,7 +48,6 @@ from .services import (
     get_scheme_components,
     item_short_label,
     log_component_change,
-    ordered_items_by_component,
     save_score,
     scheme_total_weight,
     suggest_item_titles,
@@ -238,6 +237,27 @@ def _item_columns(components, term_filter):
             }
         )
     return columns
+
+
+def _setup_term_matrix(columns):
+    """"By term" view for the Setup tab -- rows = components, columns = the
+    four AssessmentTerms, cells = that component's items in that term.
+    Regroups the already-built `columns` (shared with the card view and the
+    Class Record grid) instead of a second query, so the two Setup views
+    can never show different items."""
+    matrix = []
+    for col in columns:
+        by_term = {term: [] for term, _ in AssessmentTerm.choices}
+        for item in col["items"]:
+            by_term[item.term].append(item)
+        matrix.append(
+            {
+                "component": col["component"],
+                "color_classes": col["color_classes"],
+                "cells": [{"term": term, "label": label, "items": by_term[term]} for term, label in AssessmentTerm.choices],
+            }
+        )
+    return matrix
 
 
 def _build_class_record_context(class_offering, term_filter=None):
@@ -434,7 +454,9 @@ def class_grading(request, pk):
         context["summary"] = _build_summary_context(class_offering)
         context["components"] = _build_components_panel_context(scheme, can_edit)
         context["scheme_total"] = scheme_total_weight(scheme)
-        context["items_by_component"] = ordered_items_by_component(scheme)
+        setup_columns = _item_columns(list(scheme.components.all()), None)
+        context["setup_columns"] = setup_columns
+        context["setup_term_matrix"] = _setup_term_matrix(setup_columns)
 
     return render(request, "grading/class_grading.html", context)
 

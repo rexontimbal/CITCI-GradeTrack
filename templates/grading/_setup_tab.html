@@ -1,88 +1,160 @@
 {% load sidebar_icons grading_extras core_extras %}
-<div class="rounded-2xl border border-gray-200 bg-white p-4">
-    <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-gray-900">Assessment Items</h3>
-        <div class="flex items-center gap-2">
-            {% if can_edit %}
-            <button type="button" hx-get="{% url 'grading:class_components_save' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    aria-label="Grading components" title="Grading components"
-                    class="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50">
-                {% sidebar_icon "settings" "w-4 h-4" %}
-            </button>
-            <button hx-get="{% url 'grading:item_create' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    class="flex items-center gap-1.5 rounded-lg bg-brand-accent-600 px-3 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
-                {% sidebar_icon "plus" "w-4 h-4" %} Add Item
-            </button>
-            {% endif %}
+<div class="space-y-4">
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h3 class="text-sm font-semibold text-gray-900">Grading Components</h3>
+            <div class="flex items-center gap-2">
+                {% if scheme_total == 100 %}
+                <span class="flex items-center gap-1 text-sm font-semibold text-green-700">
+                    {% sidebar_icon "check-circle" "h-4 w-4" %} Total 100%
+                </span>
+                {% else %}
+                <span class="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
+                    Total {{ scheme_total|trim_decimal }}% — must be 100%
+                </span>
+                {% endif %}
+                {% if can_edit %}
+                <button type="button" hx-get="{% url 'grading:class_components_save' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                        aria-label="Grading components" title="Grading components"
+                        class="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50">
+                    {% sidebar_icon "settings" "w-4 h-4" %}
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex overflow-hidden rounded-xl border border-gray-200 text-xs font-semibold">
+            {% for col in setup_columns %}
+            <div class="flex min-w-[72px] flex-col items-center justify-center gap-0.5 px-2 py-2.5 text-center {{ col.color_classes }} {% if not forloop.first %}border-l border-white/70{% endif %}"
+                 style="flex-grow:{{ col.component.weight }}; flex-basis:0;">
+                <span class="flex items-center gap-1">
+                    {{ col.component.name }}
+                    {% if col.component.is_locked %}{% sidebar_icon "lock" "h-3 w-3" %}{% endif %}
+                </span>
+                <span>{{ col.component.weight|trim_decimal }}%</span>
+            </div>
+            {% endfor %}
         </div>
     </div>
 
-    <div class="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
-        {% for component in scheme.components.all %}
-        <span class="rounded-full bg-gray-100 px-2 py-1 font-medium text-gray-700">
-            {{ component.name }} {{ component.weight }}%{% if component.is_locked %} {% sidebar_icon "lock" "inline h-3 w-3" %}{% endif %}
-        </span>
-        {% if not forloop.last %}<span class="text-gray-600">·</span>{% endif %}
-        {% endfor %}
-        {% if scheme_total == 100 %}
-        <span class="ml-1 font-semibold text-green-700">= 100%</span>
-        {% else %}
-        <span class="ml-1 flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-medium text-amber-800">
-            Components total {{ scheme_total }}% — open settings to fix
-        </span>
-        {% endif %}
-    </div>
-
-    {% for component in scheme.components.all %}
-    {% with items=items_by_component|dict_get:component.pk %}
-    <div class="mb-5 last:mb-0">
-        <div class="mb-2 flex items-center justify-between">
-            <span class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ component.name }} ({{ component.weight }}%)</span>
-            {% if can_edit %}
-            <button hx-get="{% url 'grading:item_create' class_offering.pk %}?component={{ component.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
-                {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add
-            </button>
-            {% endif %}
+    <div x-data="setupViewToggle()">
+        <div class="mb-3 flex justify-end">
+            <div class="inline-flex rounded-lg border border-gray-300 bg-white p-0.5 text-xs font-medium">
+                <button type="button" @click="setView('component')"
+                        :class="view==='component' ? 'bg-brand-primary-800 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                        class="rounded-md px-3 py-1.5">By component</button>
+                <button type="button" @click="setView('term')"
+                        :class="view==='term' ? 'bg-brand-primary-800 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                        class="rounded-md px-3 py-1.5">By term</button>
+            </div>
         </div>
-        {% if items %}
-        <div class="overflow-x-auto gold-scroll rounded-xl border border-gray-200">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                    <tr>
-                        <th class="px-3 py-2">Title</th>
-                        <th class="px-3 py-2">Term</th>
-                        <th class="px-3 py-2">Max Score</th>
-                        <th class="px-3 py-2">Date</th>
-                        {% if can_edit %}<th class="px-3 py-2 text-right">Actions</th>{% endif %}
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    {% for item in items %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-3 py-2 font-medium text-gray-900">{{ item.title }}</td>
-                        <td class="px-3 py-2"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{{ item.get_term_display }}</span></td>
-                        <td class="px-3 py-2 text-gray-700">{{ item.max_score|trim_decimal }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ item.date|date:"M d, Y"|default:"—" }}</td>
-                        {% if can_edit %}
-                        <td class="px-3 py-2 text-right">
-                            <div class="flex justify-end gap-1">
-                                <button hx-get="{% url 'grading:item_edit' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                        class="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-700" title="Edit">{% sidebar_icon "pencil" "w-4 h-4" %}</button>
-                                <button hx-get="{% url 'grading:item_delete' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                        class="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600" title="Delete">{% sidebar_icon "trash" "w-4 h-4" %}</button>
+
+        <div x-show="view==='component'">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {% for col in setup_columns %}
+                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                    <div class="flex items-start justify-between gap-2 px-4 py-3 {{ col.color_classes }}">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 text-sm font-semibold">
+                                <span class="truncate">{{ col.component.name }}</span>
+                                {% if col.component.is_locked %}{% sidebar_icon "lock" "h-3.5 w-3.5 flex-none" %}{% endif %}
+                                <span class="flex-none font-normal">· {{ col.component.weight|trim_decimal }}%</span>
                             </div>
-                        </td>
+                            <p class="mt-0.5 text-xs opacity-80">
+                                {{ col.items|length }} item{{ col.items|length|pluralize }} · {{ col.max_total|trim_decimal }} pt{{ col.max_total|pluralize }}
+                                {% if not can_edit %}· read-only{% endif %}
+                            </p>
+                        </div>
+                        {% if can_edit %}
+                        <button type="button" hx-get="{% url 'grading:item_create' class_offering.pk %}?component={{ col.component.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="flex-none rounded-lg p-1.5 text-current hover:bg-white/50" title="Add item to {{ col.component.name }}">
+                            {% sidebar_icon "plus" "h-4 w-4" %}
+                        </button>
                         {% endif %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        {% for item in col.items %}
+                        <div class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50">
+                            <span class="flex h-6 w-9 flex-none items-center justify-center rounded-md text-xs font-bold {{ col.color_classes }}" title="{{ item.title }}">{{ item.short_label }}</span>
+                            <span class="min-w-0 flex-1 truncate text-gray-700" title="{{ item.title }}">{{ item.title }}</span>
+                            <span class="flex-none rounded-full px-2 py-0.5 text-[11px] font-medium {{ item.term|term_color_classes }}">{{ item.get_term_display }}</span>
+                            <span class="flex-none text-right text-gray-600" style="width:3.25rem;">{{ item.max_score|trim_decimal }} pts</span>
+                            <span class="flex-none text-right text-xs text-gray-400" style="width:3.5rem;">{{ item.date|date:"M d"|default:"—" }}</span>
+                            {% if can_edit %}
+                            <div x-data="{ open: false }" class="relative flex-none" @click.outside="open=false">
+                                <button type="button" @click="open=!open" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Item actions">
+                                    {% sidebar_icon "dots-vertical" "h-4 w-4" %}
+                                </button>
+                                <div x-show="open" x-cloak x-transition
+                                     class="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                                    <button type="button" hx-get="{% url 'grading:item_edit' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true; open=false"
+                                            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50">
+                                        {% sidebar_icon "pencil" "h-3.5 w-3.5" %} Edit
+                                    </button>
+                                    <button type="button" hx-get="{% url 'grading:item_delete' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true; open=false"
+                                            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50">
+                                        {% sidebar_icon "trash" "h-3.5 w-3.5" %} Delete
+                                    </button>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% empty %}
+                        <p class="px-4 py-4 text-xs text-gray-500">No items yet.</p>
+                        {% endfor %}
+                    </div>
+                    {% if can_edit %}
+                    <div class="border-t border-gray-100 px-4 py-2">
+                        <button type="button" hx-get="{% url 'grading:item_create' class_offering.pk %}?component={{ col.component.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                                class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
+                            {% sidebar_icon "plus" "h-3.5 w-3.5" %} Add item
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
-        {% else %}
-        <p class="rounded-xl border border-dashed border-gray-200 px-3 py-3 text-xs text-gray-500">No items yet for {{ component.name }}.</p>
-        {% endif %}
+
+        <div x-show="view==='term'" x-cloak>
+            <div class="overflow-x-auto gold-scroll rounded-2xl border border-gray-200 bg-white">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                        <tr>
+                            <th class="px-3 py-2">Component</th>
+                            {% for value, label in assessment_terms %}
+                            <th class="px-3 py-2">{{ label }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for row in setup_term_matrix %}
+                        <tr>
+                            <td class="whitespace-nowrap px-3 py-2">
+                                <span class="rounded-full px-2 py-1 text-xs font-semibold {{ row.color_classes }}">
+                                    {{ row.component.name }}
+                                    {% if row.component.is_locked %}{% sidebar_icon "lock" "inline h-3 w-3" %}{% endif %}
+                                    {{ row.component.weight|trim_decimal }}%
+                                </span>
+                            </td>
+                            {% for cell in row.cells %}
+                            <td class="px-3 py-2 align-top">
+                                {% if cell.items %}
+                                <div class="flex flex-wrap gap-1">
+                                    {% for item in cell.items %}
+                                    <span class="rounded-md border border-gray-200 px-1.5 py-0.5 text-xs text-gray-700" title="{{ item.title }}">{{ item.short_label }} · {{ item.max_score|trim_decimal }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <span class="text-xs text-gray-300">—</span>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    {% endwith %}
-    {% endfor %}
 </div>

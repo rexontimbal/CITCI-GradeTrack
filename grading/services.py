@@ -175,9 +175,24 @@ COMPONENT_COLOR_CLASSES = {
 }
 FINAL_GRADE_COLOR_CLASSES = "bg-pink-100 text-pink-900"
 
+# Term -> a subtle, consistent pill color everywhere a term badge appears
+# (Setup tab item rows/matrix) -- distinct hues from COMPONENT_COLOR_CLASSES
+# above so the two color systems (what component vs. which term) never read
+# as the same kind of label.
+TERM_COLOR_CLASSES = {
+    AssessmentTerm.PRELIM: "bg-sky-50 text-sky-700",
+    AssessmentTerm.MIDTERM: "bg-violet-50 text-violet-700",
+    AssessmentTerm.SEMIFINAL: "bg-rose-50 text-rose-700",
+    AssessmentTerm.FINAL: "bg-slate-200 text-slate-800",
+}
+
 
 def component_color_classes(component):
     return COMPONENT_COLOR_CLASSES.get(component.category, COMPONENT_COLOR_CLASSES[ComponentCategory.OTHER])
+
+
+def term_color_classes(term):
+    return TERM_COLOR_CLASSES.get(term, "bg-gray-100 text-gray-700")
 
 
 def item_short_label(component, item, position):

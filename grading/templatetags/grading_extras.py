@@ -3,6 +3,7 @@ from decimal import Decimal
 from django import template
 
 from grading.services import format_grade
+from grading.services import term_color_classes as _term_color_classes
 
 register = template.Library()
 
@@ -39,6 +40,14 @@ def trim_decimal(value):
         return "—"
     text = f"{Decimal(value):.2f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+@register.filter
+def term_color_classes(term):
+    """Subtle, consistent pill classes for a term badge (Setup tab) --
+    distinct from the component category colors so the two color systems
+    never read as the same kind of label."""
+    return _term_color_classes(term)
 
 
 @register.filter

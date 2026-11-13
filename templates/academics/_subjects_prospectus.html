@@ -116,19 +116,12 @@
             <span class="pointer-events-none absolute left-[2px] top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
             <span class="text-xs font-medium text-gray-700">Select</span>
         </label>
-        <div class="flex items-center gap-2">
-            <button type="button"
-                    @click="modalOpen = true; htmx.ajax('GET', '{% url 'academics:subject_offering_bulk_withdraw' %}?scope=all&program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&year_level={{ year_level_filter }}', {target: '#modal-content', swap: 'innerHTML'})"
-                    class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">
-                Withdraw all
-            </button>
-            <button type="button"
-                    hx-get="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-                    hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                    class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                Offer another subject…
-            </button>
-        </div>
+        <button type="button"
+                hx-get="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Offer another subject…
+        </button>
         {% endif %}
         <button type="button"
                 hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&term={{ selected_sem_term }}"
@@ -156,22 +149,17 @@
         {% if offering_ok %}
         <div class="flex items-center gap-3">
             {% for table in card.term_tables %}
-            {% if table.is_offering_term and table.offerable_ids %}
+            {% if table.offerable_ids or table.withdrawable_ids %}
+            {% with offer_ids_js=table.offerable_ids|join:"','" withdraw_ids_js=table.withdrawable_ids|join:"','" %}
             <label x-show="selectMode" x-cloak class="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                <input type="checkbox" class="accent-blue-600"
-                       x-effect="$el.checked = allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]); $el.indeterminate = someChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]) && !allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}])"
-                       @change="onHeaderToggle([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}], $event.target.checked); $el.closest('.rounded-2xl').querySelectorAll('.offer-checkbox').forEach(cb => cb.checked = $event.target.checked)">
+                <input type="checkbox"
+                       x-effect="$el.checked = allCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}]); $el.indeterminate = someCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}]) && !allCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}])"
+                       @change="onHeaderToggleMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}], $event.target.checked)">
                 Select all {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}subjects{% endif %}
             </label>
+            {% endwith %}
             {% endif %}
             {% endfor %}
-            {% if card.year_level %}
-            <button type="button"
-                    @click="modalOpen = true; htmx.ajax('GET', '{% url 'academics:subject_offering_bulk_withdraw' %}?scope=year_level:{{ card.year_level }}&program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}', {target: '#modal-content', swap: 'innerHTML'})"
-                    class="text-xs font-medium text-red-600 hover:underline">
-                Withdraw all {{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year
-            </button>
-            {% endif %}
         </div>
         {% endif %}
     </div>
@@ -187,11 +175,13 @@
                     <tr>
                         {% if table.is_offering_term and offering_ok %}
                         <th class="px-3 py-2">
-                            {% if table.offerable_ids %}
-                            <input type="checkbox" x-show="selectMode" x-cloak class="accent-blue-600"
-                                   x-effect="$el.checked = allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]); $el.indeterminate = someChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]) && !allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}])"
-                                   @change="onHeaderToggle([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}], $event.target.checked); $el.closest('table').querySelectorAll('.offer-checkbox').forEach(cb => cb.checked = $event.target.checked)"
+                            {% if table.offerable_ids or table.withdrawable_ids %}
+                            {% with offer_ids_js=table.offerable_ids|join:"','" withdraw_ids_js=table.withdrawable_ids|join:"','" %}
+                            <input type="checkbox" x-show="selectMode" x-cloak
+                                   x-effect="$el.checked = allCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}]); $el.indeterminate = someCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}]) && !allCheckedMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}])"
+                                   @change="onHeaderToggleMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}], $event.target.checked)"
                                    aria-label="Select all in {{ table.label }}">
+                            {% endwith %}
                             {% endif %}
                         </th>
                         {% endif %}

@@ -1079,12 +1079,16 @@ def subjects_home(request):
         for table in card["term_tables"]:
             table["is_offering_term"] = bool(selected_semester) and table["value"] == offering_term
             offerable_ids = []
+            withdrawable_ids = []
             for entry in table["rows"]:
                 entry.offering = offered_by_subject_id.get(entry.subject_id)
                 units_by_entry_id[str(entry.pk)] = float(entry.subject.units)
                 if table["is_offering_term"] and entry.offering is None:
                     offerable_ids.append(entry.pk)
+                elif table["is_offering_term"] and entry.offering is not None:
+                    withdrawable_ids.append(entry.offering.pk)
             table["offerable_ids"] = offerable_ids
+            table["withdrawable_ids"] = withdrawable_ids
 
     context.update(
         {

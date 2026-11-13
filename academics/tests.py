@@ -2778,6 +2778,38 @@ class SubjectOfferingPreviewAndCommitTests(SubjectOfferingTestBase):
             )
 
 
+class SubjectsProspectusRendersWithOfferedSubjectsTests(SubjectOfferingTestBase):
+    """A regression guard for the Subjects page's "select all"/bulk-
+    withdraw checkboxes: rendering it once a subject is actually offered
+    used to 500 (entry.offering is a plain attribute set in the view, not
+    a real FK -- entry.offering_id doesn't exist, only entry.offering.pk
+    does). Mixes an offered subject (GE 2, via entry_eng) with a second,
+    not-yet-offered one in the same program/major/term so the page has
+    to render both the blue (offer) and red (withdraw) checkbox branches
+    in the same request."""
+
+    def setUp(self):
+        super().setUp()
+        from .services import commit_subject_offerings, preview_subject_offerings
+
+        preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
+        commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
+
+        self.unoffered_subject = Subject.objects.create(code="EL 100", title="Introduction to Linguistics", units=Decimal("3.0"))
+        CurriculumEntry.objects.create(
+            program=self.program, major=self.major_eng, year_level=1, term=Term.FIRST, subject=self.unoffered_subject
+        )
+
+    def test_admin_subjects_page_renders(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("academics:subjects") + f"?program={self.program.pk}&major={self.major_eng.pk}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Offered")
+        self.assertContains(response, "EL 100")
+
+
 class WithdrawOfferingTests(SubjectOfferingTestBase):
     def _offer_eng(self):
         from .services import commit_subject_offerings, preview_subject_offerings

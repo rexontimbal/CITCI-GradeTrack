@@ -17,8 +17,21 @@ document.addEventListener("keydown", function (event) {
     }
 
     switch (event.key) {
-        case "ArrowDown":
         case "Enter":
+            // Moving focus to the cell below already blurs this one (which
+            // is what triggers the hx-trigger="blur changed" autosave) --
+            // but the last row has no cell below, so without this the
+            // input would just stay focused forever with a blinking
+            // cursor, looking like the edit never finished. Blur it
+            // directly so Enter always "completes" the cell.
+            if (input.dataset.down) {
+                focusCell(input.dataset.down);
+            } else {
+                event.preventDefault();
+                input.blur();
+            }
+            return;
+        case "ArrowDown":
             focusCell(input.dataset.down);
             return;
         case "ArrowUp":

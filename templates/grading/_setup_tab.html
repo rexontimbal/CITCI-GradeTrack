@@ -88,14 +88,6 @@
                         <p class="px-4 py-4 text-xs text-gray-500">No items yet.</p>
                         {% endfor %}
                     </div>
-                    {% if can_edit %}
-                    <div class="border-t border-gray-100 px-4 py-2">
-                        <button type="button" hx-get="{% url 'grading:item_create' class_offering.pk %}?component={{ col.component.pk }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                                class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
-                            {% sidebar_icon "plus" "h-3.5 w-3.5" %} Add item
-                        </button>
-                    </div>
-                    {% endif %}
                 </div>
                 {% endfor %}
             </div>

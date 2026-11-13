@@ -7,8 +7,6 @@
 {% include "partials/_no_active_semester.html" %}
 {% else %}
 
-{% include "academics/_classes_unassigned_banner.html" %}
-
 <div class="mb-4 flex items-center justify-between">
     <p class="text-xs font-medium text-gray-600">{{ classes|length }} class{{ classes|length|pluralize:"es" }}</p>
     <div class="flex gap-2">

@@ -2153,7 +2153,6 @@ def program_head_classes(request):
     instructor / set room / set schedule) over the checked rows."""
     active = Semester.objects.filter(is_active=True).first()
     qs = _program_head_class_queryset(request.user, active)
-    unassigned_count = qs.filter(instructor__isnull=True).count() if active else 0
 
     if request.GET.get("unassigned") == "1":
         qs = qs.filter(instructor__isnull=True)
@@ -2169,8 +2168,6 @@ def program_head_classes(request):
             "classes": classes,
             "class_ids_json": [c.pk for c in classes],
             "active_semester_set": bool(active),
-            "unassigned_count": unassigned_count,
-            "unassigned_filter": request.GET.get("unassigned") == "1",
             "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
         },
     )
@@ -2489,18 +2486,7 @@ def class_update_field(request, pk):
         request=request,
     )
 
-    banner_html = ""
-    if request.user.is_program_head:
-        active = Semester.objects.filter(is_active=True).first()
-        qs = _program_head_class_queryset(request.user, active)
-        unassigned_count = qs.filter(instructor__isnull=True).count() if active else 0
-        banner_html = render_to_string(
-            "academics/_classes_unassigned_banner.html",
-            {"unassigned_count": unassigned_count, "unassigned_filter": request.GET.get("unassigned") == "1"},
-            request=request,
-        )
-
-    response = HttpResponse(row_html + banner_html)
+    response = HttpResponse(row_html)
     silent = request.POST.get("silent") == "1"
     if error or not silent:
         response["HX-Trigger"] = json.dumps({"toast": {"message": error or toast, "level": "error" if error else "success"}})

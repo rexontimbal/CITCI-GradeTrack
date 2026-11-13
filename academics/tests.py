@@ -778,16 +778,6 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.assertIn(self.instructor1.full_name, toast["message"])
         self.assertIn("PEd 205", toast["message"])
 
-    def test_instructor_assignment_updates_unassigned_banner_out_of_band(self):
-        self.client.force_login(self.head_a)
-        response = self.client.post(
-            reverse("academics:class_update_field", args=[self.class_offering.pk]),
-            {"field": "instructor", "value": self.instructor1.pk},
-        )
-        self.assertNotIn("1 class need", response.content.decode())
-        self.assertIn('id="unassigned-banner"', response.content.decode())
-        self.assertIn("hx-swap-oob", response.content.decode())
-
     def test_updates_room_and_rerenders_row(self):
         self.client.force_login(self.head_a)
         response = self.client.post(

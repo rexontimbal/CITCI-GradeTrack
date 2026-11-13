@@ -232,6 +232,24 @@ def _suggest_username(last_name):
     return re.sub(r"[^a-z0-9]", "", (last_name or "").lower()) or "user"
 
 
+def _suggest_student_id_number():
+    """Next "{A.Y. start year}-{sequence}" ID number (e.g. "2026-0001"),
+    based on the active semester's academic year -- a starting point for
+    the Add User form, not an assigned value: the field stays editable and
+    User.id_number's own unique=True constraint (enforced by the
+    ModelForm regardless of what the admin types) is what actually
+    prevents a duplicate, not this suggestion."""
+    active_semester = Semester.objects.filter(is_active=True).select_related("academic_year").first()
+    year = active_semester.academic_year.start_year if active_semester else timezone.now().year
+    prefix = f"{year}-"
+    highest = 0
+    for id_number in User.objects.filter(id_number__startswith=prefix).values_list("id_number", flat=True):
+        suffix = id_number[len(prefix):]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return f"{prefix}{highest + 1:04d}"
+
+
 @role_required(ADMIN)
 def user_form(request, pk=None):
     user_obj = get_object_or_404(User, pk=pk) if pk else None
@@ -282,6 +300,9 @@ def user_form(request, pk=None):
             form.fields["major"].queryset = Major.objects.filter(program_id=program_id, is_active=True)
     else:
         role = user_obj.role if user_obj else None
+
+    if role == User.Role.STUDENT and not user_obj and not form.initial.get("id_number"):
+        form.initial["id_number"] = _suggest_student_id_number()
 
     return render(
         request,

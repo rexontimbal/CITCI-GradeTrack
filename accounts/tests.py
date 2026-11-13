@@ -7,7 +7,7 @@ from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from academics.models import AcademicYear, Program, Section
+from academics.models import AcademicYear, Program, Section, Semester, Term
 
 from .models import User
 from .views import user_toggle_active
@@ -658,3 +658,65 @@ class UserFormPrefillTests(TestCase):
         self.assertEqual(self.student.last_name, "Dela Cruz")
         self.assertEqual(self.student.student_profile.program, self.program)
         self.assertEqual(self.student.student_profile.major, self.major)
+
+
+class SuggestedStudentIdNumberTests(TestCase):
+    """Add User modal: picking "Student" suggests the next
+    "{active A.Y. start year}-{sequence}" ID number -- a starting point,
+    not an assigned value, so it stays editable; User.id_number's own
+    unique=True constraint is what actually blocks a duplicate on save,
+    not the suggestion itself."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "suggest_id_admin")
+        self.client.force_login(self.admin)
+        academic_year = AcademicYear.objects.create(start_year=2026)
+        Semester.objects.create(academic_year=academic_year, term=Term.FIRST, is_active=True)
+
+    def _get(self, **params):
+        return self.client.get(
+            reverse("accounts:user_create"), params, headers={"hx-request": "true"}
+        )
+
+    def test_suggests_first_id_number_for_the_active_year_when_none_exist(self):
+        response = self._get(role=User.Role.STUDENT)
+        self.assertEqual(response.context["form"]["id_number"].value(), "2026-0001")
+
+    def test_suggests_the_next_sequence_after_existing_students(self):
+        make_user(User.Role.STUDENT, "2026-0001", id_number="2026-0001")
+        make_user(User.Role.STUDENT, "2026-0003", id_number="2026-0003")
+        response = self._get(role=User.Role.STUDENT)
+        self.assertEqual(response.context["form"]["id_number"].value(), "2026-0004")
+
+    def test_does_not_suggest_for_a_non_student_role(self):
+        response = self._get(role=User.Role.INSTRUCTOR)
+        self.assertFalse(response.context["form"]["id_number"].value())
+
+    def test_does_not_override_an_already_typed_id_number(self):
+        response = self._get(role=User.Role.STUDENT, id_number="2026-9999")
+        self.assertEqual(response.context["form"]["id_number"].value(), "2026-9999")
+
+    def test_editing_an_existing_user_never_gets_a_suggestion(self):
+        student = make_user(User.Role.STUDENT, "2026-0001", id_number="2026-0001")
+        response = self.client.get(
+            reverse("accounts:user_edit", args=[student.pk]),
+            {"role": User.Role.STUDENT},
+            headers={"hx-request": "true"},
+        )
+        self.assertEqual(response.context["form"]["id_number"].value(), "2026-0001")
+
+    def test_duplicate_id_number_is_rejected_even_though_editable(self):
+        make_user(User.Role.STUDENT, "2026-0001", id_number="2026-0001")
+        response = self.client.post(
+            reverse("accounts:user_create"),
+            {
+                "role": User.Role.STUDENT,
+                "id_number": "2026-0001",
+                "last_name": "Reyes",
+                "first_name": "Ana",
+                "middle_name": "",
+                "email": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already exists")

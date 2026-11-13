@@ -19,7 +19,7 @@
                     <td class="px-4 py-3 font-medium text-gray-900">{{ major }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ major.name }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ major.program.code }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ major.program_head.full_name|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ major.program_head.full_name|default:"Unassigned" }}</td>
                     <td class="px-4 py-3">
                         {% if major.is_active %}
                         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>

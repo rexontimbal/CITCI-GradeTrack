@@ -5,7 +5,7 @@
                :checked="isSelected({{ class_offering.pk }})" @change="toggle({{ class_offering.pk }})">
     </td>
     <td class="px-4 py-3">
-        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering.display_code }} — {{ class_offering.display_title }}</a>
+        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="font-medium text-brand-primary-700 hover:underline">{{ class_offering.display_code }} · {{ class_offering.display_title }}</a>
         <div class="text-xs text-gray-500">
             {% for section in class_offering.sections.all %}{{ section.short_label }}{% if not forloop.last %} + {% endif %}{% endfor %}
         </div>
@@ -59,35 +59,7 @@
             <a href="{% url 'grading:class_grading' class_offering.pk %}" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                 Grading
             </a>
-            <div class="relative inline-block" x-data="{ open: false }" @click.outside="open = false">
-                <button type="button" @click="
-                            open = !open;
-                            if (open) {
-                                $nextTick(() => {
-                                    const rect = $el.getBoundingClientRect();
-                                    $refs.menu{{ class_offering.pk }}.style.top = (rect.bottom + 4) + 'px';
-                                    $refs.menu{{ class_offering.pk }}.style.right = (window.innerWidth - rect.right) + 'px';
-                                });
-                            }"
-                        aria-label="More actions" class="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100">
-                    {% sidebar_icon "dots-vertical" "w-4 h-4" %}
-                </button>
-                <div x-show="open" x-cloak x-transition x-ref="menu{{ class_offering.pk }}" @click="open = false"
-                     style="position: fixed; z-index: 9999;"
-                     class="w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                    <a href="{% url 'academics:class_roster' class_offering.pk %}" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
-                        Students
-                    </a>
-                    <button type="button" hx-get="{% url 'academics:ph_class_edit' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                            class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
-                        Edit
-                    </button>
-                    <button type="button" hx-get="{% url 'academics:ph_class_leave' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                            class="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
-                        Withdraw this section
-                    </button>
-                </div>
-            </div>
+            {% include "partials/_overflow_menu.html" with actions=class_offering.row_actions %}
         </div>
     </td>
 </tr>

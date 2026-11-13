@@ -19,7 +19,7 @@
                 <li class="flex items-center justify-between py-2 text-sm">
                     <span class="text-gray-900">{{ item.class_offering }}</span>
                     <a href="{% url 'grading:class_grading' item.class_offering.pk %}?tab=record" class="font-medium text-brand-primary-700 hover:underline">
-                        {{ item.count }} missing — Encode Grades
+                        {{ item.count }} missing: Encode Grades
                     </a>
                 </li>
                 {% endfor %}
@@ -74,7 +74,7 @@
                 {% for row in at_risk_no_intervention %}
                 <li class="flex items-center justify-between py-2 text-sm">
                     <span class="text-gray-900">
-                        {{ row.roster_entry.student.full_name }} — {{ row.class_offering }}
+                        {{ row.roster_entry.student.full_name }} · {{ row.class_offering }}
                         <span class="ml-1 rounded-full {% if row.level == 'AT_RISK' %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-800{% endif %} px-2 py-0.5 text-[10px] font-medium">{{ row.level }}</span>
                     </span>
                     <a href="{% url 'forecasting:at_risk' %}" class="font-medium text-brand-primary-700 hover:underline">Log intervention</a>
@@ -92,7 +92,7 @@
             <ul class="divide-y divide-gray-100">
                 {% for completion in inc_pending %}
                 <li class="py-2 text-sm text-gray-900">
-                    {{ completion.entry.roster_entry.student.full_name }} — {{ completion.entry.sheet.class_offering }}
+                    {{ completion.entry.roster_entry.student.full_name }} · {{ completion.entry.sheet.class_offering }}
                     <span class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">Awaiting Program Head</span>
                 </li>
                 {% endfor %}

@@ -1,13 +1,13 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview — Copy to {{ target_semester }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview: Copy to {{ target_semester }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
 <form hx-post="{% url 'academics:offerings_copy_previous_confirm' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
     {% csrf_token %}
-    <p class="text-sm text-gray-600">From <strong>{{ source_semester }}</strong> — instructor always left Unassigned.</p>
+    <p class="text-sm text-gray-600">From <strong>{{ source_semester }}</strong>: instructor always left Unassigned.</p>
     <div class="max-h-72 overflow-y-auto rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -20,13 +20,13 @@
                     <td class="px-3 py-2 text-gray-600">
                         {% for s in row.source_sections %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}
                         &rarr;
-                        {% if row.can_copy %}{% for s in row.target_sections %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}
+                        {% if row.can_copy %}{% for s in row.target_sections %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}N/A{% endif %}
                     </td>
                     <td class="px-3 py-2">
                         {% if row.can_copy %}
                         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Will copy</span>
                         {% else %}
-                        <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700" title="No equivalent section for: {% for s in row.missing_sections %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}">Skipped — no equivalent section</span>
+                        <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700" title="No equivalent section for: {% for s in row.missing_sections %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}">Skipped: no equivalent section</span>
                         {% endif %}
                     </td>
                 </tr>

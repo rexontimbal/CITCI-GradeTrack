@@ -43,7 +43,7 @@ def check_instructor_change_allowed(class_offering):
     from approvals.services import is_class_editable
 
     if is_semester_locked(class_offering.semester):
-        raise ValidationError("This semester is closed — the instructor can no longer be changed.")
+        raise ValidationError("This semester is closed. The instructor can no longer be changed.")
 
     if not is_class_editable(class_offering):
         raise ValidationError(
@@ -1021,7 +1021,7 @@ def check_join_eligibility(class_offering, student):
     """Raises JoinCodeError with a clear, specific reason if `student`
     can't join `class_offering` right now; returns silently if they can."""
     if not student.id_number:
-        raise JoinCodeError("Your account has no ID number on file yet — ask the Registrar/Admin to add it before joining a class.")
+        raise JoinCodeError("Your account has no ID number on file yet. Ask the Registrar/Admin to add it before joining a class.")
     if not class_offering.join_enabled:
         raise JoinCodeError("This class isn't accepting join requests right now.")
     if not class_offering.semester.is_active:
@@ -1030,7 +1030,7 @@ def check_join_eligibility(class_offering, student):
     from approvals.services import is_class_editable
 
     if not is_class_editable(class_offering):
-        raise JoinCodeError("Grades for this class have already been submitted — ask your instructor to add you manually.")
+        raise JoinCodeError("Grades for this class have already been submitted. Ask your instructor to add you manually.")
     if ClassRosterEntry.objects.filter(student=student, class_offering=class_offering).exists():
         raise JoinCodeError("You're already in this class.")
     if ClassJoinRequest.objects.filter(
@@ -1054,7 +1054,7 @@ def request_to_join(class_offering, student):
         ).count()
         notify(
             class_offering.instructor,
-            f"New join request — {class_offering}",
+            f"New join request: {class_offering}",
             f"{student.full_name} wants to join {class_offering}. {pending_count} request"
             f"{'s' if pending_count != 1 else ''} pending.",
             link="/academics/classes/%d/join-requests/" % class_offering.pk,
@@ -1084,7 +1084,7 @@ def approve_join_request(join_request, actor):
     from approvals.services import is_class_editable
 
     if not is_class_editable(join_request.class_offering):
-        raise JoinCodeError("Grades for this class have already been submitted — this request can no longer be approved.")
+        raise JoinCodeError("Grades for this class have already been submitted. This request can no longer be approved.")
 
     with transaction.atomic():
         ClassRosterEntry.objects.get_or_create(

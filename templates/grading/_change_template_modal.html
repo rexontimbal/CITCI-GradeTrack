@@ -8,7 +8,7 @@
 <div class="mt-4 space-y-4">
     {% if blocked %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        This class already has scores recorded — its grading template can't be changed anymore.
+        This class already has scores recorded: its grading template can't be changed anymore.
     </div>
     <div class="flex justify-end pt-2">
         <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
@@ -26,7 +26,7 @@
                 <option value="{{ tpl.pk }}" {% if tpl.pk == current_template_id %}selected{% endif %}>{{ tpl.name }} ({{ tpl.weight_total|trim_decimal }}%)</option>
                 {% endfor %}
             </select>
-            <p class="mt-1 text-xs text-gray-600">This resets the class's components/weights to match the chosen template — safe to do until the first score is encoded.</p>
+            <p class="mt-1 text-xs text-gray-600">This resets the class's components/weights to match the chosen template: safe to do until the first score is encoded.</p>
         </div>
         <div class="flex justify-end gap-2 pt-2">
             <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>

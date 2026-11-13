@@ -17,11 +17,11 @@
     <strong>Dataset:</strong> source = {{ version.get_training_source_display }},
     n = {{ version.n_samples }}, positive rate = {{ version.positive_rate }}.
     {% if version.training_source != "HISTORICAL" %}
-    <strong style="color:#b45309;">Trained on {{ version.get_training_source_display|upper }} data — for
+    <strong style="color:#b45309;">Trained on {{ version.get_training_source_display|upper }} data: for
     demonstration only. The Chapter 4 / final-defense model must be trained on real, masked CITCI
     historical data (or a MIXED set, clearly reported).</strong>
     {% endif %}
-    Identities are masked (SHA-256) before any training data is stored — no names or ID numbers.
+    Identities are masked (SHA-256) before any training data is stored: no names or ID numbers.
 </p>
 
 <table class="data-table" style="margin-top:12px;">

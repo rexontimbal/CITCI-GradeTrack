@@ -1,12 +1,102 @@
 import io
+import re
 from unittest import mock
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db.utils import OperationalError
 from django.test import TestCase, override_settings
+from django.urls import reverse
 
 from .management.guards import ensure_demo_allowed
+
+_SCRIPT_OR_HTML_COMMENT_RE = re.compile(r"<script\b[^>]*>.*?</script>|<!--.*?-->", re.DOTALL | re.IGNORECASE)
+
+
+class NoEmDashOnMainPagesTests(TestCase):
+    """UI copy standard (CLAUDE.md): no em dash ("—") anywhere in
+    user-facing text -- use ":" or "·" or a full sentence instead, and
+    "Not set"/"N/A" for an empty value, never a bare dash. This renders one
+    representative page per role (the pages a normal workday actually
+    touches, not every admin edge-case modal) against a fully-scored,
+    submitted-approved-released grade sheet so GWA/reports/at-risk pages
+    have real content to render, not just empty states."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from approvals.services import approve_grade_sheet, release_grade_sheet, submit_grade_sheet
+        from approvals.tests import ApprovalsTestBase
+
+        base = ApprovalsTestBase(methodName="setUp")
+        base.setUp()
+        cls.admin = base.admin
+        cls.program_head = base.program_head
+        cls.instructor = base.instructor
+        cls.student = base.student
+        cls.class_offering = base.class_offering
+        cls.roster_entry = base.roster_entry
+
+        base.fully_score_class()
+        sheet = submit_grade_sheet(cls.class_offering, cls.instructor)
+        approve_grade_sheet(sheet, cls.program_head)
+        release_grade_sheet(sheet, cls.program_head)
+        cls.sheet = sheet
+
+    def _assert_page_has_no_em_dash(self, url):
+        """Checks the rendered page the user actually sees -- <script> bodies
+        and HTML comments are stripped first, since those can carry a
+        developer-facing code comment (CLAUDE.md's "docs and code comments
+        are not affected" carve-out), not UI copy."""
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f"{url} did not render (got {response.status_code}).")
+        content = response.content.decode("utf-8", errors="replace")
+        visible = _SCRIPT_OR_HTML_COMMENT_RE.sub("", content)
+        self.assertNotIn("—", visible, f"Found an em dash on {url} -- see CLAUDE.md's UI copy standard.")
+
+    def test_admin_main_pages_have_no_em_dash(self):
+        self.client.force_login(self.admin)
+        for url in [
+            reverse("dashboard:home"),
+            reverse("accounts:users"),
+            reverse("academics:classes"),
+            reverse("approvals:admin_sheets"),
+            reverse("reports:index"),
+            reverse("accounts:audit_log"),
+        ]:
+            self._assert_page_has_no_em_dash(url)
+
+    def test_program_head_main_pages_have_no_em_dash(self):
+        self.client.force_login(self.program_head)
+        for url in [
+            reverse("dashboard:home"),
+            reverse("academics:program_head_classes"),
+            reverse("approvals:index"),
+            reverse("approvals:review", args=[self.sheet.pk]),
+            reverse("forecasting:at_risk"),
+            reverse("reports:index"),
+        ]:
+            self._assert_page_has_no_em_dash(url)
+
+    def test_instructor_main_pages_have_no_em_dash(self):
+        self.client.force_login(self.instructor)
+        for url in [
+            reverse("dashboard:home"),
+            reverse("academics:my_classes"),
+            reverse("grading:class_grading", args=[self.class_offering.pk]),
+            reverse("approvals:submitted"),
+            reverse("forecasting:at_risk"),
+        ]:
+            self._assert_page_has_no_em_dash(url)
+
+    def test_student_main_pages_have_no_em_dash(self):
+        self.client.force_login(self.student)
+        for url in [
+            reverse("dashboard:home"),
+            reverse("grading:my_grades"),
+            reverse("grading:my_progress"),
+            reverse("grading:subject_detail", args=[self.roster_entry.pk]),
+        ]:
+            self._assert_page_has_no_em_dash(url)
 
 
 class HealthzTests(TestCase):

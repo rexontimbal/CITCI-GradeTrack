@@ -1369,7 +1369,7 @@ def subject_offering_commit(request):
     del request.session[_OFFERING_PREVIEW_SESSION_KEY]
 
     if not plan_rows:
-        return trigger_response("refreshSubjects", toast="Nothing offered — no sections were selected.")
+        return trigger_response("refreshSubjects", toast="Nothing offered. No sections were selected.")
 
     is_admin_override = request.user.is_admin_role
     result = commit_subject_offerings(plan_rows, semester, request.user, is_admin_override=is_admin_override)
@@ -1660,7 +1660,7 @@ def subject_edit(request, pk):
     original_code = subject.code  # ModelForm.is_valid() mutates form.instance (== subject) in place
     is_admin = request.user.is_admin_role
     if not is_admin and not scoping.subjects_editable_by(request.user).filter(pk=subject.pk).exists():
-        raise PermissionDenied("This subject is shared — ask the Admin to edit it.")
+        raise PermissionDenied("This subject is shared. Ask the Admin to edit it.")
 
     form_class = AdminSubjectForm if is_admin else SubjectEditForm
     code_locked = services.subject_used_in_released_grades(subject)
@@ -2012,7 +2012,7 @@ def class_join_reset_code(request, pk):
     if request.method != "POST":
         return render(request, "academics/_join_reset_confirm.html", {"class_offering": class_offering})
     services.reset_join_code(class_offering, request.user)
-    return trigger_response("refreshRoster", toast="Join code reset — the old code no longer works.")
+    return trigger_response("refreshRoster", toast="Join code reset. The old code no longer works.")
 
 
 @role_required(INSTRUCTOR)
@@ -2157,6 +2157,8 @@ def program_head_classes(request):
         qs = qs.filter(instructor__isnull=True)
 
     classes = list(qs)
+    for c in classes:
+        c.row_actions = _class_row_actions(c)
     return render(
         request,
         "academics/program_head_classes.html",
@@ -2409,6 +2411,21 @@ def _class_label(class_offering):
     return f"{class_offering.display_code} · {sections}" if sections else class_offering.display_code
 
 
+def _class_row_actions(class_offering):
+    """The Program Head Classes row's "..." menu -- a plain actions list for
+    the shared partials/_overflow_menu.html, same shape every other
+    "..." menu in the system uses."""
+    return [
+        {"label": "Students", "href": reverse("academics:class_roster", args=[class_offering.pk])},
+        {"label": "Edit", "hx_get": reverse("academics:ph_class_edit", args=[class_offering.pk])},
+        {
+            "label": "Withdraw this section",
+            "hx_get": reverse("academics:ph_class_leave", args=[class_offering.pk]),
+            "extra_classes": "text-red-700 hover:bg-red-50",
+        },
+    ]
+
+
 @role_required(ADMIN, PROGRAM_HEAD)
 def class_update_field(request, pk):
     """The Classes page's per-row inline-edit endpoint (room, schedule,
@@ -2459,6 +2476,7 @@ def class_update_field(request, pk):
             error = str(exc)
 
     class_offering.refresh_from_db()
+    class_offering.row_actions = _class_row_actions(class_offering)
     row_html = render_to_string(
         "academics/_classes_row.html",
         {

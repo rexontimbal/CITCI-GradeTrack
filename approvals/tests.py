@@ -536,7 +536,7 @@ class IncCompletionWindowTests(IncCompletionTestBase):
 
         allowed, reason = can_file_inc_completion(self.entry)
         self.assertFalse(allowed)
-        self.assertEqual(reason, "INC lapsed — contact Registrar.")
+        self.assertEqual(reason, "INC lapsed. Contact the Registrar.")
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.remarks, "INC")  # untouched
 

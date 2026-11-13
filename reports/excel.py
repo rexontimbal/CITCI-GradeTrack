@@ -95,8 +95,8 @@ def build_class_record_workbook(class_offering, blank=False):
         merged(3, 1, last_col, inst.address)
 
     section_names = ", ".join(str(s) for s in class_offering.sections.all())
-    merged(5, 1, last_col, f"CLASS RECORD — {class_offering.subject.code}: {class_offering.subject.title}", bold=True, size=12)
-    instructor_name = class_offering.instructor.full_name if class_offering.instructor else "—"
+    merged(5, 1, last_col, f"CLASS RECORD: {class_offering.subject.code} · {class_offering.subject.title}", bold=True, size=12)
+    instructor_name = class_offering.instructor.full_name if class_offering.instructor else "Unassigned"
     merged(6, 1, last_col, f"{section_names} · {class_offering.semester} · Instructor: {instructor_name}")
 
     header_row1, header_row2, max_row, first_data_row = 8, 9, 10, 11
@@ -123,7 +123,7 @@ def build_class_record_workbook(class_offering, blank=False):
             for i, item in enumerate(items):
                 label_cell = ws.cell(header_row2, first_item_col + i, item_short_label(component, item, i + 1))
                 label_cell.comment = Comment(
-                    f"{item.title} — {item.get_term_display()}" + (f" — {item.date}" if item.date else ""),
+                    f"{item.title} · {item.get_term_display()}" + (f" · {item.date}" if item.date else ""),
                     "CITCI GradeTrack",
                 )
                 ws.cell(max_row, first_item_col + i, float(item.max_score))
@@ -245,7 +245,7 @@ def build_submission_status_workbook(semester, rows):
         ws.append(
             [
                 str(row["class_offering"]),
-                row["instructor"].full_name if row["instructor"] else "—",
+                row["instructor"].full_name if row["instructor"] else "Unassigned",
                 row["status_display"],
                 row["submitted_at"].strftime("%Y-%m-%d %H:%M") if row["submitted_at"] else "",
                 row["approved_at"].strftime("%Y-%m-%d %H:%M") if row["approved_at"] else "",

@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview — {{ preview.file_names|length }} file(s)</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview: {{ preview.file_names|length }} file(s)</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -20,7 +20,7 @@
         <strong>Skipped rows:</strong>
         <ul class="mt-1 list-inside list-disc">
             {% for s in preview.skipped %}
-            <li>{{ s.file }} — row {{ s.row }}: {{ s.reason }}</li>
+            <li>{{ s.file }}: row {{ s.row }}: {{ s.reason }}</li>
             {% endfor %}
         </ul>
     </div>

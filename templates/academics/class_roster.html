@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Roster — {{ class_offering }}{% endblock %}
+{% block page_title %}Roster: {{ class_offering }}{% endblock %}
 {% block content %}
 {% include "partials/_page_header.html" with title=class_offering|stringformat:"s" subtitle=class_offering.semester|stringformat:"s" %}
 
@@ -16,11 +16,11 @@
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-3">
         <p class="text-xs font-medium uppercase text-gray-600">Schedule</p>
-        <p class="text-sm font-semibold text-gray-900">{{ class_offering.schedule|default:"—" }}</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.schedule|default:"Not set" }}</p>
     </div>
     <div class="rounded-xl border border-gray-200 bg-white p-3">
         <p class="text-xs font-medium uppercase text-gray-600">Room</p>
-        <p class="text-sm font-semibold text-gray-900">{{ class_offering.room|default:"—" }}</p>
+        <p class="text-sm font-semibold text-gray-900">{{ class_offering.room|default:"Not set" }}</p>
     </div>
 </div>
 
@@ -102,9 +102,9 @@
                                :checked="selected.includes({{ join_request.pk }})">
                     </td>
                     <td class="px-3 py-2 font-medium text-gray-900">{{ join_request.student.full_name }}</td>
-                    <td class="px-3 py-2 text-gray-700">{{ join_request.student.id_number|default:"—" }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ join_request.student.id_number|default:"Not set" }}</td>
                     <td class="px-3 py-2 text-gray-700">
-                        {{ join_request.student.student_profile.program.code|default:"—" }}
+                        {{ join_request.student.student_profile.program.code|default:"Not set" }}
                         {% if join_request.membership_section %} · {{ join_request.membership_section }}{% endif %}
                     </td>
                     <td class="px-3 py-2 text-gray-700">{{ join_request.requested_at|date:"M d, g:i A" }}</td>
@@ -114,7 +114,7 @@
                         {% elif join_request.section_match == False %}
                         <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Different section ⚠</span>
                         {% else %}
-                        <span class="text-xs text-gray-400">—</span>
+                        <span class="text-xs text-gray-400">N/A</span>
                         {% endif %}
                     </td>
                     <td class="px-3 py-2 text-right">
@@ -170,9 +170,9 @@
         <tbody class="divide-y divide-gray-100">
             {% for entry in roster_entries %}
             <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 text-gray-700">{{ entry.student.id_number|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ entry.student.id_number|default:"Not set" }}</td>
                 <td class="px-4 py-3 font-medium text-gray-900">{{ entry.student.full_name }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ entry.membership_section|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ entry.membership_section|default:"Not set" }}</td>
                 <td class="px-4 py-3">
                     {% if entry.status == "ACTIVE" %}
                     <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
@@ -201,7 +201,7 @@
             </p>
             <p class="text-xs text-gray-600">
                 {{ log.created_at|date:"M d, Y H:i" }} by {{ log.changed_by.full_name|default:"System" }}
-                {% if log.reason %} — {{ log.reason }}{% endif %}
+                {% if log.reason %}: {{ log.reason }}{% endif %}
             </p>
         </div>
         {% endfor %}

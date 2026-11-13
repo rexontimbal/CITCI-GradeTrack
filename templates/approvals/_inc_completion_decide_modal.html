@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">INC Completion — {{ completion.entry.roster_entry.student.full_name }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">INC Completion: {{ completion.entry.roster_entry.student.full_name }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -9,7 +9,7 @@
     {% csrf_token %}
     <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
         <p>{{ completion.entry.sheet.class_offering }}</p>
-        <p class="mt-1">New grade: <strong>{{ completion.new_grade }} — {{ completion.get_new_remarks_display }}</strong></p>
+        <p class="mt-1">New grade: <strong>{{ completion.new_grade }} · {{ completion.get_new_remarks_display }}</strong></p>
         <p class="mt-1">Date complied: {{ completion.date_complied }}</p>
         {% if completion.remarks_text %}<p class="mt-1">Notes: {{ completion.remarks_text }}</p>{% endif %}
     </div>

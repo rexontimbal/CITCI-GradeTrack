@@ -36,7 +36,7 @@
     <div>
         <label for="{{ form.term.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Term</label>
         {{ form.term }}
-        <p class="mt-1 text-xs text-gray-600">Grading period this item belongs to — also drives forecasting checkpoints later. Choosing an exam title sets this automatically.</p>
+        <p class="mt-1 text-xs text-gray-600">Grading period this item belongs to: also drives forecasting checkpoints later. Choosing an exam title sets this automatically.</p>
         {% for error in form.term.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
     </div>
 

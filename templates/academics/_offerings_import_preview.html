@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-600">Preview — {{ target_semester }}</h3>
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-600">Preview: {{ target_semester }}</h3>
 
     <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         <div class="rounded-lg bg-green-50 px-3 py-2 text-green-800"><strong>{{ new_subject_count }}</strong> new subjects</div>
@@ -11,7 +11,7 @@
 
     {% if unknown_instructor_names %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        <strong>Unknown instructors — assign manually after import:</strong>
+        <strong>Unknown instructors: assign manually after import:</strong>
         {{ unknown_instructor_names|join:", " }}
     </div>
     {% endif %}
@@ -25,7 +25,7 @@
             <tbody class="divide-y divide-gray-100">
                 {% for row in rows %}
                 {% if row.kind == "invalid" %}
-                <tr><td class="px-3 py-2 text-gray-600">{{ row.row_number }}</td><td class="px-3 py-2 text-gray-700">{{ row.code|default:"—" }}</td><td class="px-3 py-2 text-red-700">{{ row.reason }}</td></tr>
+                <tr><td class="px-3 py-2 text-gray-600">{{ row.row_number }}</td><td class="px-3 py-2 text-gray-700">{{ row.code|default:"Not set" }}</td><td class="px-3 py-2 text-red-700">{{ row.reason }}</td></tr>
                 {% endif %}
                 {% endfor %}
             </tbody>
@@ -64,6 +64,6 @@
         </button>
     </form>
     {% else %}
-    <p class="text-sm text-gray-600">Nothing to import — fix the invalid rows and upload again.</p>
+    <p class="text-sm text-gray-600">Nothing to import: fix the invalid rows and upload again.</p>
     {% endif %}
 </div>

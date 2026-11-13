@@ -1,31 +1,33 @@
 {% load sidebar_icons %}
-<div class="relative inline-block" x-data="{ open: false }" @click.outside="open = false">
-    <button type="button" @click="
-                open = !open;
-                if (open) {
-                    $nextTick(() => {
-                        const rect = $el.getBoundingClientRect();
-                        $refs.menu.style.top = (rect.bottom + 4) + 'px';
-                        $refs.menu.style.right = (window.innerWidth - rect.right) + 'px';
-                    });
-                }"
-            aria-label="More actions" class="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100">
+<div class="relative inline-block" x-data="floatingMenu()">
+    <button type="button" x-ref="trigger" @click="toggle()"
+            @keydown.down.prevent="onTriggerKeydown()" @keydown.up.prevent="onTriggerKeydown()"
+            aria-haspopup="menu" :aria-expanded="open.toString()"
+            aria-label="{{ button_title|default:"More actions" }}" title="{{ button_title|default:"More actions" }}"
+            class="{{ button_classes|default:"rounded-lg p-1.5 text-gray-600 hover:bg-gray-100" }}">
         {% sidebar_icon "dots-vertical" "w-4 h-4" %}
     </button>
-    <div x-show="open" x-cloak x-transition x-ref="menu" @click="open = false"
-         style="position: fixed; z-index: 9999;"
-         class="w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-        {% for action in actions %}
-        {% if action.hx_get %}
-        <button type="button" hx-get="{{ action.hx_get }}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen = true"
-                class="block w-full px-3 py-2 text-left text-sm {{ action.extra_classes|default:"text-gray-700 hover:bg-gray-50" }}">
-            {{ action.label }}
-        </button>
-        {% elif action.href %}
-        <a href="{{ action.href }}" class="block w-full px-3 py-2 text-left text-sm {{ action.extra_classes|default:"text-gray-700 hover:bg-gray-50" }}">
-            {{ action.label }}
-        </a>
-        {% endif %}
-        {% endfor %}
-    </div>
+    <template x-teleport="body">
+        <div x-show="open" x-cloak x-transition x-ref="menu" role="menu"
+             @click.outside="close()" @keydown.escape.window="close()"
+             @keydown.down.prevent="focusNext()" @keydown.up.prevent="focusPrev()"
+             :style="`position:fixed; z-index:9999; top:${top}px; left:${left}px;`"
+             class="w-48 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            {% for action in actions %}
+            {% if action.hx_get %}
+            <button type="button" role="menuitem" tabindex="-1"
+                    hx-get="{{ action.hx_get }}" hx-target="#modal-content" hx-swap="innerHTML"
+                    @click="modalOpen = true; close()"
+                    class="block w-full px-3 py-2 text-left text-sm {{ action.extra_classes|default:"text-gray-700 hover:bg-gray-50" }}">
+                {{ action.label }}
+            </button>
+            {% elif action.href %}
+            <a href="{{ action.href }}" role="menuitem" tabindex="-1" @click="close()"
+               class="block w-full px-3 py-2 text-left text-sm {{ action.extra_classes|default:"text-gray-700 hover:bg-gray-50" }}">
+                {{ action.label }}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </template>
 </div>

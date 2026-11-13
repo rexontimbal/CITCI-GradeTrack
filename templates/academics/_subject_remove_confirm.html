@@ -8,7 +8,7 @@
 <div class="mt-4 space-y-4">
     {% if blocked %}
     <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        A class in the active semester uses this subject for this program/major — remove or reassign that
+        A class in the active semester uses this subject for this program/major: remove or reassign that
         class first.
     </p>
     <div class="flex justify-end pt-2">
@@ -18,7 +18,7 @@
     </div>
     {% else %}
     <p class="text-sm text-gray-600">
-        This removes {{ entry.subject.code }} — {{ entry.subject.title }} from
+        This removes {{ entry.subject.code }} · {{ entry.subject.title }} from
         {{ entry.program.code }}{% if entry.major %}-{{ entry.major.code }}{% endif %}'s curriculum. The
         subject itself (and any other program/major using it) is never deleted.
     </p>

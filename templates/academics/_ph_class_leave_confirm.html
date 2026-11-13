@@ -8,11 +8,11 @@
 <div class="mt-4 space-y-4">
     {% if blocked %}
     <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-        Can't leave — {{ class_offering }} already has scores or a submitted grade sheet.
+        Can't leave: {{ class_offering }} already has scores or a submitted grade sheet.
     </div>
     {% else %}
     <p class="text-sm text-gray-600">
-        This removes your own section(s) from this class — it stays for any other Program Head still sharing it.
+        This removes your own section(s) from this class: it stays for any other Program Head still sharing it.
         If you're the last one, the class is deactivated.
     </p>
     {% endif %}

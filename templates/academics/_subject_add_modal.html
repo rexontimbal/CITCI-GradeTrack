@@ -42,7 +42,7 @@
                     {% for row in search_results %}
                     {% if row.disabled %}
                     <div class="flex items-center justify-between px-3 py-2 text-sm text-gray-400">
-                        <span><strong>{{ row.subject.code }}</strong> — {{ row.subject.title }} ({{ row.subject.units }})</span>
+                        <span><strong>{{ row.subject.code }}</strong>: {{ row.subject.title }} ({{ row.subject.units }})</span>
                         <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">Already in {{ row.already_in }}</span>
                     </div>
                     {% else %}
@@ -50,7 +50,7 @@
                             @click="document.getElementById('{{ form.code.id_for_label }}').value = '{{ row.subject.code|escapejs }}'; htmx.trigger(document.getElementById('{{ form.code.id_for_label }}'), 'keyup')"
                             :class="highlighted === {{ forloop.counter0 }} ? 'bg-gray-100' : ''"
                             class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100">
-                        <strong>{{ row.subject.code }}</strong> — {{ row.subject.title }} <span class="text-gray-500">({{ row.subject.units }})</span>
+                        <strong>{{ row.subject.code }}</strong>: {{ row.subject.title }} <span class="text-gray-500">({{ row.subject.units }})</span>
                     </button>
                     {% endif %}
                     {% endfor %}
@@ -72,11 +72,11 @@
 
         {% if mode == "existing" %}
         <p class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-            Existing subject — it will be added to this semester's curriculum.
+            Existing subject: it will be added to this semester's curriculum.
         </p>
         {% elif mode == "new" %}
         <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            New subject — it will be created and added.
+            New subject: it will be created and added.
         </p>
         {% endif %}
 

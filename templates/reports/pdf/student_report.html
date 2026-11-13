@@ -5,16 +5,16 @@
 <table class="meta-table">
     <tr>
         <td class="meta-label">Student</td><td>{{ student.full_name }}</td>
-        <td class="meta-label">ID Number</td><td>{{ student.id_number|default:"—" }}</td>
+        <td class="meta-label">ID Number</td><td>{{ student.id_number|default:"Not set" }}</td>
     </tr>
     <tr>
-        <td class="meta-label">Program</td><td>{{ student.student_profile.program.code|default:"—" }}{% if student.student_profile.major %} — {{ student.student_profile.major.code }}{% endif %}</td>
+        <td class="meta-label">Program</td><td>{{ student.student_profile.program.code|default:"Not set" }}{% if student.student_profile.major %}: {{ student.student_profile.major.code }}{% endif %}</td>
         <td class="meta-label">Semester</td><td>{{ semester }}</td>
     </tr>
 </table>
 
 {% if is_partial %}
-<p style="margin-top:6px; font-size:8.5pt; color:#b45309;">Partial — {{ released_count }} of {{ total_subjects }} subjects released.</p>
+<p style="margin-top:6px; font-size:8.5pt; color:#b45309;">Partial: {{ released_count }} of {{ total_subjects }} subjects released.</p>
 {% endif %}
 
 <table class="data-table">
@@ -32,10 +32,10 @@
         {% for entry in entries %}
         <tr>
             <td class="text-center">{{ forloop.counter }}</td>
-            <td>{{ entry.roster_entry.class_offering.subject.code }} — {{ entry.roster_entry.class_offering.subject.title }}</td>
+            <td>{{ entry.roster_entry.class_offering.subject.code }} · {{ entry.roster_entry.class_offering.subject.title }}</td>
             <td class="text-center">{{ entry.roster_entry.class_offering.subject.units }}</td>
-            <td>{{ entry.roster_entry.class_offering.instructor.full_name|default:"—" }}</td>
-            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td>{{ entry.roster_entry.class_offering.instructor.full_name|default:"Unassigned" }}</td>
+            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}N/A{% endif %}</td>
             <td class="text-center">{{ entry.get_remarks_display }}</td>
         </tr>
         {% empty %}
@@ -48,7 +48,7 @@
     <tr><td><strong>Total Units (released)</strong></td><td>{{ gwa.total_units }}</td></tr>
     <tr>
         <td><strong>{% if gwa.is_complete %}GWA{% else %}Partial GWA{% endif %}</strong></td>
-        <td>{% if gwa.gwa is not None %}{{ gwa.gwa|floatformat:2 }}{% else %}—{% endif %}</td>
+        <td>{% if gwa.gwa is not None %}{{ gwa.gwa|floatformat:2 }}{% else %}N/A{% endif %}</td>
     </tr>
 </table>
 

@@ -53,8 +53,8 @@
                 <td class="whitespace-nowrap px-4 py-3 text-gray-600">{{ row.timestamp|date:"M d, Y H:i" }}</td>
                 <td class="px-4 py-3 text-gray-600">{{ row.source }}</td>
                 <td class="px-4 py-3 font-medium text-gray-900">{{ row.action }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.actor|default:"—" }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.target|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.actor|default:"System" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.target|default:"N/A" }}</td>
                 <td class="px-4 py-3 text-gray-600">
                     {% for k, v in row.details.items %}
                     <span class="mr-2 inline-block">{{ k }}: {{ v }}</span>

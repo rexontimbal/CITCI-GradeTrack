@@ -44,11 +44,11 @@
             {% for row in rows %}
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 font-medium text-gray-900">{{ row.class_offering }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.instructor.full_name|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.instructor.full_name|default:"Unassigned" }}</td>
                 <td class="px-4 py-3">{% include "approvals/_status_badge.html" with status=row.status %}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.submitted_at|date:"M d, Y"|default:"—" }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.approved_at|date:"M d, Y"|default:"—" }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ row.released_at|date:"M d, Y"|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.submitted_at|date:"M d, Y"|default:"Not set" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.approved_at|date:"M d, Y"|default:"Not set" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.released_at|date:"M d, Y"|default:"Not set" }}</td>
                 <td class="px-4 py-3">{% if row.is_late %}<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Late</span>{% endif %}</td>
             </tr>
             {% empty %}

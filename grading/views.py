@@ -336,6 +336,7 @@ def _build_class_record_context(class_offering, term_filter=None):
                 "is_active": is_active,
                 "row_number": (entry_index + 1) if is_active else None,
                 "running_grade_over_threshold": running_grade is not None and running_grade > PASSING_THRESHOLD,
+                "row_actions": [{"label": "Mark INC", "hx_get": reverse("grading:mark_incomplete", args=[entry.pk])}],
             }
         )
 
@@ -455,6 +456,17 @@ def class_grading(request, pk):
         context["components"] = _build_components_panel_context(scheme, can_edit)
         context["scheme_total"] = scheme_total_weight(scheme)
         setup_columns = _item_columns(list(scheme.components.all()), None)
+        if can_edit:
+            for col in setup_columns:
+                for item in col["items"]:
+                    item.row_actions = [
+                        {"label": "Edit", "hx_get": reverse("grading:item_edit", args=[item.pk])},
+                        {
+                            "label": "Delete",
+                            "hx_get": reverse("grading:item_delete", args=[item.pk]),
+                            "extra_classes": "text-red-600 hover:bg-red-50",
+                        },
+                    ]
         context["setup_columns"] = setup_columns
         context["setup_term_matrix"] = _setup_term_matrix(setup_columns)
 

@@ -2,7 +2,7 @@
 {% load grading_extras %}
 {% block page_title %}Forecast Model{% endblock %}
 {% block content %}
-{% include "partials/_page_subtitle.html" with subtitle="One model per checkpoint — Prelim and Midterm. Train, review, then Activate." %}
+{% include "partials/_page_subtitle.html" with subtitle="One model per checkpoint: Prelim and Midterm. Train, review, then Activate." %}
 
 <div class="mb-6 rounded-2xl border border-gray-200 bg-white p-4">
     <p class="mb-3 text-sm font-semibold text-gray-700">Train a new model</p>
@@ -47,7 +47,7 @@
     {% if active %}
         {% if active.training_source != "HISTORICAL" %}
         <div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-            ⚠ Trained on {{ active.get_training_source_display|upper }} data — for demonstration only. The Chapter 4 /
+            ⚠ Trained on {{ active.get_training_source_display|upper }} data: for demonstration only. The Chapter 4 /
             final-defense model must be trained on real, masked CITCI historical data.
         </div>
         {% endif %}
@@ -55,7 +55,7 @@
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div class="rounded-2xl border border-gray-200 bg-white p-4 lg:col-span-2">
                 <div class="mb-3 flex items-center justify-between">
-                    <p class="text-sm font-semibold text-gray-700">Active model — v{{ active.pk }}</p>
+                    <p class="text-sm font-semibold text-gray-700">Active model: v{{ active.pk }}</p>
                     <a href="{% url 'forecasting:model_report_pdf' active.pk %}" target="_blank" class="text-xs font-medium text-brand-primary-700 hover:underline">
                         Export evaluation report (PDF)
                     </a>

@@ -44,15 +44,15 @@
 </div>
 
 <div x-show="fullScreen" x-cloak class="mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-600">
-    <span>{{ class_offering }} — {{ class_offering.semester }}</span>
+    <span>{{ class_offering }} · {{ class_offering.semester }}</span>
     <button type="button" @click="exit()" class="font-medium text-brand-primary-700 hover:underline">Exit full screen</button>
 </div>
 
 {% if record.not_yet_set_up %}
 <div class="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-600">
-    Not yet set up:
     {% for component in record.not_yet_set_up %}{{ component.name }} ({{ component.weight|trim_decimal }}%){% if not forloop.last %}, {% endif %}{% endfor %}
-    — <button type="button" @click="tab='setup'" class="font-medium text-brand-primary-700 underline hover:no-underline">add items in Setup</button>.
+    {{ record.not_yet_set_up|length|pluralize:"has,have" }} no items yet.
+    <button type="button" @click="tab='setup'" class="font-medium text-brand-primary-700 underline hover:no-underline">Add items in Setup</button>.
 </div>
 {% endif %}
 
@@ -67,8 +67,9 @@
 {% else %}
 
 <p class="mb-2 text-xs text-gray-600">
-    Legend: <span class="font-medium">—</span> = a component with no scores encoded yet (not counted toward the running grade).
-    Once a component has at least one score anywhere in the class, any remaining blank cell counts as 0.
+    <span class="mr-1 inline-block h-3 w-3 rounded-sm bg-gray-200 align-middle"></span>
+    Gray cells: component has no scores yet and is not counted in the running grade.
+    Once a component has a score, any blank cell counts as 0.
 </p>
 
 <div class="grid-scroll gold-scroll overflow-auto rounded-2xl border border-gray-200 bg-white" style="max-width: 100%;"
@@ -96,7 +97,7 @@
                 {% for col in record.columns %}
                     {% for item in col.items %}
                     <th class="sticky z-20 border-l border-b border-gray-200 px-1 py-1 text-center font-semibold normal-case {{ col.color_classes }}" style="top:2rem;"
-                        title="{{ item.title }} — {{ item.get_term_display }}{% if item.date %} — {{ item.date|date:'M d, Y' }}{% endif %}">
+                        title="{{ item.title }} · {{ item.get_term_display }}{% if item.date %} · {{ item.date|date:'M d, Y' }}{% endif %}">
                         <div class="flex items-center justify-center gap-0.5">
                             <span>{{ item.short_label }}</span>
                             {% if can_edit %}

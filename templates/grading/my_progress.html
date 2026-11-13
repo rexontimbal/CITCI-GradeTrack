@@ -8,7 +8,7 @@
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
     <div class="rounded-2xl border border-gray-200 bg-white p-4">
         <p class="mb-1 text-sm font-semibold text-gray-700">GWA History</p>
-        <p class="mb-3 text-xs text-gray-600">Lower is better — 1.00 is the best possible grade.</p>
+        <p class="mb-3 text-xs text-gray-600">Lower is better: 1.00 is the best possible grade.</p>
         {% if gwa_chart_labels %}
         <canvas id="gwa-chart" height="180"></canvas>
         {{ gwa_chart_labels|json_script:"gwa-labels" }}
@@ -19,7 +19,7 @@
     </div>
 
     <div class="rounded-2xl border border-gray-200 bg-white p-4">
-        <p class="mb-1 text-sm font-semibold text-gray-700">Current Semester — Subjects</p>
+        <p class="mb-1 text-sm font-semibold text-gray-700">Current Semester: Subjects</p>
         <p class="mb-3 text-xs text-gray-600">Dashed line marks the 3.00 passing threshold.</p>
         {% if subject_chart_labels %}
         <canvas id="subjects-chart" height="220"></canvas>
@@ -51,7 +51,7 @@
                 <td class="px-4 py-3 text-gray-700">
                     {% if h.gwa.is_complete %}{{ h.gwa.gwa|grade_display }}
                     {% elif h.gwa.gwa %}{{ h.gwa.gwa|grade_display }} <span class="text-xs text-amber-800">(partial)</span>
-                    {% else %}—{% endif %}
+                    {% else %}N/A{% endif %}
                 </td>
                 <td class="px-4 py-3 text-green-700">{{ h.counts.PASSED }}</td>
                 <td class="px-4 py-3 text-red-700">{{ h.counts.FAILED }}</td>

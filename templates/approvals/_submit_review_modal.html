@@ -1,6 +1,6 @@
 {% load sidebar_icons grading_extras %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Submit Grades — {{ class_offering }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Submit Grades: {{ class_offering }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -47,7 +47,7 @@
         <p class="font-semibold">{{ summary.missing_results|length }} student(s) have missing scores:</p>
         <ul class="mt-1 list-inside list-disc">
             {% for result in summary.missing_results %}
-            <li>{{ result.roster_entry.student.full_name }} — {{ result.missing_items|length }} missing cell{{ result.missing_items|length|pluralize }}</li>
+            <li>{{ result.roster_entry.student.full_name }} · {{ result.missing_items|length }} missing cell{{ result.missing_items|length|pluralize }}</li>
             {% endfor %}
         </ul>
         <p class="mt-1">Encode these scores or mark each student INC (with a reason) before submitting.</p>

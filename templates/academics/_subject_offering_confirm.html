@@ -13,13 +13,13 @@
 
     {% if missing_section_rows %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-        <p class="mb-1 font-semibold">No section yet — nothing will be created for:</p>
+        <p class="mb-1 font-semibold">No section yet: nothing will be created for:</p>
         <ul class="list-inside list-disc space-y-1">
             {% for row in missing_section_rows %}
             <li>
-                {{ row.subject.code }} — {{ row.program.code }}{% if row.major %}-{{ row.major.code }}{% endif %}
+                {{ row.subject.code }} · {{ row.program.code }}{% if row.major %}-{{ row.major.code }}{% endif %}
                 {% if row.year_level %}, {{ row.year_level }}{% if row.year_level == 1 %}st{% elif row.year_level == 2 %}nd{% elif row.year_level == 3 %}rd{% else %}th{% endif %} Year{% endif %}
-                — <a href="{% url 'academics:ph_sections' %}" class="underline">Create section first</a>
+               : <a href="{% url 'academics:ph_sections' %}" class="underline">Create section first</a>
             </li>
             {% endfor %}
         </ul>
@@ -28,7 +28,7 @@
 
     {% if already_offered_rows %}
     <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
-        Already offered this semester — skipped: {% for row in already_offered_rows %}{{ row.subject.code }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        Already offered this semester: skipped: {% for row in already_offered_rows %}{{ row.subject.code }}{% if not forloop.last %}, {% endif %}{% endfor %}
     </div>
     {% endif %}
 
@@ -58,7 +58,7 @@
                         <tbody>
                             {% for row in group.subject_rows %}
                             <tr class="border-b border-gray-100 last:border-0">
-                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} — {{ row.subject.title }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} · {{ row.subject.title }}</td>
                                 {% for cell in row.cells %}
                                 <td class="px-3 py-2 text-center" data-section-col="{{ cell.section.pk }}">
                                     <input type="checkbox" name="sections_{{ row.row_index }}" value="{{ cell.section.pk }}"

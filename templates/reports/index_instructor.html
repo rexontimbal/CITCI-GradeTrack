@@ -20,7 +20,7 @@
         <tbody class="divide-y divide-gray-100">
             {% for class_offering in classes %}
             <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 font-medium text-gray-900">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ class_offering.subject.code }} · {{ class_offering.subject.title }}</td>
                 <td class="px-4 py-3 text-gray-600">{% for s in class_offering.sections.all %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
                 <td class="px-4 py-3 text-right">
                     <a href="{% url 'grading:class_grading' class_offering.pk %}" class="mr-3 text-xs font-medium text-brand-primary-700 underline hover:no-underline">Open class</a>

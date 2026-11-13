@@ -5,7 +5,7 @@
 {% include "partials/_page_header.html" with title="Welcome back, "|add:user.first_name subtitle=active_semester|default:"No active semester set." %}
 
 <p class="mb-4 -mt-2 text-sm text-gray-600">
-    {{ user.student_profile.program.code|default:"—" }}
+    {{ user.student_profile.program.code|default:"Not set" }}
     {% if user.student_profile.major %}· {{ user.student_profile.major.code }}{% endif %}
     {% if current_membership %}· {{ current_membership.section.get_year_level_display }} · {{ current_membership.section }}{% endif %}
 </p>
@@ -19,8 +19,8 @@
                 {% sidebar_icon "chart" "w-5 h-5" %}
             </div>
             <div>
-                <p class="text-xs font-medium uppercase tracking-wide text-gray-600" title="Shows '—' until every subject this semester is released.">Official GWA</p>
-                <p class="text-xl font-bold text-gray-900">{% if gwa.is_complete %}{{ gwa.gwa|grade_display }}{% else %}—{% endif %}</p>
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-600" title="Shows N/A until every subject this semester is released.">Official GWA</p>
+                <p class="text-xl font-bold text-gray-900">{% if gwa.is_complete %}{{ gwa.gwa|grade_display }}{% else %}N/A{% endif %}</p>
             </div>
         </div>
         {% if gwa and not gwa.is_complete and gwa.released_count > 0 %}
@@ -37,7 +37,7 @@
             </div>
             <div>
                 <p class="text-xs font-medium uppercase tracking-wide text-gray-600">Warnings</p>
-                <p class="text-xl font-bold text-gray-900">{% if warnings_count is not None %}{{ warnings_count }}{% else %}—{% endif %}</p>
+                <p class="text-xl font-bold text-gray-900">{% if warnings_count is not None %}{{ warnings_count }}{% else %}N/A{% endif %}</p>
             </div>
         </div>
     </div>
@@ -69,7 +69,7 @@
                     {{ card.unofficial_grade|grade_display }}
                     <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">Unofficial</span>
                 </p>
-                <p class="text-[11px] text-amber-700">Unofficial — running grade, may still change</p>
+                <p class="text-[11px] text-amber-700">Unofficial: running grade, may still change</p>
                 {% else %}
                 <p class="text-sm text-gray-600">Grades not yet released</p>
                 {% endif %}
@@ -110,7 +110,7 @@
     {% else %}
     <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-5">
         <p class="text-sm font-semibold text-gray-700">Academic Forecast</p>
-        <p class="mt-1 text-sm text-gray-600">Coming soon — early warning based on your grades.</p>
+        <p class="mt-1 text-sm text-gray-600">Coming soon: early warning based on your grades.</p>
     </div>
     {% endif %}
 

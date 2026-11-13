@@ -7,12 +7,12 @@
 <div class="mt-2 mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
         <h2 class="flex items-center gap-2 text-xl font-bold text-gray-900">
-            {{ class_offering.subject.code }} — {{ class_offering.subject.title }}
+            {{ class_offering.subject.code }} · {{ class_offering.subject.title }}
             {% include "grading/_subject_status_chip.html" with status_label=status_label status_key=status_key %}
         </h2>
         <p class="mt-1 text-sm text-gray-600">
             {{ class_offering.instructor.full_name|default:"Unassigned" }}
-            · {{ class_offering.schedule|default:"—" }} / {{ class_offering.room|default:"—" }}
+            · {{ class_offering.schedule|default:"Not set" }} / {{ class_offering.room|default:"Not set" }}
             · {{ class_offering.semester }}
         </p>
     </div>
@@ -80,7 +80,7 @@
             </table>
         </div>
         {% if component_averages %}
-        <p class="mt-3 text-xs text-gray-600">Class average (≥5 active students) — for context only, never another student's own data.</p>
+        <p class="mt-3 text-xs text-gray-600">Class average (≥5 active students): for context only, never another student's own data.</p>
         <ul class="mt-1 text-xs text-gray-600">
             {% for avg in component_averages %}
             <li>{{ avg.name }}: class average {{ avg.average|grade_display }}</li>
@@ -113,7 +113,7 @@
             {% for item in items %}
             <div class="flex items-center justify-between gap-3 text-sm">
                 <div class="min-w-0">
-                    <p class="truncate font-medium text-gray-800">{{ item.component_name }} — {{ item.title }}</p>
+                    <p class="truncate font-medium text-gray-800">{{ item.component_name }} · {{ item.title }}</p>
                     {% if item.date %}<p class="text-xs text-gray-600">{{ item.date|date:"M d, Y" }}</p>{% endif %}
                 </div>
                 <div class="w-28 shrink-0 text-right">

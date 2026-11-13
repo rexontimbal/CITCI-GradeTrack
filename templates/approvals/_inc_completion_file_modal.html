@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Complete INC — {{ entry.roster_entry.student.full_name }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Complete INC: {{ entry.roster_entry.student.full_name }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -35,7 +35,7 @@
             <label for="{{ form.remarks_text.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.remarks_text.label }}</label>
             {{ form.remarks_text }}
         </div>
-        <p class="text-xs text-gray-600">Sent to the Program Head for approval — your class's grade stays INC until then.</p>
+        <p class="text-xs text-gray-600">Sent to the Program Head for approval: your class's grade stays INC until then.</p>
         <div class="flex justify-end gap-2 pt-2">
             <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">File Completion</button>

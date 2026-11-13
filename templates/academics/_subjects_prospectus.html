@@ -12,7 +12,7 @@
                     {% for p in programs %}<option value="{{ p.pk }}" {% if p.pk == program.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
                 </select>
                 <select name="major" onchange="this.form.requestSubmit()" class="h-10 rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500" aria-label="Major">
-                    <option value="">(no major — TCP-style)</option>
+                    <option value="">(no major: TCP-style)</option>
                     {% for m in majors %}<option value="{{ m.pk }}" {% if major and m.pk == major.pk %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
                 </select>
                 <input type="hidden" name="year_level" value="{{ year_level_filter }}">
@@ -230,7 +230,7 @@
                                     {% sidebar_icon "pencil" "w-4 h-4" %}
                                 </button>
                                 {% else %}
-                                <span class="text-xs text-gray-500" title="Shared — ask the Admin to edit">Shared</span>
+                                <span class="text-xs text-gray-500" title="Shared: ask the Admin to edit">Shared</span>
                                 {% endif %}
                                 {% if entry.offering %}
                                 <button type="button"

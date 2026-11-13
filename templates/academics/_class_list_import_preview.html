@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview — {{ class_offering }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview: {{ class_offering }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -43,7 +43,7 @@
                 {% for row in preview %}
                 <tr>
                     <td class="px-3 py-2 text-gray-600">{{ row.row_number }}</td>
-                    <td class="px-3 py-2 text-gray-700">{{ row.id_number|default:"—" }}</td>
+                    <td class="px-3 py-2 text-gray-700">{{ row.id_number|default:"Not set" }}</td>
                     <td class="px-3 py-2 text-gray-700">{{ row.last_name }}{% if row.last_name %}, {% endif %}{{ row.first_name }} {{ row.middle_name }}</td>
                     <td class="px-3 py-2">
                         {% if row.kind == "new" %}

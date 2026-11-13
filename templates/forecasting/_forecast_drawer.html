@@ -2,7 +2,7 @@
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
     <div>
         <h3 id="modal-title" class="text-base font-semibold text-gray-900">{{ roster_entry.student.full_name }}</h3>
-        <p class="text-xs text-gray-600">{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</p>
+        <p class="text-xs text-gray-600">{{ class_offering.subject.code }} · {{ class_offering.subject.title }}</p>
     </div>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
@@ -72,7 +72,7 @@
                 <div class="mt-1 flex items-center gap-2 text-xs text-gray-600">
                     <span>Outcome: {{ i.get_outcome_display }}</span>
                     {% if i.follow_up_date %}<span>· Follow-up: {{ i.follow_up_date }}</span>{% endif %}
-                    <span>· logged by {{ i.created_by.full_name|default:"—" }}</span>
+                    <span>· logged by {{ i.created_by.full_name|default:"Unknown" }}</span>
                 </div>
             </li>
             {% endfor %}

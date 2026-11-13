@@ -4,16 +4,16 @@
 
 <table class="meta-table">
     <tr>
-        <td class="meta-label">Subject</td><td>{{ class_offering.subject.code }} — {{ class_offering.subject.title }}</td>
+        <td class="meta-label">Subject</td><td>{{ class_offering.subject.code }} · {{ class_offering.subject.title }}</td>
         <td class="meta-label">Semester</td><td>{{ class_offering.semester }}</td>
     </tr>
     <tr>
         <td class="meta-label">Section(s)</td>
         <td>{% for s in class_offering.sections.all %}{{ s }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-        <td class="meta-label">Schedule / Room</td><td>{{ class_offering.schedule|default:"—" }} / {{ class_offering.room|default:"—" }}</td>
+        <td class="meta-label">Schedule / Room</td><td>{{ class_offering.schedule|default:"Not set" }} / {{ class_offering.room|default:"Not set" }}</td>
     </tr>
     <tr>
-        <td class="meta-label">Instructor</td><td>{{ class_offering.instructor.full_name|default:"—" }}</td>
+        <td class="meta-label">Instructor</td><td>{{ class_offering.instructor.full_name|default:"Unassigned" }}</td>
         <td class="meta-label">Units</td><td>{{ class_offering.subject.units }}</td>
     </tr>
 </table>
@@ -32,9 +32,9 @@
         {% for entry in entries %}
         <tr>
             <td class="text-center">{{ forloop.counter }}</td>
-            <td class="text-center">{{ entry.roster_entry.student.id_number|default:"—" }}</td>
+            <td class="text-center">{{ entry.roster_entry.student.id_number|default:"Not set" }}</td>
             <td>{{ entry.roster_entry.student.last_name }}, {{ entry.roster_entry.student.first_name }}{% if entry.roster_entry.student.middle_name %} {{ entry.roster_entry.student.middle_name|first }}.{% endif %}</td>
-            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}—{% endif %}</td>
+            <td class="text-center">{% if entry.final_grade is not None %}{{ entry.final_grade|floatformat:2 }}{% else %}N/A{% endif %}</td>
             <td class="text-center">{{ entry.get_remarks_display }}{% if entry.remarks == "INC" and entry.inc_reason %} ({{ entry.inc_reason }}){% endif %}</td>
         </tr>
         {% endfor %}
@@ -52,7 +52,7 @@
 <table class="signature-table">
     <tr>
         <td style="width:33%;">
-            <div class="sig-line">{{ class_offering.instructor.full_name|default:"—" }}</div>
+            <div class="sig-line">{{ class_offering.instructor.full_name|default:"Unassigned" }}</div>
             <div class="sig-role">Submitted by (Instructor)</div>
             {% if sheet.submitted_at %}<div class="sig-date">{{ sheet.submitted_at|date:"M d, Y" }}</div>{% endif %}
         </td>

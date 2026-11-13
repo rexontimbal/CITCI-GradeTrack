@@ -10,6 +10,9 @@ TEXTAREA_CLASSES = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
 class ReturnRemarksForm(forms.Form):
     remarks = forms.CharField(
         label="Remarks for the instructor",
+        min_length=10,
+        help_text="Tell the instructor what to fix.",
+        error_messages={"min_length": "Tell the instructor what to fix (at least 10 characters)."},
         widget=forms.Textarea(attrs={"rows": 3, "class": TEXTAREA_CLASSES}),
     )
 

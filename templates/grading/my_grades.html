@@ -28,7 +28,7 @@
 
 {% if not show_unofficial %}
 <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-    Running (unofficial) scores aren't shown while a class is in progress — you'll see the final grade once it's released.
+    Running (unofficial) scores aren't shown while a class is in progress: you'll see the final grade once it's released.
 </div>
 {% endif %}
 
@@ -86,7 +86,7 @@
                     {% elif row.unofficial_grade is not None %}
                     {{ row.unofficial_grade|grade_display }} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Unofficial</span>
                     {% else %}
-                    —
+                    Not yet released
                     {% endif %}
                 </td>
                 <td class="px-4 py-3 text-gray-700">{% if row.released_entry %}{{ row.released_entry.get_remarks_display }}{% else %}In progress{% endif %}</td>
@@ -107,7 +107,7 @@
             Partial GWA: <span class="font-semibold text-amber-700">{{ gwa.gwa|grade_display }}</span>
             <span class="text-xs text-gray-600">({{ gwa.released_count }} of {{ gwa.total_count }} subjects released)</span>
             {% else %}
-            Official GWA: <span class="font-semibold text-gray-900">—</span>
+            Official GWA: <span class="font-semibold text-gray-900">N/A</span>
             {% endif %}
         </p>
     </div>

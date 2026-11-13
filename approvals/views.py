@@ -123,11 +123,11 @@ def submit(request, pk):
         if form.is_valid() and not summary["scheme_complete"]:
             form.add_error(
                 None,
-                f"Grading components total {summary['scheme_total']}%, not 100% — fix this in "
+                f"Grading components total {summary['scheme_total']}%, not 100%. Fix this in "
                 "Grading Components before submitting.",
             )
         elif form.is_valid() and not summary["can_submit"]:
-            form.add_error(None, "Some active students still have missing scores — encode them or mark INC first.")
+            form.add_error(None, "Some active students still have missing scores. Encode them or mark INC first.")
         return render(
             request,
             "approvals/_submit_review_modal.html",

@@ -2,7 +2,7 @@
 {% load sidebar_icons %}
 {% block page_title %}Grading Templates{% endblock %}
 {% block content %}
-{% include "partials/_page_subtitle.html" with subtitle="Reusable component/weight sets. Editing a template never changes classes already using it — they keep a frozen snapshot." %}
+{% include "partials/_page_subtitle.html" with subtitle="Reusable component/weight sets. Editing a template never changes classes already using it: they keep a frozen snapshot." %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <form hx-get="{% url 'grading:templates' %}" hx-target="#{{ table_id }}" hx-swap="outerHTML"

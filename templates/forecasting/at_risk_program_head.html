@@ -35,7 +35,7 @@
         <tbody class="divide-y divide-gray-100">
             {% for c in by_class %}
             <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 font-medium text-gray-900">{{ c.class_offering.subject.code }} — {{ c.class_offering.subject.title }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ c.class_offering.subject.code }} · {{ c.class_offering.subject.title }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ c.class_offering.instructor.full_name|default:"Unassigned" }}</td>
                 <td class="px-4 py-3 text-center text-red-700">{{ c.at_risk }}</td>
                 <td class="px-4 py-3 text-center text-amber-700">{{ c.watch }}</td>
@@ -93,7 +93,7 @@
                 <td class="px-4 py-3 text-gray-700">{{ row.probability|floatformat:1 }}%</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.reasons|join:"; " }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">
-                    {% if row.last_intervention %}{{ row.last_intervention.get_type_display }} ({{ row.last_intervention.date }}){% else %}—{% endif %}
+                    {% if row.last_intervention %}{{ row.last_intervention.get_type_display }} ({{ row.last_intervention.date }}){% else %}N/A{% endif %}
                 </td>
                 <td class="px-4 py-3 text-right">
                     <button type="button" hx-get="{% url 'forecasting:forecast_detail' row.entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"

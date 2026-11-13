@@ -325,7 +325,7 @@ class ClassOfferingForm(StyledModelForm):
             search_url=reverse_lazy("academics:instructor_search"),
             queryset=User.objects.filter(role=User.Role.INSTRUCTOR),
         ),
-        help_text="Teaching loads are normally assigned by the Program Head — changing it here is logged "
+        help_text="Teaching loads are normally assigned by the Program Head. Changing it here is logged "
         "as an admin override.",
     )
 
@@ -428,7 +428,7 @@ class TeachingAssignmentForm(forms.Form):
     reason = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 2, "class": "w-full rounded-lg border-gray-300 text-sm"}),
-        help_text="Optional — shown in the audit log and this class's assignment history.",
+        help_text="Optional. Shown in the audit log and this class's assignment history.",
     )
 
 

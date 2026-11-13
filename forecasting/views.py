@@ -44,7 +44,7 @@ def model(request):
             threshold = Decimal("0.50")
         try:
             version = train_model(checkpoint, source, threshold=threshold)
-            messages.success(request, f"Trained {version} — inactive until you Activate it below.")
+            messages.success(request, f"Trained {version}. Inactive until you Activate it below.")
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         return redirect("forecasting:model")

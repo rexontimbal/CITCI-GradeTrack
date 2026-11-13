@@ -64,10 +64,10 @@
                 <td class="px-4 py-3 font-medium text-gray-900">{{ result.roster_entry.student.last_name }}, {{ result.roster_entry.student.first_name }}</td>
                 {% for col in record.columns %}
                 {% component_breakdown result col.component as breakdown %}
-                <td class="px-4 py-3 text-gray-700">{% if breakdown.running_included %}{{ breakdown.final_grade|grade_display }}{% else %}—{% endif %}</td>
+                <td class="px-4 py-3 text-gray-700 {% if not breakdown.running_included %}bg-gray-100{% endif %}">{% if breakdown.running_included %}{{ breakdown.final_grade|grade_display }}{% endif %}</td>
                 {% endfor %}
                 <td class="px-4 py-3 font-semibold text-brand-primary-800">{{ result.running_grade|grade_display }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ result.remarks|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ result.remarks|default:"N/A" }}</td>
             </tr>
             {% endfor %}
         </tbody>

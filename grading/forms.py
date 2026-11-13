@@ -129,9 +129,9 @@ class _SchemeComponentBaseFormSet(forms.BaseInlineFormSet):
             return
 
         if total_weight > 100:
-            raise forms.ValidationError(f"Total is {total_weight}% — reduce by {total_weight - 100}%.")
+            raise forms.ValidationError(f"Total is {total_weight}%. Reduce by {total_weight - 100}%.")
         if total_weight < 100:
-            raise forms.ValidationError(f"Total is {total_weight}% — add {100 - total_weight}%.")
+            raise forms.ValidationError(f"Total is {total_weight}%. Add {100 - total_weight}%.")
 
 
 SchemeComponentFormSet = forms.inlineformset_factory(

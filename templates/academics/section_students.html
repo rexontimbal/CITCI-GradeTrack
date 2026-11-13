@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load sidebar_icons %}
-{% block page_title %}Students — {{ section }}{% endblock %}
+{% block page_title %}Students: {{ section }}{% endblock %}
 {% block content %}
 
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -92,7 +92,7 @@
                            :checked="selected.includes({{ membership.student.pk }})">
                 </td>
                 <td class="px-4 py-3 font-medium text-gray-900">{{ membership.student.full_name }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ membership.student.id_number|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ membership.student.id_number|default:"Not set" }}</td>
             </tr>
             {% endfor %}
         </tbody>

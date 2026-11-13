@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Manage Sections — {{ offering.subject.code }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Manage Sections: {{ offering.subject.code }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -33,11 +33,11 @@
                         <tbody>
                             {% for row in group.subject_rows %}
                             <tr class="border-b border-gray-100 last:border-0">
-                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} — {{ row.subject.title }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{{ row.subject.code }} · {{ row.subject.title }}</td>
                                 {% for cell in row.cells %}
                                 <td class="px-3 py-2 text-center">
                                     <input type="checkbox" name="sections_{{ row.row_index }}" value="{{ cell.section.pk }}"
-                                           {% if cell.already_offered %}checked title="Currently offered — untick to withdraw"{% endif %}>
+                                           {% if cell.already_offered %}checked title="Currently offered: untick to withdraw"{% endif %}>
                                 </td>
                                 {% endfor %}
                                 <td class="px-3 py-2">

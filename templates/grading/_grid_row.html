@@ -1,8 +1,8 @@
 {% load grading_extras sidebar_icons %}
 <tr id="row-{{ row.result.roster_entry.id }}"
     class="h-10 {% if not row.is_active %}bg-gray-100 text-gray-600{% else %}odd:bg-white even:bg-gray-50/70 hover:bg-brand-primary-50/50{% endif %} transition-colors">
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;min-width:48px;max-width:48px;">{{ row.row_number|default:"—" }}</td>
-    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;min-width:96px;max-width:96px;">{{ row.result.roster_entry.student.id_number|default:"—" }}</td>
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-center text-xs tabular-nums" style="left:0;width:48px;min-width:48px;max-width:48px;">{{ row.row_number|default:"N/A" }}</td>
+    <td class="sticky z-10 border-r border-gray-100 bg-inherit px-2 py-1.5 text-xs tabular-nums" style="left:48px;width:96px;min-width:96px;max-width:96px;">{{ row.result.roster_entry.student.id_number|default:"Not set" }}</td>
     <td class="sticky-shadow sticky z-10 border-r border-gray-200 bg-inherit px-2 py-1.5 text-sm font-medium text-gray-900" style="left:144px;min-width:160px;">
         {{ row.result.roster_entry.student.last_name }}, {{ row.result.roster_entry.student.first_name }}
         {% if not row.is_active %}<span class="ml-1 text-xs text-gray-600">(Dropped)</span>{% endif %}
@@ -27,14 +27,14 @@
             {% endif %}
         </td>
         {% endfor %}
-        <td class="border-l border-gray-100 bg-gray-100/70 px-2 py-1.5 text-center text-xs tabular-nums text-gray-600" title="All terms">
-            {% if block.breakdown.running_included %}{{ block.breakdown.final_earned|trim_decimal }}/{{ block.breakdown.final_possible|trim_decimal }}{% else %}—{% endif %}
+        <td class="border-l border-gray-100 {% if block.breakdown.running_included %}bg-gray-100/70{% else %}bg-gray-200{% endif %} px-1 py-1.5 text-right text-xs tabular-nums text-gray-600" style="width:2.75rem;" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.final_earned|trim_decimal }}{% endif %}
         </td>
-        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-xs tabular-nums text-gray-700" title="All terms">
-            {% if block.breakdown.running_included %}{{ block.breakdown.final_grade|grade_display }}{% else %}—{% endif %}
+        <td class="{% if block.breakdown.running_included %}bg-gray-100/70{% else %}bg-gray-200{% endif %} px-2 py-1.5 text-center text-xs tabular-nums text-gray-700" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.final_grade|grade_display }}{% endif %}
         </td>
-        <td class="bg-gray-100/70 px-2 py-1.5 text-center text-sm font-semibold text-gray-900" title="All terms">
-            {% if block.breakdown.running_included %}{{ block.breakdown.weighted_contribution|grade_display }}{% else %}—{% endif %}
+        <td class="{% if block.breakdown.running_included %}bg-gray-100/70{% else %}bg-gray-200{% endif %} px-2 py-1.5 text-center text-sm font-semibold text-gray-900" title="All terms">
+            {% if block.breakdown.running_included %}{{ block.breakdown.weighted_contribution|grade_display }}{% endif %}
         </td>
     {% endfor %}
 
@@ -49,43 +49,33 @@
             {% elif remarks == "FAILED" %}
             <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-center text-xs font-medium text-red-700">Failed</span>
             {% elif remarks == "ON_TRACK" %}
-            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-green-300 px-2 py-0.5 text-center text-xs font-medium text-green-700" title="Provisional — based on encoded items only">On track</span>
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-green-300 px-2 py-0.5 text-center text-xs font-medium text-green-700" title="Provisional: based on encoded items only">On track</span>
             {% elif remarks == "AT_RISK" %}
-            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-amber-400 px-2 py-0.5 text-center text-xs font-medium text-amber-700" title="Provisional — based on encoded items only">At risk</span>
+            <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full border border-amber-400 px-2 py-0.5 text-center text-xs font-medium text-amber-700" title="Provisional: based on encoded items only">At risk</span>
             {% elif remarks == "INC" %}
             <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-center text-xs font-medium text-amber-800" title="{{ row.result.roster_entry.incomplete_reason }}">INC</span>
             {% elif remarks == "DROPPED" %}
             <span class="inline-block min-w-[4.5rem] whitespace-nowrap rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs font-medium text-gray-600">Dropped</span>
             {% else %}
-            <span class="text-xs text-gray-600">—</span>
+            <span class="text-xs text-gray-600">N/A</span>
             {% endif %}
             {% endwith %}
 
             {% if can_edit and row.is_active %}
-            <div x-data="{ open: false }" class="relative">
-                <button type="button" @click="open = !open" @click.outside="open = false"
-                        class="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200 hover:text-gray-600" title="Row actions">
-                    {% sidebar_icon "dots-vertical" "w-4 h-4" %}
-                </button>
-                <div x-show="open" x-cloak @click="open = false"
-                     class="absolute right-0 z-40 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg">
-                    <button hx-get="{% url 'grading:mark_incomplete' row.result.roster_entry.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                            class="block w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50">Mark INC</button>
-                </div>
-            </div>
+            {% include "partials/_overflow_menu.html" with actions=row.row_actions button_title="Row actions" button_classes="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200 hover:text-gray-600" %}
             {% endif %}
         </div>
     </td>
     <td x-show="showForecast" class="border-l border-gray-200 px-2 py-1.5 text-center"
-        {% if row.forecast_probability_pct is not None %}title="{{ row.forecast_probability_pct }}% — {{ row.forecast_reasons|join:"; " }}"{% endif %}>
+        {% if row.forecast_probability_pct is not None %}title="{{ row.forecast_probability_pct }}%: {{ row.forecast_reasons|join:"; " }}"{% endif %}>
         {% if row.forecast_level == "AT_RISK" or row.forecast_level == "WATCH" or row.forecast_level == "ON_TRACK" %}
         {% include "forecasting/_risk_badge.html" with level=row.forecast_level %}
         {% elif row.forecast_level == "not_enough_data" %}
-        <span class="text-xs text-gray-300" title="Not enough data yet">—</span>
+        <span class="text-xs text-gray-400" title="Not enough scores have been encoded yet to forecast this student">Not enough data</span>
         {% elif row.forecast_level == "unavailable" %}
-        <span class="text-xs text-gray-300" title="Forecast unavailable">—</span>
+        <span class="text-xs text-gray-400" title="No active forecasting model is available right now">Unavailable</span>
         {% else %}
-        <span class="text-xs text-gray-300">—</span>
+        <span class="text-xs text-gray-400">N/A</span>
         {% endif %}
     </td>
 </tr>

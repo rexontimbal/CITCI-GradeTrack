@@ -1668,7 +1668,7 @@ class UsersPageScopeDisplayTests(TeachingAssignmentTestBase):
 
         self.client.force_login(self.admin)
         response = self.client.get(reverse("accounts:users"), {"role": "PROGRAM_HEAD"})
-        self.assertContains(response, "BSED – English")
+        self.assertContains(response, "BSED · English")
 
     def test_unassigned_head_shows_unassigned(self):
         make_user(User.Role.PROGRAM_HEAD, "scope_label_unassigned")

@@ -83,7 +83,7 @@ class User(AbstractUser):
                 labels.append(f"{program.code} (all majors)")
             else:
                 major = next((m for m in program.majors.all() if m.id == major_id), None)
-                labels.append(f"{program.code} – {major.name}" if major else program.code)
+                labels.append(f"{program.code} · {major.name}" if major else program.code)
         return ", ".join(labels)
 
     def __str__(self):
@@ -129,4 +129,4 @@ class AuditLog(TimeStampedModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.get_action_display()} — {self.target_user} ({self.created_at:%Y-%m-%d %H:%M})"
+        return f"{self.get_action_display()} · {self.target_user} ({self.created_at:%Y-%m-%d %H:%M})"

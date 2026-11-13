@@ -17,7 +17,7 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ completion.entry.roster_entry.student.full_name }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ completion.entry.sheet.class_offering }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ completion.new_grade }} — {{ completion.get_new_remarks_display }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ completion.new_grade }} · {{ completion.get_new_remarks_display }}</td>
                     <td class="px-4 py-3 text-gray-600">{{ completion.created_at|date:"M d, Y" }}</td>
                     <td class="px-4 py-3 text-right">
                         <button hx-get="{% url 'approvals:inc_completion_decide' completion.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"

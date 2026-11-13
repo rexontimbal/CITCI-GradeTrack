@@ -2,7 +2,7 @@
 <div id="semesters-table" hx-trigger="refreshSemesters from:body" hx-get="{% url 'academics:semesters_table' %}" hx-target="this" hx-swap="outerHTML">
     {% if not active_semester and latest_semester %}
     <div class="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        <span>No active semester yet — set one so instructors and Program Heads can start.</span>
+        <span>No active semester yet: set one so instructors and Program Heads can start.</span>
         <button hx-post="{% url 'academics:semester_set_active' latest_semester.pk %}" hx-swap="none"
                 hx-confirm="Make {{ latest_semester }} the active semester? All pages will default to it."
                 class="rounded-lg bg-brand-accent-600 px-3 py-1.5 text-xs font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
@@ -26,8 +26,8 @@
                 {% for sem in semesters %}
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3 font-medium text-gray-900">{{ sem }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ sem.start_date|default:"—" }}</td>
-                    <td class="px-4 py-3 text-gray-700">{{ sem.end_date|default:"—" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ sem.start_date|default:"Not set" }}</td>
+                    <td class="px-4 py-3 text-gray-700">{{ sem.end_date|default:"Not set" }}</td>
                     <td class="px-4 py-3">
                         {% if sem.is_active %}
                         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>

@@ -11,7 +11,7 @@
                 </span>
                 {% else %}
                 <span class="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
-                    Total {{ scheme_total|trim_decimal }}% — must be 100%
+                    Total {{ scheme_total|trim_decimal }}% (must be 100%)
                 </span>
                 {% endif %}
                 {% if can_edit %}
@@ -79,24 +79,9 @@
                             <span class="min-w-0 flex-1 truncate text-gray-700" title="{{ item.title }}">{{ item.title }}</span>
                             <span class="flex-none rounded-full px-2 py-0.5 text-[11px] font-medium {{ item.term|term_color_classes }}">{{ item.get_term_display }}</span>
                             <span class="flex-none text-right text-gray-600" style="width:3.25rem;">{{ item.max_score|trim_decimal }} pts</span>
-                            <span class="flex-none text-right text-xs text-gray-400" style="width:3.5rem;">{{ item.date|date:"M d"|default:"—" }}</span>
+                            <span class="flex-none text-right text-xs text-gray-400" style="width:3.5rem;">{{ item.date|date:"M d"|default:"Not set" }}</span>
                             {% if can_edit %}
-                            <div x-data="{ open: false }" class="relative flex-none" @click.outside="open=false">
-                                <button type="button" @click="open=!open" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Item actions">
-                                    {% sidebar_icon "dots-vertical" "h-4 w-4" %}
-                                </button>
-                                <div x-show="open" x-cloak x-transition
-                                     class="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                                    <button type="button" hx-get="{% url 'grading:item_edit' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true; open=false"
-                                            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50">
-                                        {% sidebar_icon "pencil" "h-3.5 w-3.5" %} Edit
-                                    </button>
-                                    <button type="button" hx-get="{% url 'grading:item_delete' item.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true; open=false"
-                                            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50">
-                                        {% sidebar_icon "trash" "h-3.5 w-3.5" %} Delete
-                                    </button>
-                                </div>
-                            </div>
+                            {% include "partials/_overflow_menu.html" with actions=item.row_actions button_title="Item actions" button_classes="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" %}
                             {% endif %}
                         </div>
                         {% empty %}
@@ -146,7 +131,7 @@
                                     {% endfor %}
                                 </div>
                                 {% else %}
-                                <span class="text-xs text-gray-300">—</span>
+                                <div class="h-5 rounded-md bg-gray-100"></div>
                                 {% endif %}
                             </td>
                             {% endfor %}

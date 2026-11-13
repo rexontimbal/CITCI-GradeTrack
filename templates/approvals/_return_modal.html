@@ -7,13 +7,14 @@
 </div>
 <form method="post" hx-post="{% url 'approvals:return_sheet' sheet.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
     {% csrf_token %}
-    <p class="text-sm text-gray-600">{{ sheet.class_offering }} will go back to the instructor as Returned — they'll need to fix and resubmit.</p>
+    <p class="text-sm text-gray-600">{{ sheet.class_offering }} will go back to the instructor as Returned. They'll need to fix it and resubmit.</p>
     {% if form.non_field_errors %}
     <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
     {% endif %}
     <div>
         <label for="{{ form.remarks.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">{{ form.remarks.label }}</label>
         {{ form.remarks }}
+        <p class="mt-1 text-xs text-gray-600">{{ form.remarks.help_text }}</p>
         {% for error in form.remarks.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
     </div>
     <div class="flex justify-end gap-2 pt-2">

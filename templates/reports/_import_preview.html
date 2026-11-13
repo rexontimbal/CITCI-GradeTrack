@@ -1,6 +1,6 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview — {{ class_offering }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Preview: {{ class_offering }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
@@ -36,20 +36,20 @@
 
     {% if preview.unmatched_items %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        <p class="mb-2 font-semibold">Unmatched item columns — create as new items?</p>
+        <p class="mb-2 font-semibold">Unmatched item columns: create as new items?</p>
         <div class="space-y-2">
             {% for item in preview.unmatched_items %}
             <div class="rounded-lg border border-amber-300 bg-white p-2">
                 <label class="flex items-center gap-2 font-medium text-gray-800">
                     <input type="checkbox" name="newitem-{{ item.col }}-create" checked>
-                    {{ item.component_name }} — {{ item.item_title }}
+                    {{ item.component_name }} · {{ item.item_title }}
                     <span class="text-xs text-gray-600">({{ item.raw_scores|length }} score{{ item.raw_scores|length|pluralize }} in this column)</span>
                 </label>
                 <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <div>
                         <label class="block text-xs text-gray-600">Component</label>
                         <select name="newitem-{{ item.col }}-component" class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
-                            <option value="">— select —</option>
+                            <option value="">select</option>
                             {% for sc in scheme_components %}
                             <option value="{{ sc.pk }}" {% if sc.pk == item.suggested_component_id %}selected{% endif %}>
                                 {{ sc.name }}{% if sc.is_locked %} (locked){% endif %}
@@ -60,7 +60,7 @@
                     <div>
                         <label class="block text-xs text-gray-600">Term</label>
                         <select name="newitem-{{ item.col }}-term" class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
-                            <option value="">— select —</option>
+                            <option value="">select</option>
                             {% for value, label in assessment_terms %}
                             <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
@@ -77,7 +77,7 @@
             {% endfor %}
         </div>
         <p class="mt-2 text-xs text-amber-700">
-            Locked components (e.g. Examination) can still receive new items — only a new <em>component</em> can't be created here.
+            Locked components (e.g. Examination) can still receive new items: only a new <em>component</em> can't be created here.
         </p>
     </div>
     {% endif %}
@@ -87,7 +87,7 @@
         <strong>Invalid values</strong> (skipped):
         <ul class="mt-1 list-inside list-disc">
             {% for cell in preview.invalid_cells %}
-            <li>{{ cell.row_label }} — {{ cell.item_title }}: "{{ cell.raw_value }}" ({{ cell.reason }})</li>
+            <li>{{ cell.row_label }} · {{ cell.item_title }}: "{{ cell.raw_value }}" ({{ cell.reason }})</li>
             {% endfor %}
         </ul>
     </div>
@@ -116,7 +116,7 @@
                 <tr>
                     <td class="px-3 py-2 text-gray-700">{{ change.student_label }}</td>
                     <td class="px-3 py-2 text-gray-700">{{ change.item_title }}</td>
-                    <td class="px-3 py-2 text-gray-600">—</td>
+                    <td class="px-3 py-2 text-gray-600">Not set</td>
                     <td class="px-3 py-2 font-medium text-green-700">{{ change.new_value }}</td>
                 </tr>
                 {% endfor %}

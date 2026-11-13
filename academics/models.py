@@ -445,7 +445,7 @@ class ClassOffering(TimeStampedModel):
 
     def __str__(self):
         section_names = ", ".join(str(s) for s in self.sections.all())
-        return f"{self.display_code} – {section_names}" if section_names else self.display_code
+        return f"{self.display_code} · {section_names}" if section_names else self.display_code
 
 
 class ClassRosterEntry(TimeStampedModel):

@@ -388,6 +388,28 @@
 > user_form` along the way (dead code once those fields left the form) incidentally simplifies a
 > GET-cascade code path that was a plausible place for exactly this class of bug to hide, if it
 > existed anywhere.
+>
+> **2026-11-13 (later the same day — Class Record floating row menu, raw totals, UI copy pass,
+> built):** three fixes bundled into one pass, confirmed as a related cleanup rather than separate
+> tasks. (1) Every "..." row menu in the system (Classes, Subjects, Setup tab item rows, the Class
+> Record grid) now renders through one shared, teleported floating popover
+> (`templates/partials/_overflow_menu.html` + `static/js/floating-menu.js`) instead of a locally-
+> positioned `position: fixed` dropdown that was still a DOM descendant of its scroll container —
+> and so still got visually clipped by that container's overflow box, the reported bug. (2) The
+> Class Record's per-component TOTAL column now shows the student's raw total only (e.g. "20"), not
+> "20/20" — the max is already in the header row — narrower, right-aligned, tabular digits; a
+> component with no scores yet is an empty gray cell, never a dash. (3) **No em dash ("—") anywhere
+> in user-facing text** — see the new "UI copy & row-menu conventions" section above for the full
+> rule set (`:`/`·`/a full sentence instead, "Not set"/"N/A" for empty values) and
+> `core.tests.NoEmDashOnMainPagesTests` for the regression guard. The Program Head "Return" reason
+> now requires 10+ characters ("Tell the instructor what to fix") so a one-word reason like "retun"
+> can't go through. Caught and fixed along the way: `ClassOffering.__str__`/
+> `ClassRosterEntry.__str__`/`User.program_head_scope_label` were using an en dash ("–") as a
+> separator between a class's code and its section(s) — same rule, different character, same fix
+> (`·`). Also caught: `accounts.AuditLog.Action` had gained `ACADEMIC_YEAR_WIZARD_RUN` in an earlier
+> session without ever generating its migration — `makemigrations` surfaced it as pending drift
+> unrelated to this pass's own changes; committed together since both are schema-harmless
+> `AlterField`s on fields already in production use.
 
 **Enrollment is out of scope.** CITCI GradeTrack does not handle student enrollment — that is the
 Registrar's own process, outside this system entirely. GradeTrack only stores each class's official
@@ -483,6 +505,39 @@ wide-table wrapper (`overflow-x-auto rounded-2xl border border-gray-200 bg-white
 the standard combination). 6px thin, brand-accent gold thumb (`rgba(245, 231, 102, …)`, brighter on
 hover), transparent track, no arrow buttons, `scrollbar-width: thin` for Firefox. Never write a new
 one-off scrollbar rule — add `gold-scroll` to the container instead.
+
+## UI copy & row-menu conventions (built, 2026-11-13)
+
+**No em dashes ("—") anywhere in user-facing text** — templates, Python messages (ValidationError/
+toast/`add_error`/`messages.*`), PDFs, Excel exports. Use `:` or `·` or rewrite as a full sentence
+instead, chosen by shape: a title/heading pairing an action with its context ("Submit Grades:
+EL 101") uses `:`; two peer labels with no label/detail relationship (a subject code and its title,
+"EL 101 · Language, Culture, and Society") use `·`; an explanatory aside reads better as its own
+sentence ("Returned by the Program Head on Nov 13, 2026") than punctuation-joined. An empty/
+not-yet-available value is never a bare dash either — `"Not set"` for a field nobody has filled in
+yet (schedule, room, section, ID number), `"N/A"` for a computed value with nothing to compute yet
+(a stat, an average, a remarks badge with no scores). A Class Record/Summary cell for a component
+with no scores yet is an EMPTY cell with a light gray background (`bg-gray-200`/`bg-gray-100`), not
+a dash — the grid's own legend spells this out instead of relying on a symbol:
+`grading/templatetags/grading_extras.py`'s `grade_display`/`term_color_classes` filters and
+`grading/services.py`'s `COMPONENT_COLOR_CLASSES` are the shared implementation every page already
+uses. `core.tests.NoEmDashOnMainPagesTests` renders one representative page per role against a
+fully-scored, submitted/approved/released grade sheet and fails if "—" appears anywhere in the
+response — it covers the everyday pages (dashboards, Classes/Users/Subjects, Grading, Approvals,
+Reports, At-Risk, My Grades/Progress/Subject detail), not every admin edge-case modal.
+
+**Row "..." menus use one shared floating popover** (`templates/partials/_overflow_menu.html` +
+`static/js/floating-menu.js`'s `Alpine.data("floatingMenu")`), not a locally-positioned dropdown. A
+plain `position: fixed` menu that's still a DOM descendant of a scrolling container gets clipped by
+that container's overflow box in every browser regardless — the only reliable fix is `x-teleport`
+to move the panel out to `<body>`, then position it in JS from the trigger button's own
+`getBoundingClientRect()` (auto-flips above the button when there's no room below, shifts left near
+the viewport's right edge, repositions on scroll/resize while open, closes on outside click/Esc,
+and supports Up/Down arrow-key navigation between `role="menuitem"` entries with focus returning to
+the trigger button on close). Every row-actions menu in the system (Classes, Subjects, Setup tab
+item rows, the Class Record grid's per-student row menu) renders through this one partial with an
+`actions` list (`[{"label", "hx_get" or "href", "extra_classes"}]`) — never a fresh hand-rolled
+`x-data="{ open: false }"` dropdown.
 
 ---
 

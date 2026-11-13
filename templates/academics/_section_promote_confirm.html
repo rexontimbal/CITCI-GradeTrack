@@ -11,7 +11,7 @@
     <p class="text-sm text-gray-600">
         Moving selected students from {{ section }} ({{ semester }}) to <span class="font-medium">{{ target_section }}</span>
         ({{ target_semester }}). Students already marked "already placed" have a section for {{ target_semester }} already
-        — unchecked by default so they're not silently moved.
+       : unchecked by default so they're not silently moved.
     </p>
     <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -32,7 +32,7 @@
                     <td class="px-3 py-2 text-gray-900">{{ row.student.full_name }}</td>
                     <td class="px-3 py-2">
                         {% if row.already_placed %}
-                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Already placed — skip</span>
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Already placed: skip</span>
                         {% else %}
                         <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Will promote</span>
                         {% endif %}

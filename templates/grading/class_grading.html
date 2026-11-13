@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load sidebar_icons %}
-{% block page_title %}Grading — {{ class_offering.subject.code }}{% endblock %}
+{% block page_title %}Grading: {{ class_offering.subject.code }}{% endblock %}
 {% block content %}
 <div x-data="{ tab: '{{ tab|default:'setup' }}', showForecast: true }">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -13,7 +13,7 @@
             <a href="{% url 'academics:program_head_classes' %}" class="text-sm text-gray-600 hover:underline">&larr; Classes</a>
             {% endif %}
             <h2 class="mt-1 flex items-center gap-2 text-xl font-bold text-gray-900">
-                {{ class_offering.subject.code }} — {{ class_offering.subject.title }}
+                {{ class_offering.subject.code }} · {{ class_offering.subject.title }}
                 {% if grade_sheet %}{% include "approvals/_status_badge.html" with status=grade_sheet.status %}{% endif %}
                 {% if is_owner and deadline and not grade_sheet or is_owner and deadline and grade_sheet.status == "DRAFT" %}
                 {% include "partials/_deadline_countdown.html" with deadline=deadline is_overdue=is_overdue %}
@@ -22,7 +22,7 @@
             <p class="mt-1 text-sm text-gray-600">
                 {% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
                 · {{ class_offering.semester }}
-                {% if not can_edit and is_owner %}· <span class="font-medium text-amber-600">Read-only — {{ grade_sheet.get_status_display }}</span>{% elif not can_edit and not is_owner %}· <span class="font-medium text-amber-600">Read-only</span>{% endif %}
+                {% if not can_edit and is_owner %}· <span class="font-medium text-amber-600">Read-only: {{ grade_sheet.get_status_display }}</span>{% elif not can_edit and not is_owner %}· <span class="font-medium text-amber-600">Read-only</span>{% endif %}
             </p>
         </div>
         <div class="flex gap-2">
@@ -62,12 +62,12 @@
 
     {% if grade_sheet.status == "RETURNED" and grade_sheet.return_remarks %}
     <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <p class="font-semibold">Returned by the Program Head — {{ grade_sheet.updated_at|date:"M d, Y" }}</p>
+        <p class="font-semibold">Returned by the Program Head on {{ grade_sheet.updated_at|date:"M d, Y" }}</p>
         <p class="mt-0.5">{{ grade_sheet.return_remarks }}</p>
     </div>
     {% elif grade_sheet and grade_sheet.status != "DRAFT" %}
     <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-        Submitted on {{ grade_sheet.submitted_at|date:"M d, Y" }} — {{ grade_sheet.get_status_display }}.
+        Submitted on {{ grade_sheet.submitted_at|date:"M d, Y" }} · {{ grade_sheet.get_status_display }}.
         {% if is_owner %}The Class Record and Setup tabs are read-only until it's returned.{% endif %}
     </div>
     {% endif %}

@@ -16,10 +16,10 @@
     </div>
     {% else %}
     <p class="text-sm text-gray-600">
-        This removes every class these offerings created, unless a class already has scores or a submitted grade sheet — those are skipped with a reason.
+        This removes every class these offerings created, unless a class already has scores or a submitted grade sheet: those are skipped with a reason.
     </p>
     <ul class="max-h-48 list-inside list-disc space-y-1 overflow-y-auto text-sm text-gray-700">
-        {% for offering in offerings %}<li>{{ offering.subject.code }} — {{ offering }}</li>{% endfor %}
+        {% for offering in offerings %}<li>{{ offering.subject.code }} · {{ offering }}</li>{% endfor %}
     </ul>
     <form hx-post="{% url 'academics:subject_offering_bulk_withdraw' %}" hx-target="#modal-content" hx-swap="innerHTML">
         {% csrf_token %}

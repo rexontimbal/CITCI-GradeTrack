@@ -59,7 +59,7 @@
                         {{ u.id_number }}
                         {% elif u.role == "STUDENT" %}
                         <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">No ID number</span>
-                        {% else %}—{% endif %}
+                        {% else %}N/A{% endif %}
                     </td>
                     <td class="px-4 py-3 font-medium text-gray-900">{{ u.full_name }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ u.username }}</td>
@@ -68,14 +68,14 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">
                         {% if u.role == "STUDENT" and u.student_profile %}
-                            {% if u.student_profile.program %}{{ u.student_profile.program.code }}{% if u.student_profile.major %} – {{ u.student_profile.major.code }}{% endif %}{% endif %}
+                            {% if u.student_profile.program %}{{ u.student_profile.program.code }}{% if u.student_profile.major %} · {{ u.student_profile.major.code }}{% endif %}{% endif %}
                             {% with membership=u.current_section_memberships.0 %}
                             {% if membership %} · {{ membership.section.short_label }} ({{ membership.semester }}){% endif %}
                             {% endwith %}
-                            {% if not u.student_profile.program %}—{% endif %}
+                            {% if not u.student_profile.program %}Not set{% endif %}
                         {% elif u.role == "PROGRAM_HEAD" %}
-                            {{ u.program_head_scope_label|default:"—" }}
-                        {% else %}—{% endif %}
+                            {{ u.program_head_scope_label|default:"N/A" }}
+                        {% else %}N/A{% endif %}
                     </td>
                     <td class="px-4 py-3">
                         {% if u.is_active %}

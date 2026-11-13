@@ -193,7 +193,7 @@ class AssessmentItem(TimeStampedModel):
     class_offering = models.ForeignKey(ClassOffering, on_delete=models.CASCADE, related_name="assessment_items")
     component = models.ForeignKey(SchemeComponent, on_delete=models.PROTECT, related_name="items")
     title = models.CharField(max_length=100)
-    max_score = models.PositiveIntegerField(help_text="Whole numbers only — matches CITCI's class record.")
+    max_score = models.PositiveIntegerField(help_text="Whole numbers only. Matches CITCI's class record.")
     term = models.CharField(
         max_length=10,
         choices=AssessmentTerm.choices,

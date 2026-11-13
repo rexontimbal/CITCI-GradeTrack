@@ -18,7 +18,7 @@
             <select name="role" id="id_role" x-model="role"
                     hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
                     class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                <option value="">— Select a role —</option>
+                <option value="">Select a role</option>
                 {% for value, label in form.fields.role.choices %}
                 {% if value %}<option value="{{ value }}" {% if form.role.value == value %}selected{% endif %}>{{ label }}</option>{% endif %}
                 {% endfor %}
@@ -75,7 +75,7 @@
                     <select name="program" id="id_program"
                             hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
                             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                        <option value="">— Select a program —</option>
+                        <option value="">Select a program</option>
                         {% for p in form.fields.program.queryset %}
                         <option value="{{ p.pk }}" {% if form.program.value|stringformat:"s" == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.code }}</option>
                         {% endfor %}
@@ -87,7 +87,7 @@
                     <select name="major" id="id_major"
                             hx-get="{{ request.path }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
                             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                        <option value="">— None —</option>
+                        <option value="">None</option>
                         {% for m in form.fields.major.queryset %}
                         <option value="{{ m.pk }}" {% if form.major.value|stringformat:"s" == m.pk|stringformat:"s" %}selected{% endif %}>{{ m }}</option>
                         {% endfor %}

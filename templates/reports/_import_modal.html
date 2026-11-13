@@ -1,13 +1,13 @@
 {% load sidebar_icons %}
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
-    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Import Class Record — {{ class_offering }}</h3>
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Import Class Record: {{ class_offering }}</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
         {% sidebar_icon "close" "w-5 h-5" %}
     </button>
 </div>
 <div class="mt-4 space-y-4">
     <p class="text-sm text-gray-600">
-        Upload a file previously exported by this system, or CITCI's class-record template shape — the header
+        Upload a file previously exported by this system, or CITCI's class-record template shape: the header
         row must keep <strong>ID Number</strong> and <strong>Name of Students</strong> labels.
     </p>
     <a href="{% url 'reports:class_record_excel' class_offering.pk %}?blank=1" class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary-700 hover:underline">

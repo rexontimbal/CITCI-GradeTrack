@@ -74,7 +74,7 @@ class UserForm(StyledModelForm):
             cleaned_data["username"] = cleaned_data.get("id_number") or ""
         elif role:
             if not cleaned_data.get("username"):
-                self.add_error("username", "Required — suggest one from the surname.")
+                self.add_error("username", "Required: suggest one from the surname.")
 
         return cleaned_data
 

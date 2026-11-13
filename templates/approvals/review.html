@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load grading_extras %}
-{% block page_title %}Review — {{ sheet.class_offering }}{% endblock %}
+{% block page_title %}Review: {{ sheet.class_offering }}{% endblock %}
 {% block content %}
 <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
     <div>
@@ -9,7 +9,7 @@
         {% else %}
         <a href="{% url 'approvals:index' %}" class="text-sm text-gray-600 hover:underline">&larr; Grade Approvals</a>
         {% endif %}
-        <h2 class="mt-1 text-xl font-bold text-gray-900">{{ sheet.class_offering.subject.code }} — {{ sheet.class_offering.subject.title }}</h2>
+        <h2 class="mt-1 text-xl font-bold text-gray-900">{{ sheet.class_offering.subject.code }} · {{ sheet.class_offering.subject.title }}</h2>
         <p class="mt-1 text-sm text-gray-600">
             {% for section in sheet.class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}
             · {{ sheet.class_offering.instructor.full_name|default:"Unassigned" }}

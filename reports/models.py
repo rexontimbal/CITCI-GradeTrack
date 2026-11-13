@@ -29,20 +29,20 @@ class InstitutionSettings(TimeStampedModel):
     show_unofficial_scores_to_students = models.BooleanField(
         default=True,
         help_text="When off, a student's in-progress (not yet released) subjects show only "
-        '"Grades not yet released" — no running score/grade at all.',
+        '"Grades not yet released", with no running score/grade at all.',
     )
     show_forecasts_to_students = models.BooleanField(
         default=False,
-        help_text="Off by default while active forecast models are trained on synthetic data — "
-        "turn on once a real, masked-historical model is active. When off, students see no "
+        help_text="Off by default while active forecast models are trained on synthetic data. "
+        "Turn on once a real, masked-historical model is active. When off, students see no "
         "forecast card/section at all (never probability or the words \"at risk\" either way).",
     )
 
     inc_completion_window_days = models.PositiveIntegerField(
         default=365,
         help_text="Days after a grade sheet is released that an instructor may still file a "
-        "Complete INC. Past this window, the entry shows \"INC lapsed — contact Registrar\" — no "
-        "automatic grade change.",
+        "Complete INC. Past this window, the entry shows \"INC lapsed. Contact the Registrar.\", "
+        "with no automatic grade change.",
     )
 
     privacy_notice_text = models.TextField(
@@ -66,7 +66,7 @@ class InstitutionSettings(TimeStampedModel):
         max_length=200,
         blank=True,
         default="College Department Registrar",
-        help_text="Who/how to contact about data privacy concerns — shown at the end of the "
+        help_text="Who/how to contact about data privacy concerns. Shown at the end of the "
         "Data Privacy Notice.",
     )
 

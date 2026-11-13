@@ -11,7 +11,7 @@
 
         {% if class_offering %}
         <div class="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-            <div class="flex justify-between"><span class="text-gray-600">Subject</span><span class="font-medium text-gray-900">{{ class_offering.display_code }} — {{ class_offering.display_title }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Subject</span><span class="font-medium text-gray-900">{{ class_offering.display_code }} · {{ class_offering.display_title }}</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Section(s)</span><span class="font-medium text-gray-900">{% for section in class_offering.sections.all %}{{ section }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Instructor</span><span class="font-medium text-gray-900">{{ class_offering.instructor.full_name|default:"Unassigned" }}</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Semester</span><span class="font-medium text-gray-900">{{ class_offering.semester }}</span></div>

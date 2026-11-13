@@ -362,7 +362,7 @@ def can_file_inc_completion(entry):
     window_days = InstitutionSettings.get_solo().inc_completion_window_days
     deadline = entry.sheet.released_at + timedelta(days=window_days) if entry.sheet.released_at else None
     if deadline and timezone.now() > deadline:
-        return False, "INC lapsed — contact Registrar."
+        return False, "INC lapsed. Contact the Registrar."
     return True, ""
 
 

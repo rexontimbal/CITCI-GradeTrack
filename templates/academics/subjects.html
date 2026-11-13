@@ -5,7 +5,7 @@
 {% if is_admin %}{% include "partials/_override_banner.html" %}{% endif %}
 
 {% if no_scope %}
-{% include "partials/_empty_state.html" with icon="book" title="No program in scope" description="You have not been assigned as a Program Head for any program yet — ask Admin to assign you on the Programs or Majors page." %}
+{% include "partials/_empty_state.html" with icon="book" title="No program in scope" description="You have not been assigned as a Program Head for any program yet. Ask Admin to assign you on the Programs or Majors page." %}
 {% else %}
 <div id="subjects-prospectus">
     {% include "academics/_subjects_prospectus.html" %}

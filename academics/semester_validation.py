@@ -44,9 +44,9 @@ def duration_warning(term, start_date, end_date):
     days = (end_date - start_date).days
     if term == Term.SUMMER:
         if days > SUMMER_WARNING_DAYS:
-            return "This summer term is longer than 3 months — double check the dates."
+            return "This summer term is longer than 3 months. Double check the dates."
     elif days > SEMESTER_WARNING_DAYS:
-        return "This semester is longer than 6 months — double check the dates."
+        return "This semester is longer than 6 months. Double check the dates."
     return None
 
 

@@ -5,13 +5,13 @@
 <form hx-post="{% url 'academics:section_promote' section.pk %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
     {% csrf_token %}
     <input type="hidden" name="semester" value="{{ semester.pk }}">
-    <p class="text-sm text-gray-600">Move selected students from {{ section }} ({{ semester }}) into a target section — typically the next year level in a newer academic year.</p>
+    <p class="text-sm text-gray-600">Move selected students from {{ section }} ({{ semester }}) into a target section: typically the next year level in a newer academic year.</p>
     <div>
         <label class="mb-1 block text-sm font-medium text-gray-700">Target section</label>
         <select name="target_section"
                 hx-get="{% url 'academics:section_promote' section.pk %}?semester={{ semester.pk }}" hx-target="#modal-content" hx-swap="innerHTML" hx-include="closest form" hx-trigger="change"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
-            <option value="">— Select —</option>
+            <option value="">Select</option>
             {% for target in target_sections %}
             <option value="{{ target.pk }}" {% if selected_target_section_id == target.pk %}selected{% endif %}>{{ target }} ({{ target.academic_year }})</option>
             {% endfor %}
@@ -21,7 +21,7 @@
     <div>
         <label class="mb-1 block text-sm font-medium text-gray-700">Target semester</label>
         <select name="target_semester" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" required>
-            <option value="">— Select —</option>
+            <option value="">Select</option>
             {% for s in target_semesters %}
             <option value="{{ s.pk }}">{{ s.get_term_display }}</option>
             {% endfor %}

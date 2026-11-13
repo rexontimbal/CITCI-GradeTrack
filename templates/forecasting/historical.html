@@ -18,9 +18,9 @@
 </div>
 
 <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-    Identities are masked (SHA-256) before anything is saved — no names or ID numbers are ever stored here.
+    Identities are masked (SHA-256) before anything is saved: no names or ID numbers are ever stored here.
     Non-exam items in an uploaded sheet with no recorded term are assigned to a grading period by column
-    position (chronological order assumed, split into quarters) — a disclosed limitation, recorded per batch below.
+    position (chronological order assumed, split into quarters): a disclosed limitation, recorded per batch below.
 </div>
 
 {% if batches %}
@@ -42,7 +42,7 @@
                 <td class="px-4 py-3 text-gray-700">{{ batch.created_at|date:"M d, Y H:i" }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ batch.file_count }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ batch.row_count }} {% if batch.skipped_rows_json %}<span class="text-xs text-amber-600">({{ batch.skipped_rows_json|length }} skipped)</span>{% endif %}</td>
-                <td class="px-4 py-3 text-gray-700">{% if batch.row_count %}{% widthratio batch.positive_count batch.row_count 100 %}%{% else %}—{% endif %}</td>
+                <td class="px-4 py-3 text-gray-700">{% if batch.row_count %}{% widthratio batch.positive_count batch.row_count 100 %}%{% else %}N/A{% endif %}</td>
                 <td class="px-4 py-3 text-gray-700">{{ batch.uploaded_by.full_name|default:"System" }}</td>
                 <td class="px-4 py-3 text-right">
                     <form method="post" action="{% url 'forecasting:historical_delete' batch.pk %}" class="inline" onsubmit="return confirm('Delete this batch and its records?');">

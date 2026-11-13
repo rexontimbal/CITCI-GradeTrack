@@ -701,7 +701,7 @@ class ComponentWeightTotalTests(GradingTestBase):
         self.client.force_login(self.instructor)
         response = self.client.post(self._save_url(), self.components_formset_payload(rows))
         self.assertContains(response, "Total is 95%")
-        self.assertContains(response, "add 5%")
+        self.assertContains(response, "Add 5%")
 
     def test_total_above_100_including_locked_is_rejected(self):
         # 40 (locked) + 5+30+15+15 = 105, not 100.
@@ -709,7 +709,7 @@ class ComponentWeightTotalTests(GradingTestBase):
         self.client.force_login(self.instructor)
         response = self.client.post(self._save_url(), self.components_formset_payload(rows))
         self.assertContains(response, "Total is 105%")
-        self.assertContains(response, "reduce by 5%")
+        self.assertContains(response, "Reduce by 5%")
 
     def test_total_exactly_100_including_locked_is_accepted(self):
         rows = self._locked_plus_unlocked_rows([5, 30, 15, 10])  # 40 + 60 = 100

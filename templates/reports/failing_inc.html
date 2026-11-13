@@ -39,14 +39,14 @@
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 font-medium text-gray-900">{{ entry.roster_entry.student.full_name }}</td>
                 <td class="px-4 py-3 text-gray-600">
-                    {{ entry.roster_entry.student.student_profile.program.code|default:"—" }}
-                    / {{ entry.roster_entry.student.student_profile.major.code|default:"—" }}
-                    / {{ entry.roster_entry.student.student_profile.get_year_level_display|default:"—" }}
+                    {{ entry.roster_entry.student.student_profile.program.code|default:"Not set" }}
+                    / {{ entry.roster_entry.student.student_profile.major.code|default:"Not set" }}
+                    / {{ entry.roster_entry.student.student_profile.get_year_level_display|default:"Not set" }}
                 </td>
                 <td class="px-4 py-3 text-gray-700">{{ entry.sheet.class_offering.subject.code }}</td>
                 <td class="px-4 py-3 text-center text-gray-700">{{ entry.final_grade|grade_display }}</td>
                 <td class="px-4 py-3 text-gray-700">{{ entry.get_remarks_display }}</td>
-                <td class="px-4 py-3 text-gray-600">{{ entry.sheet.class_offering.instructor.full_name|default:"—" }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ entry.sheet.class_offering.instructor.full_name|default:"Unassigned" }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No failing/INC grades found.</td></tr>

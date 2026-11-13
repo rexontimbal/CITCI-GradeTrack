@@ -4,8 +4,8 @@
 
 <table class="meta-table">
     <tr>
-        <td class="meta-label">Program</td><td>{{ program.code }} — {{ program.name }}</td>
-        <td class="meta-label">Semester</td><td>{{ semester|default:"—" }}</td>
+        <td class="meta-label">Program</td><td>{{ program.code }} · {{ program.name }}</td>
+        <td class="meta-label">Semester</td><td>{{ semester|default:"Not set" }}</td>
     </tr>
 </table>
 
@@ -25,14 +25,14 @@
     <tbody>
         {% for row in rows %}
         <tr>
-            <td>{{ row.class_offering.subject.code }} — {{ row.class_offering.subject.title }}</td>
+            <td>{{ row.class_offering.subject.code }} · {{ row.class_offering.subject.title }}</td>
             <td class="text-center">{{ row.total_students }}</td>
             <td class="text-center">{{ row.counts.PASSED }}</td>
             <td class="text-center">{{ row.counts.FAILED }}</td>
             <td class="text-center">{{ row.counts.INC }}</td>
             <td class="text-center">{{ row.counts.DROPPED }}</td>
-            <td class="text-center">{% if row.average is not None %}{{ row.average|floatformat:2 }}{% else %}—{% endif %}</td>
-            <td class="text-center">{% if row.pass_rate is not None %}{{ row.pass_rate|floatformat:1 }}%{% else %}—{% endif %}</td>
+            <td class="text-center">{% if row.average is not None %}{{ row.average|floatformat:2 }}{% else %}N/A{% endif %}</td>
+            <td class="text-center">{% if row.pass_rate is not None %}{{ row.pass_rate|floatformat:1 }}%{% else %}N/A{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

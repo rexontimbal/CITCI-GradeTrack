@@ -15,12 +15,23 @@
         {% csrf_token %}
         <input type="hidden" name="program" value="{{ program.pk }}">
         <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
-        <input type="hidden" name="year_level" value="{{ year_level|default:'' }}">
         <input type="hidden" name="term" value="{{ term }}">
 
         {% if form.non_field_errors %}
         <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
         {% endif %}
+
+        <div>
+            <label for="add-subject-year-level" class="mb-1 block text-sm font-medium text-gray-700">Year level</label>
+            <select name="year_level" id="add-subject-year-level"
+                    hx-get="{% url 'academics:subject_add' %}" hx-include="closest form" hx-target="#modal-content" hx-swap="innerHTML" hx-trigger="change"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="" {% if not year_level %}selected{% endif %}>No year level (e.g. TCP)</option>
+                {% for value, label in year_level_choices %}
+                <option value="{{ value }}" {% if year_level == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
 
         <div class="flex gap-3">
             <div class="relative w-3/5">

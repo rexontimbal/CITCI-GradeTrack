@@ -39,6 +39,7 @@ from .forms import (
 )
 from . import services
 from .models import (
+    YEAR_LEVEL_CHOICES,
     AcademicSetupChangeLog,
     AcademicYear,
     ClassJoinRequest,
@@ -1579,6 +1580,7 @@ def _subject_add_context(program, major, year_level, term, form=None):
         "program": program,
         "major": major,
         "year_level": year_level,
+        "year_level_choices": YEAR_LEVEL_CHOICES,
         "term": term,
         "slot_label": services.slot_label(year_level, term),
         "scope_label": services.scope_label(program, major),

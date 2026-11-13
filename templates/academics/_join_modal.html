@@ -1,15 +1,37 @@
+<div x-data="qrScanner('{% url 'academics:join_with_code' code='00000000' %}')"
+     x-init="joinUrlTemplate = joinUrlTemplate.replace('00000000', 'CODE')"
+     x-effect="if (!modalOpen) stop()">
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
     <h3 id="modal-title" class="text-base font-semibold text-gray-900">Join a class</h3>
     <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">&times;</button>
 </div>
-<form hx-post="{% url 'academics:student_join_modal' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-3">
+
+<div class="mt-4 flex gap-1 rounded-lg bg-gray-100 p-1 text-sm font-medium">
+    <button type="button" @click="tab = 'code'; stop()" :class="tab === 'code' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600'" class="flex-1 rounded-md px-3 py-1.5">Enter code</button>
+    <button type="button" @click="tab = 'scan'; start()" :class="tab === 'scan' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600'" class="flex-1 rounded-md px-3 py-1.5">Scan QR</button>
+</div>
+
+<form x-show="tab === 'code'" hx-post="{% url 'academics:student_join_modal' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-3">
     {% csrf_token %}
     <label class="block text-sm font-medium text-gray-700">{{ form.code.label }}</label>
     {{ form.code }}
     {% if form.code.errors %}<p class="text-sm text-red-600">{{ form.code.errors.0 }}</p>{% endif %}
-    <p class="text-xs text-gray-600">Or scan the QR code your instructor shared.</p>
     <div class="flex justify-end gap-2 pt-2">
         <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
         <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">Continue</button>
     </div>
 </form>
+
+<div x-show="tab === 'scan'" x-cloak class="mt-4 space-y-3">
+    <div class="relative overflow-hidden rounded-xl bg-black">
+        <video x-ref="video" class="aspect-square w-full object-cover" playsinline muted></video>
+        <canvas x-ref="canvas" class="hidden"></canvas>
+        <div x-show="!error" class="pointer-events-none absolute inset-8 rounded-lg border-2 border-brand-accent-400"></div>
+    </div>
+    <p class="text-xs text-gray-600" x-show="!error">Point your camera at the QR code your instructor shared.</p>
+    <p class="text-sm text-red-600" x-show="error" x-text="error"></p>
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+    </div>
+</div>
+</div>

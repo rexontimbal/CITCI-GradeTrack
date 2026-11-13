@@ -3904,6 +3904,8 @@ class ClassJoinViewTests(ClassJoinCodeTestBase):
         self.client.force_login(self.student)
         response = self.client.get(reverse("academics:student_my_classes"))
         self.assertContains(response, "Joined")
+        roster_entry = ClassRosterEntry.objects.get(student=self.student, class_offering=self.class_offering)
+        self.assertContains(response, reverse("grading:subject_detail", args=[roster_entry.pk]))
 
         self.client.force_login(other_student)
         response = self.client.get(reverse("academics:student_my_classes"))

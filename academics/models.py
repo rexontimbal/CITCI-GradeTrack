@@ -242,7 +242,7 @@ class CurriculumEntry(TimeStampedModel):
 
     def __str__(self):
         scope = f"{self.program.code}-{self.major.code}" if self.major else self.program.code
-        return f"{self.subject.code} — {scope}"
+        return f"{self.subject.code} · {scope}"
 
 
 class SubjectOffering(TimeStampedModel):
@@ -322,8 +322,8 @@ class StudentProfile(TimeStampedModel):
         max_length=10,
         choices=Status.choices,
         default=Status.ACTIVE,
-        help_text="Set to Completed by the New Academic Year wizard for 4th-years/TCP finishers — "
-        "the account stays loginable (historical grades remain visible), they just drop out of "
+        help_text="Set to Completed by the New Academic Year wizard for 4th-years/TCP finishers. "
+        "The account stays loginable (historical grades remain visible); it just drops out of "
         "'currently enrolled' counts and pickers.",
     )
 
@@ -356,7 +356,7 @@ class SectionMembership(TimeStampedModel):
         ordering = ["-semester__academic_year__start_year", "semester__term"]
 
     def __str__(self):
-        return f"{self.student.full_name} — {self.section} ({self.semester})"
+        return f"{self.student.full_name} · {self.section} ({self.semester})"
 
 
 class ClassOffering(TimeStampedModel):
@@ -402,7 +402,7 @@ class ClassOffering(TimeStampedModel):
         unique=True,
         null=True,
         blank=True,
-        help_text="Student self-join code (e.g. 'K7F3PQM') — students scan/enter this, the "
+        help_text="Student self-join code (e.g. 'K7F3PQM'). Students scan/enter this; the "
         "instructor still approves every request. Unique across all classes, ever (a reset "
         "generates a new one; the old code is never reassigned).",
     )

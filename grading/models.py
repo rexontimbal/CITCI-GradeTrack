@@ -86,7 +86,7 @@ class GradingComponent(TimeStampedModel):
     weight = models.PositiveIntegerField(help_text="Whole-number percent, e.g. 30 for 30%.")
     is_locked = models.BooleanField(
         default=False,
-        help_text="School-fixed weight (e.g. Examination 40%) — instructors can't rename, recategorize, or "
+        help_text="School-fixed weight (e.g. Examination 40%). Instructors can't rename, recategorize, or "
         "reweight a locked component in their class, only the unlocked ones.",
     )
     order = models.PositiveSmallIntegerField(default=0)
@@ -124,7 +124,7 @@ class ClassGradingScheme(TimeStampedModel):
         weight_total = sum(c.weight for c in template.components.all())
         if weight_total != 100:
             raise ValidationError(
-                f"'{template}' components total {weight_total}%, not 100% — fix the template before using it."
+                f"'{template}' components total {weight_total}%, not 100%. Fix the template before using it."
             )
         scheme, _ = cls.objects.update_or_create(
             class_offering=class_offering, defaults={"source_template": template}
@@ -171,7 +171,7 @@ class SchemeComponent(TimeStampedModel):
     category = models.CharField(max_length=12, choices=ComponentCategory.choices, default=ComponentCategory.OTHER)
     weight = models.PositiveIntegerField(help_text="Whole-number percent, e.g. 30 for 30%.")
     is_locked = models.BooleanField(
-        default=False, help_text="School-fixed — this instructor can't rename/recategorize/reweight it."
+        default=False, help_text="School-fixed: this instructor can't rename/recategorize/reweight it."
     )
     order = models.PositiveSmallIntegerField(default=0)
 
@@ -197,7 +197,7 @@ class AssessmentItem(TimeStampedModel):
     term = models.CharField(
         max_length=10,
         choices=AssessmentTerm.choices,
-        help_text="Grading period this item belongs to — also drives forecasting checkpoints later.",
+        help_text="Grading period this item belongs to. Also drives forecasting checkpoints later.",
     )
     date = models.DateField(null=True, blank=True)
     order = models.PositiveSmallIntegerField(default=0)
@@ -236,7 +236,7 @@ class Score(TimeStampedModel):
             raise ValidationError(f"Max is {self.item.max_score}")
 
     def __str__(self):
-        return f"{self.roster_entry.student} – {self.item}: {self.score if self.score is not None else '—'}"
+        return f"{self.roster_entry.student} · {self.item}: {self.score if self.score is not None else 'Not set'}"
 
 
 class SchemeComponentChangeLog(models.Model):

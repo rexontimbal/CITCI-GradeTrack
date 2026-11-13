@@ -70,7 +70,7 @@ class GradeSheet(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.class_offering} — {self.get_period_display()} ({self.get_status_display()})"
+        return f"{self.class_offering} · {self.get_period_display()} ({self.get_status_display()})"
 
     @property
     def is_editable(self):
@@ -119,7 +119,7 @@ class GradeSheetEntry(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.roster_entry.student} — {self.final_grade} ({self.remarks})"
+        return f"{self.roster_entry.student} · {self.final_grade} ({self.remarks})"
 
     @property
     def is_corrected(self):
@@ -189,7 +189,7 @@ class IncCompletion(TimeStampedModel):
     new_remarks = models.CharField(
         max_length=10,
         choices=[(GradeSheetEntry.Remarks.PASSED, "Passed"), (GradeSheetEntry.Remarks.FAILED, "Failed")],
-        help_text="An INC completion always resolves to Passed or Failed — never INC/Dropped again.",
+        help_text="An INC completion always resolves to Passed or Failed. It never resolves back to INC/Dropped.",
     )
     date_complied = models.DateField()
     remarks_text = models.TextField(blank=True, help_text="Instructor's notes filing the completion.")

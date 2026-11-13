@@ -50,7 +50,7 @@ class MlModelVersion(TimeStampedModel):
     feature_list = models.JSONField(help_text="feature names/order + imputation medians used at train time")
 
     is_active = models.BooleanField(default=False)
-    model_file = models.CharField(max_length=255, help_text="joblib path under MEDIA_ROOT/models/ — not committed to git.")
+    model_file = models.CharField(max_length=255, help_text="joblib path under MEDIA_ROOT/models/. Not committed to git.")
 
     class Meta:
         ordering = ["-trained_at"]
@@ -115,7 +115,7 @@ class HistoricalImportBatch(TimeStampedModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Batch #{self.pk} — {self.file_count} file(s), {self.row_count} row(s)"
+        return f"Batch #{self.pk} · {self.file_count} file(s), {self.row_count} row(s)"
 
 
 class HistoricalRecord(models.Model):
@@ -136,7 +136,7 @@ class HistoricalRecord(models.Model):
         indexes = [models.Index(fields=["checkpoint"])]
 
     def __str__(self):
-        return f"{self.subject_code} ({self.semester_label}) @ {self.checkpoint} — label={self.label}"
+        return f"{self.subject_code} ({self.semester_label}) @ {self.checkpoint} · label={self.label}"
 
 
 class InterventionType(models.TextChoices):

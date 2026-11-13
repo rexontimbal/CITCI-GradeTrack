@@ -103,27 +103,41 @@
     </div>
 </div>
 
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <p class="text-xs font-medium text-gray-600">{{ subject_count }} subject{{ subject_count|pluralize }} · {{ total_units }} units</p>
-    {% if offering_ok %}
-    <div class="flex items-center gap-2">
-        <button type="button"
-                @click="modalOpen = true; htmx.ajax('GET', '{% url 'academics:subject_offering_bulk_withdraw' %}?scope=all&program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&year_level={{ year_level_filter }}', {target: '#modal-content', swap: 'innerHTML'})"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">
-            Withdraw all
-        </button>
-        <button type="button"
-                hx-get="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
-                hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            Offer another subject…
-        </button>
-    </div>
-    {% endif %}
-</div>
-
 {{ units_by_entry_id|json_script:"units-by-entry-id" }}
 <div x-data="subjectOffering(JSON.parse(document.getElementById('units-by-entry-id').textContent))" class="relative" style="padding-bottom: 4.5rem;">
+
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-xs font-medium text-gray-600">{{ subject_count }} subject{{ subject_count|pluralize }} · {{ total_units }} units</p>
+    <div class="flex flex-wrap items-center gap-3">
+        {% if offering_ok %}
+        <label class="relative inline-flex cursor-pointer items-center gap-2 select-none">
+            <input type="checkbox" x-model="selectMode" @change="clearAll()" class="peer sr-only">
+            <span class="h-6 w-11 rounded-full bg-gray-300 transition-colors peer-checked:bg-brand-primary-700"></span>
+            <span class="pointer-events-none absolute left-[2px] top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+            <span class="text-xs font-medium text-gray-700">Select</span>
+        </label>
+        <div class="flex items-center gap-2">
+            <button type="button"
+                    @click="modalOpen = true; htmx.ajax('GET', '{% url 'academics:subject_offering_bulk_withdraw' %}?scope=all&program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&year_level={{ year_level_filter }}', {target: '#modal-content', swap: 'innerHTML'})"
+                    class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">
+                Withdraw all
+            </button>
+            <button type="button"
+                    hx-get="{% url 'academics:subject_offering_adhoc' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}"
+                    hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                    class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Offer another subject…
+            </button>
+        </div>
+        {% endif %}
+        <button type="button"
+                hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&term={{ selected_sem_term }}"
+                hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="flex items-center gap-1 rounded-lg bg-brand-accent-600 px-3 py-2 text-xs font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add Subject
+        </button>
+    </div>
+</div>
 <form id="subjects-offer-form" hx-post="{% url 'academics:subject_offering_preview' %}" hx-target="#modal-content" hx-swap="innerHTML" @submit="modalOpen = true">
 {% csrf_token %}
 <input type="hidden" name="program" value="{{ program.pk }}">
@@ -143,8 +157,8 @@
         <div class="flex items-center gap-3">
             {% for table in card.term_tables %}
             {% if table.is_offering_term and table.offerable_ids %}
-            <label class="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                <input type="checkbox"
+            <label x-show="selectMode" x-cloak class="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                <input type="checkbox" class="accent-blue-600"
                        x-effect="$el.checked = allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]); $el.indeterminate = someChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]) && !allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}])"
                        @change="onHeaderToggle([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}], $event.target.checked); $el.closest('.rounded-2xl').querySelectorAll('.offer-checkbox').forEach(cb => cb.checked = $event.target.checked)">
                 Select all {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}subjects{% endif %}
@@ -163,14 +177,8 @@
     </div>
     {% for table in card.term_tables %}
     <div class="mb-4 last:mb-0">
-        <div class="mb-2 flex items-center justify-between">
+        <div class="mb-2">
             <span class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ table.label }}</span>
-            <button type="button"
-               hx-get="{% url 'academics:subject_add' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&year_level={{ card.year_level|default:'' }}&term={{ table.value }}"
-               hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-               class="flex items-center gap-1 text-xs font-medium text-brand-primary-700 hover:underline">
-                {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add
-            </button>
         </div>
         {% if table.rows %}
         <div class="overflow-x-auto rounded-xl border border-gray-200 gold-scroll">
@@ -180,7 +188,7 @@
                         {% if table.is_offering_term and offering_ok %}
                         <th class="px-3 py-2">
                             {% if table.offerable_ids %}
-                            <input type="checkbox"
+                            <input type="checkbox" x-show="selectMode" x-cloak class="accent-blue-600"
                                    x-effect="$el.checked = allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]); $el.indeterminate = someChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}]) && !allChecked([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}])"
                                    @change="onHeaderToggle([{% for id in table.offerable_ids %}'{{ id }}'{% if not forloop.last %},{% endif %}{% endfor %}], $event.target.checked); $el.closest('table').querySelectorAll('.offer-checkbox').forEach(cb => cb.checked = $event.target.checked)"
                                    aria-label="Select all in {{ table.label }}">
@@ -200,8 +208,15 @@
                         {% if table.is_offering_term and offering_ok %}
                         <td class="px-3 py-2">
                             {% if not entry.offering %}
-                            <input type="checkbox" name="entry_ids" value="{{ entry.pk }}" class="offer-checkbox"
+                            <input type="checkbox" x-show="selectMode" x-cloak name="entry_ids" value="{{ entry.pk }}" class="offer-checkbox accent-blue-600"
+                                   title="Select to offer"
+                                   :checked="isSelected('{{ entry.pk }}')"
                                    @change="toggle('{{ entry.pk }}')">
+                            {% else %}
+                            <input type="checkbox" x-show="selectMode" x-cloak class="withdraw-checkbox accent-red-600"
+                                   title="Select to withdraw"
+                                   :checked="isWithdrawSelected('{{ entry.offering.pk }}')"
+                                   @change="toggleWithdraw('{{ entry.offering.pk }}')">
                             {% endif %}
                         </td>
                         {% endif %}
@@ -274,17 +289,24 @@
 </form>
 
 {% if offering_ok %}
-<div x-show="count > 0" x-cloak
-     class="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between border-t border-gray-200 bg-white px-6 py-3 shadow-lg md:left-64">
+<div x-show="count > 0 || withdrawCount > 0" x-cloak
+     class="fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-white px-6 py-3 shadow-lg md:left-64">
     <p class="text-sm font-medium text-gray-700">
-        <span x-text="count"></span> subject<span x-show="count != 1">s</span> selected ·
-        <span x-text="totalUnits"></span> units
+        <span x-show="count > 0"><span x-text="count"></span> to offer (<span x-text="totalUnits"></span> units)</span>
+        <span x-show="count > 0 && withdrawCount > 0"> · </span>
+        <span x-show="withdrawCount > 0" class="text-red-700"><span x-text="withdrawCount"></span> to withdraw</span>
     </p>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
         <button type="button" @click="clearAll()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             Clear
         </button>
-        <button type="submit" form="subjects-offer-form" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+        <button type="button" x-show="withdrawCount > 0" x-cloak
+                @click="modalOpen = true; htmx.ajax('GET', withdrawPreviewUrl('{% url 'academics:subject_offering_bulk_withdraw' %}?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}'), {target: '#modal-content', swap: 'innerHTML'})"
+                class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+            Withdraw selected (<span x-text="withdrawCount"></span>)
+        </button>
+        <button type="submit" form="subjects-offer-form" x-show="count > 0" x-cloak
+                class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
             Offer selected (<span x-text="count"></span>)
         </button>
     </div>

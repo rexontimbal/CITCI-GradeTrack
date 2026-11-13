@@ -1582,6 +1582,7 @@ def _subject_add_context(program, major, year_level, term, form=None):
         "year_level": year_level,
         "year_level_choices": YEAR_LEVEL_CHOICES,
         "term": term,
+        "term_choices": Term.choices,
         "slot_label": services.slot_label(year_level, term),
         "scope_label": services.scope_label(program, major),
         "code_input": code_input,

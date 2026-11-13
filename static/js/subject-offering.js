@@ -1,13 +1,20 @@
-// Bulk-selection state for the Subjects page's "Offer" checkboxes: per-
-// table and per-year-level "select all" headers (indeterminate when only
-// some of their rows are checked), a page-wide "select all", and the
-// sticky bottom bar's running "n subjects selected · x units" total.
-// Already-offered rows have no checkbox at all (withdrawing is bulk-only,
-// via the toolbar's "Withdraw all" / a card's "Withdraw all {Year}"), so
-// every "select all" here only ever touches offerable rows.
+// Bulk-selection state for the Subjects page. Two independent selection
+// sets share one "Select" toggle (selectMode) that shows/hides every
+// checkbox on the page at once -- off by default, so browsing the
+// prospectus never shows a wall of checkboxes:
+//   - `selected` (blue checkboxes, .offer-checkbox): not-yet-offered rows,
+//     feeds "Offer selected" -> subject_offering_preview. Per-table/per-
+//     year-level "select all" headers only ever touch these.
+//   - `withdrawSelected` (red checkboxes, .withdraw-checkbox): already-
+//     offered rows, feeds "Withdraw selected" -> subject_offering_bulk_
+//     withdraw with an explicit offering_ids list (no "select all" for
+//     this one -- "Withdraw all" / "Withdraw all {Year}" already cover the
+//     blanket case; this is for picking a specific few).
 document.addEventListener("alpine:init", () => {
     Alpine.data("subjectOffering", (unitsById) => ({
+        selectMode: false,
         selected: [],
+        withdrawSelected: [],
         unitsById: unitsById || {},
 
         toggle(id) {
@@ -21,6 +28,19 @@ document.addEventListener("alpine:init", () => {
 
         isSelected(id) {
             return this.selected.includes(id);
+        },
+
+        toggleWithdraw(id) {
+            const idx = this.withdrawSelected.indexOf(id);
+            if (idx === -1) {
+                this.withdrawSelected.push(id);
+            } else {
+                this.withdrawSelected.splice(idx, 1);
+            }
+        },
+
+        isWithdrawSelected(id) {
+            return this.withdrawSelected.includes(id);
         },
 
         allChecked(ids) {
@@ -43,6 +63,7 @@ document.addEventListener("alpine:init", () => {
 
         clearAll() {
             this.selected = [];
+            this.withdrawSelected = [];
         },
 
         get count() {
@@ -51,6 +72,17 @@ document.addEventListener("alpine:init", () => {
 
         get totalUnits() {
             return this.selected.reduce((sum, id) => sum + (parseFloat(this.unitsById[id]) || 0), 0);
+        },
+
+        get withdrawCount() {
+            return this.withdrawSelected.length;
+        },
+
+        withdrawPreviewUrl(baseUrlWithQuery) {
+            // baseUrlWithQuery already carries ?program=&major=&ay=&sem_term=
+            // (built server-side, same params "Withdraw all" sends) -- this
+            // just appends the specific offering_ids the user checked.
+            return baseUrlWithQuery + "&" + this.withdrawSelected.map((id) => "offering_ids=" + encodeURIComponent(id)).join("&");
         },
     }));
 });

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load sidebar_icons %}
 {% block page_title %}Roster: {{ class_offering }}{% endblock %}
 {% block content %}
 {% include "partials/_page_header.html" with title=class_offering|stringformat:"s" subtitle=class_offering.semester|stringformat:"s" %}
@@ -37,7 +38,7 @@
 {% endif %}
 
 {% if is_owner %}
-<div class="mb-4 rounded-2xl border border-gray-200 bg-white p-4" x-data="{ copied: false }">
+<div class="mb-4 rounded-2xl border border-gray-200 bg-white p-4" x-data="{ copied: false, qrExpanded: false }">
     <h3 class="mb-3 text-sm font-semibold text-gray-900">Invite Students</h3>
     <div class="flex flex-wrap items-center gap-5">
         <div>
@@ -50,7 +51,29 @@
                 </button>
             </div>
         </div>
-        <img src="{% url 'academics:class_join_qr' class_offering.pk %}" alt="Join QR code" class="h-24 w-24 rounded-lg border border-gray-200 bg-white p-1">
+        <button type="button" @click="qrExpanded = true" title="Click to show full-screen for students to scan"
+                class="rounded-lg border border-gray-200 bg-white p-1 transition hover:border-brand-accent-600 hover:shadow-md">
+            <img src="{% url 'academics:class_join_qr' class_offering.pk %}" alt="Join QR code" class="h-24 w-24">
+        </button>
+        <template x-teleport="body">
+            <div x-show="qrExpanded" x-cloak x-transition
+                 @keydown.escape.window="qrExpanded = false"
+                 class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4">
+                <div class="absolute inset-0" @click="qrExpanded = false"></div>
+                <div class="relative flex w-full max-w-sm flex-col items-center rounded-2xl bg-white p-6 text-center shadow-2xl sm:max-w-md sm:p-10">
+                    <button type="button" @click="qrExpanded = false" aria-label="Close"
+                            class="absolute right-3 top-3 rounded-lg p-2 text-gray-500 hover:bg-gray-100">
+                        {% sidebar_icon "close" "w-5 h-5" %}
+                    </button>
+                    <p class="text-sm font-semibold text-gray-900">{{ class_offering }}</p>
+                    <p class="text-xs text-gray-600">Scan to join this class</p>
+                    <img src="{% url 'academics:class_join_qr' class_offering.pk %}" alt="Join QR code"
+                         class="my-5 h-56 w-56 sm:h-72 sm:w-72">
+                    <p class="text-xs text-gray-600">Or enter code</p>
+                    <span class="mt-1 rounded-lg bg-gray-100 px-4 py-2 text-2xl font-bold tracking-widest text-gray-900">{{ join_code }}</span>
+                </div>
+            </div>
+        </template>
         <div class="flex flex-col gap-2">
             <a href="{% url 'academics:class_join_qr' class_offering.pk %}" download="join-{{ class_offering.join_code }}.svg"
                class="rounded-lg border border-gray-300 px-3 py-1.5 text-center text-xs font-medium text-gray-700 hover:bg-gray-50">

@@ -2,8 +2,8 @@
 steps (new A.Y. + semesters, section structure, student promotion,
 summary). No existing wizard pattern in the codebase to reuse (no
 django-formtools) — views orchestrate the session-stash between steps the
-same way academics/roster_import.py and offerings_import.py do, just with
-more steps. Nothing is written to the database until step 4's commit,
+same way academics/roster_import.py does, just with more steps. Nothing
+is written to the database until step 4's commit,
 which is one transaction."""
 
 from django.db import transaction

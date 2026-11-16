@@ -21,6 +21,8 @@ MENUS = {
                 ("academics:terms", "Academic Years & Semesters", "calendar"),
                 ("academics:programs", "Programs", "folder"),
                 ("academics:majors", "Majors", "folder"),
+                ("academics:rooms", "Rooms", "grid"),
+                ("academics:subject_catalog", "Subject Catalog", "book"),
             ],
         },
         {
@@ -29,8 +31,6 @@ MENUS = {
                 ("academics:sections", "Sections", "grid"),
                 ("academics:subjects", "Subjects", "book"),
                 ("academics:classes", "Classes", "chalkboard"),
-                ("academics:offerings_import", "Import Class Offerings", "upload"),
-                ("academics:class_lists", "Class Lists", "clipboard"),
                 ("academics:teaching_loads", "Teaching Loads", "chart"),
             ],
         },
@@ -71,9 +71,7 @@ MENUS = {
                 ("academics:ph_sections", "Sections", "grid"),
                 ("academics:ph_subjects", "Subjects", "book"),
                 ("academics:program_head_classes", "Classes", "chalkboard"),
-                ("academics:class_lists", "Class Lists", "clipboard"),
                 ("academics:teaching_loads", "Teaching Loads", "chart"),
-                ("academics:offerings_import", "Import Class Offerings", "upload"),
             ],
         },
         {

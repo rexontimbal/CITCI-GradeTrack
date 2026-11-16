@@ -170,11 +170,20 @@
         </div>
         {% if table.rows %}
         <div class="overflow-x-auto rounded-xl border border-gray-200 gold-scroll">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <table class="w-full table-fixed divide-y divide-gray-200 text-sm">
+                <colgroup>
+                    {% if offering_ok %}<col style="width: 2.5rem">{% endif %}
+                    <col style="width: 10%">
+                    <col style="width: 34%">
+                    <col style="width: 7%">
+                    <col style="width: 25%">
+                    <col style="width: 24%">
+                </colgroup>
                 <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                     <tr>
-                        {% if table.is_offering_term and offering_ok %}
+                        {% if offering_ok %}
                         <th class="px-3 py-2">
+                            {% if table.is_offering_term %}
                             {% if table.offerable_ids or table.withdrawable_ids %}
                             {% with offer_ids_js=table.offerable_ids|join:"','" withdraw_ids_js=table.withdrawable_ids|join:"','" %}
                             <input type="checkbox" x-show="selectMode" x-cloak
@@ -182,6 +191,7 @@
                                    @change="onHeaderToggleMixed([{% if offer_ids_js %}'{{ offer_ids_js }}'{% endif %}], [{% if withdraw_ids_js %}'{{ withdraw_ids_js }}'{% endif %}], $event.target.checked)"
                                    aria-label="Select all in {{ table.label }}">
                             {% endwith %}
+                            {% endif %}
                             {% endif %}
                         </th>
                         {% endif %}
@@ -195,8 +205,9 @@
                 <tbody class="divide-y divide-gray-100">
                     {% for entry in table.rows %}
                     <tr class="hover:bg-gray-50">
-                        {% if table.is_offering_term and offering_ok %}
+                        {% if offering_ok %}
                         <td class="px-3 py-2">
+                            {% if table.is_offering_term %}
                             {% if not entry.offering %}
                             <input type="checkbox" x-show="selectMode" x-cloak name="entry_ids" value="{{ entry.pk }}" class="offer-checkbox accent-blue-600"
                                    title="Select to offer"
@@ -208,10 +219,11 @@
                                    :checked="isWithdrawSelected('{{ entry.offering.pk }}')"
                                    @change="toggleWithdraw('{{ entry.offering.pk }}')">
                             {% endif %}
+                            {% endif %}
                         </td>
                         {% endif %}
-                        <td class="px-3 py-2 font-medium text-gray-900">{{ entry.subject.code }}</td>
-                        <td class="px-3 py-2 text-gray-700">{{ entry.subject.title }}</td>
+                        <td class="truncate px-3 py-2 font-medium text-gray-900">{{ entry.subject.code }}</td>
+                        <td class="whitespace-normal break-words px-3 py-2 text-gray-700">{{ entry.subject.title }}</td>
                         <td class="px-3 py-2 text-gray-700">{{ entry.subject.units }}</td>
                         <td class="px-3 py-2">
                             {% with others=shared_labels|dict_get:entry.subject_id %}
@@ -222,9 +234,17 @@
                             {% endif %}
                             {% endwith %}
                             {% if entry.offering %}
+                            {% with covered=entry.offering.covered_sections %}
+                            {% if covered %}
                             <span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                                Offered · {% for section in entry.offering.covered_sections %}{{ section.short_label }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                                Offered · {% for section in covered %}{{ section.short_label }}{% if not forloop.last %}, {% endif %}{% endfor %}
                             </span>
+                            {% else %}
+                            <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700" title="This offering has no active class with a section assigned.">
+                                Offered · No active sections
+                            </span>
+                            {% endif %}
+                            {% endwith %}
                             {% endif %}
                         </td>
                         <td class="px-3 py-2 text-right">
@@ -259,7 +279,7 @@
                     </tr>
                     {% endfor %}
                     <tr class="bg-gray-50 font-medium text-gray-700">
-                        <td class="px-3 py-2" colspan="{% if table.is_offering_term and offering_ok %}3{% else %}2{% endif %}">Total units</td>
+                        <td class="px-3 py-2" colspan="{% if offering_ok %}3{% else %}2{% endif %}">Total units</td>
                         <td class="px-3 py-2">{{ table.total_units }}</td>
                         <td colspan="2"></td>
                     </tr>

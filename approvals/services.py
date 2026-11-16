@@ -153,7 +153,7 @@ def submit_grade_sheet(class_offering, user, period=GradeSheetPeriod.FINAL):
     scheme = ClassGradingScheme.objects.filter(class_offering=class_offering).first()
     if scheme and scheme_total_weight(scheme) != 100:
         raise ValidationError(
-            f"Grading components total {scheme_total_weight(scheme)}%, not 100% — fix this in Grading Components before submitting."
+            f"Grading components total {scheme_total_weight(scheme)}%, not 100%. Fix this in Grading Components before submitting."
         )
 
     results = compute_class(class_offering)

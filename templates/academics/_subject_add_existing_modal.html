@@ -1,0 +1,74 @@
+{% load sidebar_icons %}
+<div>
+    <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+        <h3 id="modal-title" class="text-base font-semibold text-gray-900">Add Subject</h3>
+        <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+            {% sidebar_icon "close" "w-5 h-5" %}
+        </button>
+    </div>
+
+    <p class="mt-3 inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+        {{ scope_label }} · {{ slot_label }}
+    </p>
+    <p class="mt-2 text-xs text-gray-600">
+        Subjects are added to the catalog by the Admin. Pick one below to place it in this semester's curriculum.
+    </p>
+
+    <form method="post" hx-post="{% url 'academics:subject_add' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="program" value="{{ program.pk }}">
+        <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
+
+        {% if form.non_field_errors %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="flex gap-3">
+            <div class="w-3/5">
+                <label for="add-subject-year-level" class="mb-1 block text-sm font-medium text-gray-700">Year level</label>
+                <select name="year_level" id="add-subject-year-level"
+                        hx-get="{% url 'academics:subject_add' %}" hx-include="closest form" hx-target="#modal-content" hx-swap="innerHTML" hx-trigger="change"
+                        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                    <option value="" {% if not year_level %}selected{% endif %}>No year level (e.g. TCP)</option>
+                    {% for value, label in year_level_choices %}
+                    <option value="{{ value }}" {% if year_level == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="w-2/5">
+                <label for="add-subject-term" class="mb-1 block text-sm font-medium text-gray-700">Semester</label>
+                <select name="term" id="add-subject-term"
+                        hx-get="{% url 'academics:subject_add' %}" hx-include="closest form" hx-target="#modal-content" hx-swap="innerHTML" hx-trigger="change"
+                        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                    {% for value, label in term_choices %}
+                    <option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label for="{{ form.subject.id_for_label }}" class="mb-1 block text-sm font-medium text-gray-700">Subject</label>
+            <select name="subject" id="{{ form.subject.id_for_label }}"
+                    class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="">Select a subject…</option>
+                {% for choice in form.subject.field.queryset %}
+                <option value="{{ choice.pk }}" {% if choice.pk in already_subject_ids %}disabled{% endif %}
+                        {% if form.subject.value|stringformat:"s" == choice.pk|stringformat:"s" %}selected{% endif %}>
+                    {{ choice.code }} · {{ choice.title }} ({{ choice.units }} units){% if choice.pk in already_subject_ids %} · already in this curriculum{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            {% for error in form.subject.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Add to curriculum
+            </button>
+        </div>
+    </form>
+</div>

@@ -26,12 +26,29 @@
 </div>
 
 {% if can_manage %}
-<div class="mb-4">
+{% if not is_owner %}
+<div class="mb-4 flex flex-wrap items-center gap-2">
+    {% if not request.user.is_instructor %}
+    {% for section in class_offering.sections.all %}
+    <button hx-post="{% url 'academics:class_list_add_section' class_offering.pk %}" hx-vals='{"section": "{{ section.pk }}"}'
+            hx-swap="none"
+            class="rounded-lg bg-brand-primary-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-primary-800">
+        Add entire {{ section }}
+    </button>
+    {% endfor %}
+    {% endif %}
+    <button hx-get="{% url 'academics:class_list_add_students_form' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+        Add students
+    </button>
+    {% if not request.user.is_instructor %}
     <button hx-get="{% url 'academics:class_list_import_upload' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
             class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
         Import class list
     </button>
+    {% endif %}
 </div>
+{% endif %}
 <script>
     document.body.addEventListener("refreshRoster", () => window.location.reload());
 </script>
@@ -39,7 +56,15 @@
 
 {% if is_owner %}
 <div class="mb-4 rounded-2xl border border-gray-200 bg-white p-4" x-data="{ copied: false, qrExpanded: false }">
-    <h3 class="mb-3 text-sm font-semibold text-gray-900">Invite Students</h3>
+    <div class="mb-3 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-900">Invite Students</h3>
+        {% if can_manage %}
+        <button type="button" hx-get="{% url 'academics:class_list_add_students_form' class_offering.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+                class="flex items-center gap-1 rounded-lg bg-brand-accent-600 px-3 py-2 text-xs font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            {% sidebar_icon "plus" "w-3.5 h-3.5" %} Add students
+        </button>
+        {% endif %}
+    </div>
     <div class="flex flex-wrap items-center gap-5">
         <div>
             <p class="text-xs font-medium uppercase text-gray-600">Join code</p>
@@ -188,6 +213,7 @@
                 <th class="px-4 py-3">Name</th>
                 <th class="px-4 py-3">Section</th>
                 <th class="px-4 py-3">Status</th>
+                {% if can_manage %}<th class="px-4 py-3 text-right">Actions</th>{% endif %}
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -203,13 +229,29 @@
                     <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Dropped</span>
                     {% endif %}
                 </td>
+                {% if can_manage %}
+                <td class="px-4 py-3 text-right">
+                    {% if entry.status == "ACTIVE" %}
+                    <button hx-post="{% url 'academics:class_list_mark_dropped' entry.pk %}" hx-swap="none"
+                            hx-confirm="Mark {{ entry.student.full_name }} as dropped from this class?"
+                            class="text-sm font-medium text-red-600 hover:underline">
+                        Mark as Dropped
+                    </button>
+                    {% else %}
+                    <button hx-post="{% url 'academics:class_list_restore' entry.pk %}" hx-swap="none"
+                            class="text-sm font-medium text-brand-primary-700 hover:underline">
+                        Restore
+                    </button>
+                    {% endif %}
+                </td>
+                {% endif %}
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 {% else %}
-{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="Students will appear here once they're on this class's list." %}
+{% include "partials/_empty_state.html" with icon="users" title="No students yet" description="Add an entire section, add students individually, or import a class list from the Registrar." %}
 {% endif %}
 
 {% if assignment_logs %}

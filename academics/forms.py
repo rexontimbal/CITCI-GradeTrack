@@ -15,6 +15,7 @@ from .models import (
     CurriculumEntry,
     Major,
     Program,
+    Room,
     Section,
     Semester,
     Subject,
@@ -25,6 +26,12 @@ class AcademicYearForm(StyledModelForm):
     class Meta:
         model = AcademicYear
         fields = ["start_year"]
+
+
+class RoomForm(StyledModelForm):
+    class Meta:
+        model = Room
+        fields = ["name", "is_active"]
 
 
 class SemesterForm(StyledModelForm):
@@ -186,6 +193,7 @@ class SubjectAddForm(forms.Form):
         max_length=20,
         widget=forms.TextInput(
             attrs={
+                "class": INPUT_CLASSES,
                 "autocomplete": "off",
                 "hx-get": reverse_lazy("academics:subject_add"),
                 "hx-include": "closest form",
@@ -195,25 +203,15 @@ class SubjectAddForm(forms.Form):
             }
         ),
     )
-    title = forms.CharField(max_length=200, required=False)
+    title = forms.CharField(max_length=200, required=False, widget=forms.TextInput(attrs={"class": INPUT_CLASSES}))
     units = forms.DecimalField(
         max_digits=3,
         decimal_places=1,
         min_value=Decimal("0.5"),
         max_value=Decimal("9.0"),
         required=False,
-        widget=forms.NumberInput(attrs=_UNITS_WIDGET_ATTRS),
+        widget=forms.NumberInput(attrs={**_UNITS_WIDGET_ATTRS, "class": f"{INPUT_CLASSES} no-spinner"}),
     )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # A plain forms.Form (not StyledModelForm) never gets the shared
-        # bordered-input classes automatically -- apply them here, merged
-        # with each field's own attrs (hx-* on code, no-spinner on units)
-        # rather than overwriting them.
-        for field in self.fields.values():
-            existing = field.widget.attrs.get("class", "")
-            field.widget.attrs["class"] = f"{INPUT_CLASSES} {existing}".strip()
 
     def clean(self):
         from .services import find_subject_by_normalized_code
@@ -230,6 +228,16 @@ class SubjectAddForm(forms.Form):
             if cleaned.get("units") is None:
                 self.add_error("units", "Required for a new subject.")
         return cleaned
+
+
+class SubjectAddExistingForm(forms.Form):
+    """Program Head's "Add Subject" modal — confirmed CITCI practice: only
+    Admin enters a subject's code/title/units (same reasoning as Room, to
+    avoid typo'd near-duplicate codes); a Program Head picks one of
+    Admin's existing active subjects from a plain dropdown, never types a
+    code or creates a new Subject row."""
+
+    subject = forms.ModelChoiceField(queryset=Subject.objects.filter(is_active=True).order_by("code"), label="Subject")
 
 
 class SubjectCodeCorrectionForm(forms.Form):
@@ -328,6 +336,7 @@ class ClassOfferingForm(StyledModelForm):
         help_text="Teaching loads are normally assigned by the Program Head. Changing it here is logged "
         "as an admin override.",
     )
+    room = forms.ModelChoiceField(queryset=Room.objects.filter(is_active=True), required=False)
 
     class Meta:
         model = ClassOffering
@@ -371,6 +380,7 @@ class ProgramHeadClassOfferingForm(StyledModelForm):
             queryset=User.objects.filter(role=User.Role.INSTRUCTOR),
         ),
     )
+    room = forms.ModelChoiceField(queryset=Room.objects.filter(is_active=True), required=False)
 
     class Meta:
         model = ClassOffering

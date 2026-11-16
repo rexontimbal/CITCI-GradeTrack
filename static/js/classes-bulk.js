@@ -8,7 +8,7 @@
 document.addEventListener("alpine:init", () => {
     Alpine.data("classBulkSelect", (urlTemplate) => ({
         selected: [],
-        roomValue: "",
+        selectMode: false,
         scheduleValue: "",
         urlTemplate: urlTemplate,
 
@@ -77,10 +77,12 @@ document.addEventListener("alpine:init", () => {
             this._bulkPost("instructor", instructorId, `${label} assigned to ${this.count} class${this.count === 1 ? "" : "es"}.`);
         },
 
-        setRoom() {
-            if (this.count === 0 || !this.roomValue) return;
-            this._bulkPost("room", this.roomValue, `Room updated for ${this.count} class${this.count === 1 ? "" : "es"}.`);
-            this.roomValue = "";
+        setRoom(roomId) {
+            if (this.count === 0) return;
+            const label = roomId
+                ? document.querySelector('option[value="' + roomId + '"]')?.textContent?.trim() || "Room"
+                : "Not set";
+            this._bulkPost("room", roomId, `${label} set for ${this.count} class${this.count === 1 ? "" : "es"}.`);
         },
 
         setSchedule() {

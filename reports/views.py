@@ -113,7 +113,7 @@ def grade_sheet_pdf(request, pk):
         "settings": inst,
         "logo_url": logo_url,
         "generated_at": timezone.now(),
-        "watermark_text": None if is_official else f"UNOFFICIAL — {sheet.get_status_display().upper()}",
+        "watermark_text": None if is_official else f"UNOFFICIAL · {sheet.get_status_display().upper()}",
         "sheet": sheet,
         "class_offering": class_offering,
         "entries": entries,
@@ -229,15 +229,28 @@ def index(request):
     active = Semester.objects.filter(is_active=True).first()
 
     if user.is_instructor:
+        # Same ?semester=<pk> picker the Program Head/Admin branch below
+        # already has, defaulting to the active term -- an instructor's
+        # own classes from a past semester must stay reachable here once
+        # a new school year starts, not just disappear.
+        semester_id = request.GET.get("semester")
+        selected_semester = Semester.objects.filter(pk=semester_id).first() if semester_id else active
+        semesters = Semester.objects.select_related("academic_year").all()
         classes = (
-            ClassOffering.objects.filter(instructor=user, semester=active).select_related("subject")
-            if active
+            ClassOffering.objects.filter(instructor=user, semester=selected_semester).select_related("subject")
+            if selected_semester
             else ClassOffering.objects.none()
         )
         return render(
             request,
             "reports/index_instructor.html",
-            {"page_title": "Reports", "classes": classes, "active_semester_set": bool(active)},
+            {
+                "page_title": "Reports",
+                "classes": classes,
+                "active_semester_set": bool(active),
+                "semesters": semesters,
+                "selected_semester": selected_semester,
+            },
         )
 
     # Program Head / Admin

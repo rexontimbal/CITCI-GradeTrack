@@ -21,6 +21,7 @@ from .models import (
     CurriculumEntry,
     Major,
     Program,
+    Room,
     Section,
     SectionMembership,
     Semester,
@@ -328,8 +329,8 @@ class ClassListTests(TestCase):
             reverse("academics:class_list_add_section", args=[self.class_offering.pk]),
             {"section": self.section.pk},
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("2 added, 1 already on the list", response.content.decode())
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("2 added, 1 already on the list", response.headers.get("HX-Trigger", ""))
 
         listed_ids = set(
             ClassRosterEntry.objects.filter(class_offering=self.class_offering).values_list("student_id", flat=True)
@@ -779,15 +780,16 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.assertIn("PEd 205", toast["message"])
 
     def test_updates_room_and_rerenders_row(self):
+        room = Room.objects.create(name="Rm 301")
         self.client.force_login(self.head_a)
         response = self.client.post(
             reverse("academics:class_update_field", args=[self.class_offering.pk]),
-            {"field": "room", "value": "Rm 301"},
+            {"field": "room", "value": room.pk},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Rm 301")
+        self.assertInHTML(f'<option value="{room.pk}" selected>Rm 301</option>', response.content.decode())
         self.class_offering.refresh_from_db()
-        self.assertEqual(self.class_offering.room, "Rm 301")
+        self.assertEqual(self.class_offering.room_id, room.pk)
         toast = json.loads(response.headers["HX-Trigger"])["toast"]
         self.assertEqual(toast["level"], "success")
 
@@ -833,10 +835,11 @@ class ClassInlineFieldUpdateTests(TeachingAssignmentTestBase):
         self.assertIn("submitted", toast["message"])
 
     def test_silent_bulk_mode_suppresses_success_toast_but_not_error_toast(self):
+        room = Room.objects.create(name="Rm 301")
         self.client.force_login(self.head_a)
         response = self.client.post(
             reverse("academics:class_update_field", args=[self.class_offering.pk]),
-            {"field": "room", "value": "Rm 301", "silent": "1"},
+            {"field": "room", "value": room.pk, "silent": "1"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("HX-Trigger", response.headers)
@@ -980,149 +983,6 @@ class TeachingAssignmentAuditLogTests(TeachingAssignmentTestBase):
         self.assertFalse(rows[0]["details"]["is_admin_override"])
 
 
-class OfferingsImportTests(TestCase):
-    """Admin: Import Class Offerings — xlsx preview/confirm. Never
-    auto-creates or auto-merges an instructor."""
-
-    def setUp(self):
-        self.ay = AcademicYear.objects.create(start_year=2026)
-        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
-        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
-        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
-        self.section = Section.objects.create(
-            program=self.program, major=self.major, academic_year=self.ay, year_level=1, name=""
-        )
-        self.instructor = make_user(User.Role.INSTRUCTOR, "garibay", first_name="Juan", last_name="Garibay")
-        self.admin = make_user(User.Role.ADMIN, "import_admin")
-
-    def _index(self):
-        return {
-            "semester": 0, "program": 1, "major": 2, "year level": 3, "course code": 4,
-            "description": 5, "units": 6, "room": 7, "schedule": 8, "instructor": 9,
-        }
-
-    def test_preview_classifies_new_subject_and_matches_known_instructor(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [
-            ("FIRST", "BSED", "ENG", "1", "ENG101", "Intro to Lit", "3", "Room 1", "MWF 8-9AM", "Juan Garibay"),
-        ]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(preview["new_subject_count"], 1)
-        self.assertEqual(preview["new_class_count"], 1)
-        self.assertEqual(preview["invalid_count"], 0)
-        self.assertEqual(preview["unknown_instructor_names"], [])
-        self.assertEqual(preview["classes"][0]["matched_instructor_id"], self.instructor.pk)
-
-    def test_preview_never_matches_or_creates_an_unknown_instructor(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [
-            ("FIRST", "BSED", "ENG", "1", "ENG102", "World Lit", "3", "Room 1", "MWF 9-10AM", "Someone Unknown"),
-        ]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(preview["unknown_instructor_names"], ["Someone Unknown"])
-        self.assertIsNone(preview["classes"][0]["matched_instructor_id"])
-        self.assertEqual(User.objects.filter(role=User.Role.INSTRUCTOR).count(), 1)  # unchanged
-
-    def test_preview_flags_unknown_program_and_missing_section_as_invalid(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [
-            ("FIRST", "XXXX", "", "", "ENG103", "Bad Program", "3", "", "", ""),
-            ("FIRST", "BSED", "ENG", "4", "ENG104", "No Section For Year 4", "3", "", "", ""),
-        ]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(preview["invalid_count"], 2)
-        self.assertEqual(preview["classes"], [])
-
-    def test_preview_detects_shared_class_across_sections(self):
-        from .offerings_import import build_offerings_preview
-
-        major2 = Major.objects.create(program=self.program, code="SS", name="Social Studies")
-        Section.objects.create(program=self.program, major=major2, academic_year=self.ay, year_level=1, name="")
-        rows = [
-            ("FIRST", "BSED", "ENG", "1", "GE2", "Purposive Comm", "3", "Rm1", "5-8PM Fri", "Juan Garibay"),
-            ("FIRST", "BSED", "SS", "1", "GE2", "Purposive Comm", "3", "Rm1", "5-8PM Fri", "Juan Garibay"),
-        ]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(preview["new_class_count"], 1)
-        self.assertEqual(preview["shared_class_count"], 1)
-        self.assertEqual(len(preview["classes"][0]["section_ids"]), 2)
-
-    def test_preview_makes_zero_writes(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [("FIRST", "BSED", "ENG", "1", "ENG105", "New Subject", "3", "", "", "")]
-        before_subjects = Subject.objects.count()
-        before_classes = ClassOffering.objects.count()
-        build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(Subject.objects.count(), before_subjects)
-        self.assertEqual(ClassOffering.objects.count(), before_classes)
-
-    def test_commit_creates_subject_and_class_with_unassigned_instructor(self):
-        from .offerings_import import build_offerings_preview, commit_offerings_import
-
-        rows = [("FIRST", "BSED", "ENG", "1", "ENG106", "Shakespeare", "3", "Rm2", "", "Unknown Person")]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        counts = commit_offerings_import(preview["classes"], self.semester)
-
-        self.assertEqual(counts["subjects_created"], 1)
-        self.assertEqual(counts["classes_created"], 1)
-        self.assertEqual(counts["unassigned_instructor_classes"], 1)
-        new_class = ClassOffering.objects.get(subject__code="ENG106")
-        self.assertIsNone(new_class.instructor)
-        self.assertIn(self.section, new_class.sections.all())
-
-    def test_non_admin_gets_403_on_every_new_url(self):
-        instructor = make_user(User.Role.INSTRUCTOR, "not_admin_offerings")
-        self.client.force_login(instructor)
-        for url_name in (
-            "academics:offerings_import",
-            "academics:offerings_import_template",
-            "academics:offerings_copy_previous",
-        ):
-            response = self.client.get(reverse(url_name))
-            self.assertEqual(response.status_code, 403, url_name)
-
-
-class OfferingsImportAtomicityTests(TransactionTestCase):
-    """Uses TransactionTestCase (real commits, not TestCase's savepoints) —
-    under TestCase's nested-savepoint setup, Postgres defers this FK check
-    past the inner transaction.atomic() block's own exit, which would make
-    this test assert something that didn't actually happen yet."""
-
-    def setUp(self):
-        self.ay = AcademicYear.objects.create(start_year=2026)
-        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
-        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
-        self.section = Section.objects.create(program=self.program, academic_year=self.ay, year_level=1, name="")
-
-    def test_commit_is_one_atomic_transaction(self):
-        from django.db import IntegrityError
-
-        from .offerings_import import commit_offerings_import
-
-        # A class dict with a bogus instructor id forces an IntegrityError
-        # mid-loop; a prior valid row in the same call must not be left
-        # committed.
-        classes = [
-            {
-                "code": "ENG107", "description": "Valid Row", "units": "3", "room": "", "schedule": "",
-                "instructor_name": "", "program_ids": [self.program.id], "section_ids": [self.section.id],
-                "matched_instructor_id": None,
-            },
-            {
-                "code": "ENG108", "description": "Bad Row", "units": "3", "room": "", "schedule": "",
-                "instructor_name": "", "program_ids": [self.program.id], "section_ids": [self.section.id],
-                "matched_instructor_id": 999999,
-            },
-        ]
-        with self.assertRaises(IntegrityError):
-            commit_offerings_import(classes, self.semester)
-        self.assertFalse(Subject.objects.filter(code="ENG107").exists())
-
-
 class CopyClassesPreviousSemesterTests(TestCase):
     def setUp(self):
         self.ay_old = AcademicYear.objects.create(start_year=2025)
@@ -1136,8 +996,9 @@ class CopyClassesPreviousSemesterTests(TestCase):
 
         self.subject = Subject.objects.create(code="PEd207", title="Assessment", units=Decimal("3.0"))
         self.instructor = make_user(User.Role.INSTRUCTOR, "copy_instructor")
+        self.room = Room.objects.create(name="Rm1")
         self.old_class = ClassOffering.objects.create(
-            subject=self.subject, semester=self.old_semester, instructor=self.instructor, room="Rm1"
+            subject=self.subject, semester=self.old_semester, instructor=self.instructor, room=self.room
         )
         self.old_class.sections.set([self.old_section])
 
@@ -1745,36 +1606,55 @@ class ProgramHeadSubjectScopeTests(TeachingAssignmentTestBase):
     program_b and head_a/head_b come from TeachingAssignmentTestBase (no
     majors — program-level scope only)."""
 
-    def test_can_create_a_subject_tagged_to_own_scope(self):
+    def test_can_add_an_existing_subject_to_own_scope(self):
+        """Confirmed CITCI practice: only Admin enters a subject's code/
+        title/units (see SubjectAddExistingForm) — a Program Head picks
+        one of Admin's existing active subjects from a plain dropdown."""
+        subject = Subject.objects.create(code="ENG101", title="Intro to Lit", units=Decimal("3.0"))
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST",
-            {"code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
+            {"subject": subject.pk},
         )
         self.assertEqual(response.status_code, 204, response.content)
-        subject = Subject.objects.get(code="ENG101")
         self.assertTrue(
             CurriculumEntry.objects.filter(subject=subject, program=self.program_b, year_level=1, term="FIRST").exists()
         )
 
+    def test_cannot_create_a_new_subject_even_via_tampered_post(self):
+        """A Program Head's Add Subject form only ever validates against
+        existing active Subject pks — posting code/title/units (the
+        Admin-only typeahead's field names) must never create a new
+        Subject row, even as a deliberately crafted request."""
+        before = Subject.objects.count()
+        self.client.force_login(self.head_b)
+        response = self.client.post(
+            reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST",
+            {"code": "HACKED101", "title": "Hacked Subject", "units": "3.0", "subject": "999999"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Subject.objects.count(), before)
+        self.assertFalse(Subject.objects.filter(code="HACKED101").exists())
+
     def test_cannot_add_a_subject_outside_scope(self):
+        subject = Subject.objects.create(code="ENG101", title="Intro to Lit", units=Decimal("3.0"))
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_a.pk}&year_level=1&term=FIRST",
-            {"code": "ENG101", "title": "Intro to Lit", "units": "3.0"},
+            {"subject": subject.pk},
         )
         self.assertEqual(response.status_code, 403)
 
     def test_any_active_subject_usable_via_existing_subject_mode(self):
         # Confirms the shared-catalog read is unrestricted — any active
         # subject (even one placed only under program_a) can be attached
-        # into program_b's curriculum via "use an existing subject".
+        # into program_b's curriculum via the dropdown.
         subject = Subject.objects.create(code="SHARED1", title="Shared", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_a, year_level=1, term="FIRST", subject=subject)
         self.client.force_login(self.head_b)
         response = self.client.post(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST",
-            {"code": subject.code},
+            {"subject": subject.pk},
         )
         self.assertEqual(response.status_code, 204, response.content)
         self.assertTrue(CurriculumEntry.objects.filter(subject=subject, program=self.program_b).exists())
@@ -2012,9 +1892,12 @@ class ProgramHeadClassListsScopeTests(TeachingAssignmentTestBase):
         self.entry = ClassRosterEntry.objects.create(student=self.student, class_offering=self.class_offering)
 
     def test_head_can_view_class_lists_for_own_class(self):
+        """academics:class_lists is now a thin redirect to the class's own
+        Class List page (class_roster) -- the standalone picker page was
+        retired once every Classes row linked straight to its roster."""
         self.client.force_login(self.head_a)
         response = self.client.get(reverse("academics:class_lists") + f"?class={self.class_offering.pk}")
-        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(response, reverse("academics:class_roster", args=[self.class_offering.pk]))
 
     def test_other_head_gets_404_picking_class_outside_scope(self):
         self.client.force_login(self.head_b)
@@ -2037,7 +1920,8 @@ class ProgramHeadClassListsScopeTests(TeachingAssignmentTestBase):
     def test_own_head_can_mark_dropped(self):
         self.client.force_login(self.head_a)
         response = self.client.post(reverse("academics:class_list_mark_dropped", args=[self.entry.pk]))
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("refreshRoster", response.headers.get("HX-Trigger", ""))
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.status, ClassRosterEntry.Status.DROPPED)
 
@@ -2048,73 +1932,6 @@ class ProgramHeadClassListsScopeTests(TeachingAssignmentTestBase):
         response = self.client.get(reverse("academics:class_search"))
         self.assertContains(response, str(self.class_offering))
         self.assertNotContains(response, str(other_class))
-
-
-class ProgramHeadImportOfferingsScopeTests(TestCase):
-    """Import Class Offerings — rows outside a Program Head's scope are
-    rejected in preview with a reason; admin stays unrestricted."""
-
-    def setUp(self):
-        self.ay = AcademicYear.objects.create(start_year=2026)
-        self.semester = Semester.objects.create(academic_year=self.ay, term=Term.FIRST, is_active=True)
-        self.program = Program.objects.create(code="BSED", name="BS Secondary Education")
-        self.major = Major.objects.create(program=self.program, code="ENG", name="English")
-        Section.objects.create(program=self.program, major=self.major, academic_year=self.ay, year_level=1, name="")
-        self.other_program = Program.objects.create(code="BSIT", name="BS IT")
-        Section.objects.create(program=self.other_program, academic_year=self.ay, year_level=1, name="")
-
-        self.head = make_user(User.Role.PROGRAM_HEAD, "ph_import_head")
-        self.major.program_head = self.head
-        self.major.save()
-
-    def _index(self):
-        return {
-            "semester": 0, "program": 1, "major": 2, "year level": 3, "course code": 4,
-            "description": 5, "units": 6, "room": 7, "schedule": 8, "instructor": 9,
-        }
-
-    def test_row_outside_scope_is_rejected_with_reason(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [("FIRST", "BSIT", "", "1", "IT101", "Programming 1", "3", "", "", "")]
-        preview = build_offerings_preview(self._index(), rows, self.semester, user=self.head)
-        self.assertEqual(preview["invalid_count"], 1)
-        self.assertIn("outside your scope", preview["rows"][0]["reason"])
-
-    def test_row_in_scope_is_accepted(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [("FIRST", "BSED", "ENG", "1", "ENG201", "Lit 201", "3", "", "", "")]
-        preview = build_offerings_preview(self._index(), rows, self.semester, user=self.head)
-        self.assertEqual(preview["invalid_count"], 0)
-        self.assertEqual(preview["new_class_count"], 1)
-
-    def test_admin_unrestricted_by_default(self):
-        from .offerings_import import build_offerings_preview
-
-        rows = [("FIRST", "BSIT", "", "1", "IT102", "Programming 2", "3", "", "", "")]
-        preview = build_offerings_preview(self._index(), rows, self.semester)
-        self.assertEqual(preview["invalid_count"], 0)
-
-    def test_commit_rejects_out_of_scope_rows_defensively(self):
-        from .offerings_import import commit_offerings_import
-
-        other_section = Section.objects.get(program=self.other_program)
-        classes = [
-            {
-                "code": "IT103", "description": "Programming 3", "units": "3", "room": "", "schedule": "",
-                "instructor_name": "", "program_ids": [self.other_program.id], "section_ids": [other_section.id],
-                "matched_instructor_id": None,
-            },
-        ]
-        with self.assertRaises(PermissionDenied):
-            commit_offerings_import(classes, self.semester, user=self.head)
-        self.assertFalse(Subject.objects.filter(code="IT103").exists())
-
-    def test_non_admin_can_reach_import_page(self):
-        self.client.force_login(self.head)
-        response = self.client.get(reverse("academics:offerings_import"))
-        self.assertEqual(response.status_code, 200)
 
 
 class AdminOverrideAuditTests(TeachingAssignmentTestBase):
@@ -2486,10 +2303,12 @@ class SubjectsFilterTests(TeachingAssignmentTestBase):
 
 
 class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
-    """Add Subject modal: single form, server-side duplicate blocking
-    (a subject can only sit once per program/major, period — not once
-    per year/term slot), case/spacing-insensitive code matching, and the
-    search dropdown's ordering/tagging."""
+    """Add Subject modal's Admin-only typeahead flow (SubjectAddForm):
+    single form, server-side duplicate blocking (a subject can only sit
+    once per program/major, period — not once per year/term slot),
+    case/spacing-insensitive code matching, and the search dropdown's
+    ordering/tagging. A Program Head gets a different, dropdown-only form
+    (SubjectAddExistingForm) — see ProgramHeadSubjectScopeTests instead."""
 
     def _add(self, user, program, year_level, term, **data):
         self.client.force_login(user)
@@ -2501,21 +2320,21 @@ class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
     def test_duplicate_in_exact_same_slot_blocked(self):
         subject = Subject.objects.create(code="DUP1", title="X", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
-        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="DUP1")
+        response = self._add(self.admin, self.program_b, 1, "FIRST", code="DUP1")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "already in 1st Year")
 
     def test_duplicate_elsewhere_in_same_program_blocked(self):
         subject = Subject.objects.create(code="DUP2", title="X", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
-        response = self._add(self.head_b, self.program_b, 2, "SECOND", code="DUP2")
+        response = self._add(self.admin, self.program_b, 2, "SECOND", code="DUP2")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Remove it there first")
         self.assertEqual(CurriculumEntry.objects.filter(subject=subject).count(), 1)
 
     def test_case_and_spacing_insensitive_code_match_reuses_existing_subject(self):
         Subject.objects.create(code="EL 100", title="Original Title", units=Decimal("3.0"))
-        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="el100", title="Different", units="5.0")
+        response = self._add(self.admin, self.program_b, 1, "FIRST", code="el100", title="Different", units="5.0")
         self.assertEqual(response.status_code, 204, response.content)
         self.assertEqual(Subject.objects.filter(code__iexact="EL 100").count(), 1)
         subject = Subject.objects.get(code="EL 100")
@@ -2523,13 +2342,13 @@ class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
         self.assertEqual(subject.units, Decimal("3.0"))
 
     def test_new_subject_created_when_no_match(self):
-        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="BRANDNEW1", title="Brand New", units="4.0")
+        response = self._add(self.admin, self.program_b, 1, "FIRST", code="BRANDNEW1", title="Brand New", units="4.0")
         self.assertEqual(response.status_code, 204, response.content)
         subject = Subject.objects.get(code="BRANDNEW1")
         self.assertEqual(subject.title, "Brand New")
 
     def test_new_subject_without_title_units_is_rejected(self):
-        response = self._add(self.head_b, self.program_b, 1, "FIRST", code="BRANDNEW2")
+        response = self._add(self.admin, self.program_b, 1, "FIRST", code="BRANDNEW2")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Required for a new subject")
         self.assertFalse(Subject.objects.filter(code="BRANDNEW2").exists())
@@ -2537,7 +2356,7 @@ class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
     def test_search_results_tag_already_added_subject_as_disabled(self):
         subject = Subject.objects.create(code="TAGGED1", title="X", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_b, year_level=1, term="FIRST", subject=subject)
-        self.client.force_login(self.head_b)
+        self.client.force_login(self.admin)
         response = self.client.get(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=2&term=FIRST&code=TAGGED"
         )
@@ -2548,7 +2367,7 @@ class AddSubjectDuplicateCheckTests(TeachingAssignmentTestBase):
         other_scope = Subject.objects.create(code="ORDERA2", title="Other scope", units=Decimal("3.0"))
         CurriculumEntry.objects.create(program=self.program_b, year_level=2, term="FIRST", subject=same_scope)
         CurriculumEntry.objects.create(program=self.program_a, year_level=1, term="FIRST", subject=other_scope)
-        self.client.force_login(self.head_b)
+        self.client.force_login(self.admin)
         response = self.client.get(
             reverse("academics:subject_add") + f"?program={self.program_b.pk}&year_level=1&term=FIRST&code=ORDERA"
         )
@@ -2818,15 +2637,34 @@ class WithdrawOfferingTests(SubjectOfferingTestBase):
         commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         return SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
 
-    def test_withdraw_succeeds_when_no_scores_or_submitted_sheet(self):
+    def test_withdraw_succeeds_when_no_scores_submitted_sheet_or_roster(self):
         from .services import withdraw_offering
 
         offering = self._offer_eng()
+        # _offer_eng() auto-fills the roster from the section's active
+        # students -- clear it to test the genuinely-empty-roster case;
+        # withdrawing WITH students still on it is covered separately
+        # below (and must be blocked, even with zero scores encoded).
+        ClassRosterEntry.objects.filter(class_offering__offering=offering).delete()
         ok, reason = withdraw_offering(offering, self.admin)
         self.assertTrue(ok)
         self.assertIsNone(reason)
         self.assertEqual(SubjectOffering.objects.count(), 0)
         self.assertEqual(ClassOffering.objects.count(), 0)
+
+    def test_withdraw_blocked_when_students_already_on_roster(self):
+        """A class a student has already joined must never be silently
+        torn down just because nothing's been graded yet."""
+        from .services import withdraw_offering
+
+        offering = self._offer_eng()
+        self.assertTrue(ClassRosterEntry.objects.filter(class_offering__offering=offering).exists())
+
+        ok, reason = withdraw_offering(offering, self.admin)
+        self.assertFalse(ok)
+        self.assertIn("roster", reason)
+        self.assertEqual(SubjectOffering.objects.count(), 1)
+        self.assertGreater(ClassRosterEntry.objects.filter(class_offering__offering=offering).count(), 0)
 
     def test_withdraw_blocked_when_scores_exist(self):
         from grading.models import AssessmentItem, AssessmentTerm, ClassGradingScheme, Score
@@ -2982,6 +2820,10 @@ class SubjectOfferingViewTests(SubjectOfferingTestBase):
         preview = preview_subject_offerings([self.entry_eng.pk], self.semester)
         commit_subject_offerings(preview["plan_rows"], self.semester, self.admin)
         offering = SubjectOffering.objects.get(program=self.program, major=self.major_eng, subject=self.ge_subject)
+        # The auto-filled roster is this test's concern elsewhere
+        # (WithdrawOfferingTests) -- clear it to exercise the view
+        # mechanics (GET confirm, POST deletes + redirects) on their own.
+        ClassRosterEntry.objects.filter(class_offering__offering=offering).delete()
 
         self.client.force_login(self.admin)
         get_response = self.client.get(reverse("academics:subject_offering_withdraw", args=[offering.pk]))
@@ -3511,6 +3353,13 @@ class OfferingMatrixAndManageSectionsTests(TestCase):
         )
         self.assertEqual(add_response.status_code, 204)
         self.assertEqual(ClassOffering.objects.filter(offering=offering).count(), 2)
+
+        # A's class has a roster entry (section_a's auto-filled student) --
+        # withdrawing a section whose class already has a joined student
+        # must be blocked (see WithdrawOfferingTests), so clear it here to
+        # exercise this test's actual concern: the add/withdraw diffing
+        # mechanic itself, not roster protection.
+        ClassOffering.objects.get(offering=offering, sections=self.section_a).roster_entries.all().delete()
 
         # Re-open and untick A -- withdraws just that section's class.
         self.client.get(reverse("academics:subject_offering_manage", args=[offering.pk]))

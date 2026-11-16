@@ -1,9 +1,24 @@
 {% extends "base.html" %}
 {% block page_title %}My Classes{% endblock %}
 {% block content %}
-{% include "partials/_page_subtitle.html" with subtitle="Your classes for the active semester." %}
+{% include "partials/_page_subtitle.html" with subtitle="Your classes, by academic year and semester." %}
 
-{% if not active_semester_set %}
+{% if academic_years %}
+<form method="get" class="mb-5 flex flex-wrap items-center gap-2 text-sm">
+    <select name="ay" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Academic Year">
+        {% for ay in academic_years %}
+        <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+        {% endfor %}
+    </select>
+    <select name="sem_term" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Semester">
+        {% for value, label in semester_term_choices %}
+        <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endif %}
+
+{% if not selected_semester %}
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
 {% elif classes %}
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -34,6 +49,6 @@
     {% endfor %}
 </div>
 {% else %}
-{% include "partials/_empty_state.html" with icon="chalkboard" title="No classes assigned" description="You have no classes for the active semester yet." %}
+{% include "partials/_empty_state.html" with icon="chalkboard" title="No classes assigned" description="You have no classes in this semester." %}
 {% endif %}
 {% endblock %}

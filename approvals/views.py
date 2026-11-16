@@ -5,7 +5,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
+from academics.models import AcademicYear, ClassOffering, ClassRosterEntry, Program, Semester, Term
 from accounts.decorators import role_required
 from accounts.models import User
 from core.htmx import is_htmx
@@ -44,6 +44,30 @@ def _program_head_owns(user, class_offering):
     from academics.scoping import sections_in_scope
 
     return class_offering.sections.filter(pk__in=sections_in_scope(user)).exists()
+
+
+def _resolve_semester_from_request(request):
+    """Academic Year + Semester filter, same ?ay=<academic_year_id>&
+    sem_term=<term> convention as the Subjects/Classes/At-Risk pages --
+    defaults to the active semester so an instructor's past-term sheets
+    stay reachable once a new school year starts."""
+    ay_id = request.GET.get("ay")
+    sem_term = request.GET.get("sem_term")
+    if ay_id and sem_term:
+        semester = Semester.objects.filter(academic_year_id=ay_id, term=sem_term).select_related("academic_year").first()
+        if semester:
+            return semester
+    return Semester.objects.filter(is_active=True).select_related("academic_year").first()
+
+
+def _semester_filter_context(selected_semester):
+    return {
+        "academic_years": AcademicYear.objects.order_by("-start_year"),
+        "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+        "selected_sem_term": selected_semester.term if selected_semester else None,
+        "semester_term_choices": Term.choices,
+        "selected_semester": selected_semester,
+    }
 
 
 def _get_sheet_for_reviewer(request, pk):
@@ -151,12 +175,12 @@ def submit(request, pk):
 
 @role_required(INSTRUCTOR)
 def submitted_sheets(request):
-    active = Semester.objects.filter(is_active=True).first()
+    selected_semester = _resolve_semester_from_request(request)
     sheets = (
-        GradeSheet.objects.filter(class_offering__instructor=request.user, class_offering__semester=active)
+        GradeSheet.objects.filter(class_offering__instructor=request.user, class_offering__semester=selected_semester)
         .select_related("class_offering__subject")
         .order_by("-created_at")
-        if active
+        if selected_semester
         else GradeSheet.objects.none()
     )
     status_filter = request.GET.get("status")
@@ -171,7 +195,8 @@ def submitted_sheets(request):
         "sheets": page,
         "status_filter": status_filter or "",
         "statuses": GradeSheetStatus.choices,
-        "active_semester_set": bool(active),
+        "active_semester_set": bool(Semester.objects.filter(is_active=True).exists()),
+        **_semester_filter_context(selected_semester),
     }
     if is_htmx(request):
         return render(request, "grading/_submitted_table.html", context)
@@ -188,14 +213,16 @@ def index(request):
     from academics.scoping import classes_in_scope, programs_in_scope
 
     status_filter = request.GET.get("status", GradeSheetStatus.SUBMITTED)
-    base_qs = GradeSheet.objects.filter(class_offering__in=classes_in_scope(request.user)).distinct()
+    selected_semester = _resolve_semester_from_request(request)
+    base_qs = GradeSheet.objects.filter(
+        class_offering__in=classes_in_scope(request.user, semester=selected_semester)
+    ).distinct()
 
     counts = {status: base_qs.filter(status=status).count() for status, _ in GradeSheetStatus.choices}
     counts["INC_COMPLETIONS"] = pending_inc_completions_for_program_head(request.user).count()
 
-    active = Semester.objects.filter(is_active=True).first()
     late_counts = (
-        late_or_unsubmitted_counts(active, programs_in_scope(request.user)) if active else None
+        late_or_unsubmitted_counts(selected_semester, programs_in_scope(request.user)) if selected_semester else None
     )
 
     context = {
@@ -205,6 +232,7 @@ def index(request):
         "statuses": GradeSheetStatus.choices,
         "late_counts": late_counts,
         "late_only": request.GET.get("late") == "1",
+        **_semester_filter_context(selected_semester),
     }
 
     if status_filter == "INC_COMPLETIONS":
@@ -249,7 +277,7 @@ def review(request, pk):
         distribution[str(min(5, max(1, int(grade))))] += 1
 
     context = {
-        "page_title": f"Review — {sheet.class_offering}",
+        "page_title": f"Review: {sheet.class_offering}",
         "sheet": sheet,
         "entries": entries,
         "counts": counts,
@@ -328,10 +356,14 @@ def release_all(request):
 
 @role_required(ADMIN)
 def admin_sheets(request):
-    active = Semester.objects.filter(is_active=True).first()
-    total_classes = ClassOffering.objects.filter(semester=active).count() if active else 0
+    selected_semester = _resolve_semester_from_request(request)
+    total_classes = ClassOffering.objects.filter(semester=selected_semester).count() if selected_semester else 0
 
-    sheets = GradeSheet.objects.filter(class_offering__semester=active) if active else GradeSheet.objects.none()
+    sheets = (
+        GradeSheet.objects.filter(class_offering__semester=selected_semester)
+        if selected_semester
+        else GradeSheet.objects.none()
+    )
 
     program_id = request.GET.get("program")
     status = request.GET.get("status")
@@ -357,29 +389,29 @@ def admin_sheets(request):
 
     submitted_or_further = (
         GradeSheet.objects.filter(
-            class_offering__semester=active,
+            class_offering__semester=selected_semester,
             status__in=[GradeSheetStatus.SUBMITTED, GradeSheetStatus.RETURNED, GradeSheetStatus.APPROVED, GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED],
         ).count()
-        if active
+        if selected_semester
         else 0
     )
     approved_or_further = (
         GradeSheet.objects.filter(
-            class_offering__semester=active, status__in=[GradeSheetStatus.APPROVED, GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
+            class_offering__semester=selected_semester, status__in=[GradeSheetStatus.APPROVED, GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]
         ).count()
-        if active
+        if selected_semester
         else 0
     )
     released_or_further = (
-        GradeSheet.objects.filter(class_offering__semester=active, status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]).count()
-        if active
+        GradeSheet.objects.filter(class_offering__semester=selected_semester, status__in=[GradeSheetStatus.RELEASED, GradeSheetStatus.LOCKED]).count()
+        if selected_semester
         else 0
     )
 
     context = {
         "page_title": "Grade Sheets",
         "sheets": sheets,
-        "active_semester": active,
+        "active_semester": selected_semester,
         "total_classes": total_classes,
         "progress": {"submitted": submitted_or_further, "approved": approved_or_further, "released": released_or_further},
         "programs": Program.objects.all(),
@@ -389,7 +421,8 @@ def admin_sheets(request):
         "selected_status": status or "",
         "selected_instructor": instructor_id or "",
         "late_only": late_only,
-        "late_counts": late_or_unsubmitted_counts(active) if active else None,
+        "late_counts": late_or_unsubmitted_counts(selected_semester) if selected_semester else None,
+        **_semester_filter_context(selected_semester),
     }
     if is_htmx(request):
         return render(request, "approvals/_admin_sheets_table.html", context)

@@ -30,8 +30,10 @@ from .forms import (
     ProgramForm,
     ProgramHeadClassOfferingForm,
     ProgramHeadSectionForm,
+    RoomForm,
     SectionForm,
     SemesterForm,
+    SubjectAddExistingForm,
     SubjectAddForm,
     SubjectCodeCorrectionForm,
     SubjectEditForm,
@@ -48,6 +50,7 @@ from .models import (
     CurriculumEntry,
     Major,
     Program,
+    Room,
     Section,
     SectionMembership,
     Semester,
@@ -58,13 +61,6 @@ from .models import (
     Term,
 )
 from .ay_wizard import step1_preview, step2_preview_sections, step3_preview_promotions, step4_commit
-from .offerings_import import (
-    SpreadsheetImportError,
-    build_offerings_preview,
-    commit_offerings_import,
-    parse_offerings_docx_for_preview,
-    parse_offerings_xlsx,
-)
 from .roster_import import RosterImportError, build_preview, commit_import, parse_roster_file
 from .services import (
     assign_instructor,
@@ -244,6 +240,103 @@ class ProgramToggleActiveView(RoleRequiredMixin, ToggleActiveView):
     allowed_roles = (ADMIN,)
     model = Program
     refresh_event = "refreshPrograms"
+
+
+# ---------------------------------------------------------------------------
+# Rooms — admin-maintained master list a class's room field picks from
+# (see Room in models.py), instead of a free-text field every instructor
+# or Program Head could spell differently.
+# ---------------------------------------------------------------------------
+
+
+class RoomListView(RoleRequiredMixin, EntityListView):
+    allowed_roles = (ADMIN,)
+    model = Room
+    list_template = "academics/rooms.html"
+    table_template = "academics/_rooms_table.html"
+    table_id = "rooms-table"
+    page_title = "Rooms"
+    search_fields = ["name__icontains"]
+    refresh_event = "refreshRooms"
+
+    def apply_filters(self, request, qs):
+        is_active = request.GET.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        return qs
+
+
+class RoomFormView(RoleRequiredMixin, EntityFormView):
+    allowed_roles = (ADMIN,)
+    model = Room
+    form_class = RoomForm
+    refresh_event = "refreshRooms"
+    modal_title_create = "Add Room"
+    modal_title_edit = "Edit Room"
+
+
+class RoomDeleteView(RoleRequiredMixin, EntityDeleteView):
+    allowed_roles = (ADMIN,)
+    model = Room
+    refresh_event = "refreshRooms"
+    label_field = "name"
+    deactivate_url_name = "academics:room_toggle_active"
+    protect_message = "This room is already assigned to one or more classes."
+
+
+class RoomToggleActiveView(RoleRequiredMixin, ToggleActiveView):
+    allowed_roles = (ADMIN,)
+    model = Room
+    refresh_event = "refreshRooms"
+
+
+# ---------------------------------------------------------------------------
+# Subject Catalog — the master list of subject code/title/units, flat and
+# independent of any program/major's curriculum placement (that's
+# CurriculumEntry, managed from the Subjects prospectus page instead). Same
+# "Admin enters it, Program Head only picks from a dropdown" rule as Room.
+# ---------------------------------------------------------------------------
+
+
+class SubjectCatalogListView(RoleRequiredMixin, EntityListView):
+    allowed_roles = (ADMIN,)
+    model = Subject
+    list_template = "academics/subject_catalog.html"
+    table_template = "academics/_subject_catalog_table.html"
+    table_id = "subject-catalog-table"
+    page_title = "Subject Catalog"
+    search_fields = ["code__icontains", "title__icontains"]
+    refresh_event = "refreshSubjectCatalog"
+
+    def apply_filters(self, request, qs):
+        is_active = request.GET.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        return qs.order_by("code")
+
+
+class SubjectCatalogFormView(RoleRequiredMixin, EntityFormView):
+    allowed_roles = (ADMIN,)
+    model = Subject
+    form_class = AdminSubjectForm
+    refresh_event = "refreshSubjectCatalog"
+    modal_title_create = "Add Subject"
+    modal_title_edit = "Edit Subject"
+
+
+class SubjectCatalogDeleteView(RoleRequiredMixin, EntityDeleteView):
+    allowed_roles = (ADMIN,)
+    model = Subject
+    refresh_event = "refreshSubjectCatalog"
+    label_field = "code"
+    deactivate_url_name = "academics:subject_catalog_toggle_active"
+    protect_message = "This subject is already placed in a curriculum or used by a class."
+
+
+class SubjectCatalogToggleActiveView(RoleRequiredMixin, ToggleActiveView):
+    allowed_roles = (ADMIN,)
+    model = Subject
+    refresh_event = "refreshSubjectCatalog"
 
 
 # ---------------------------------------------------------------------------
@@ -728,7 +821,7 @@ def section_students(request, pk):
         request,
         "academics/section_students.html",
         {
-            "page_title": f"Students — {section}",
+            "page_title": f"Students: {section}",
             "section": section,
             "semester": semester,
             "semesters": semesters,
@@ -1142,7 +1235,7 @@ def subject_search(request):
 # box next to curriculum subjects to "offer" them for a semester; offering
 # auto-creates one class per active section of that program/major/
 # year_level and fills its roster. Preview (session-stashed, same pattern
-# as offerings_import/the AY wizard) -> one confirm screen (missing
+# as the AY wizard) -> one confirm screen (missing
 # sections + a Combine/Separate choice per shared-subject conflict) ->
 # commit, all rendered into the shared #modal-content.
 # ---------------------------------------------------------------------------
@@ -1596,6 +1689,70 @@ def _subject_add_context(program, major, year_level, term, form=None):
     }
 
 
+def _subject_add_existing_context(program, major, year_level, term, form=None):
+    form = form or SubjectAddExistingForm()
+    already_subject_ids = set(
+        CurriculumEntry.objects.filter(program=program, major=major).values_list("subject_id", flat=True)
+    )
+    return {
+        "form": form,
+        "program": program,
+        "major": major,
+        "year_level": year_level,
+        "year_level_choices": YEAR_LEVEL_CHOICES,
+        "term": term,
+        "term_choices": Term.choices,
+        "slot_label": services.slot_label(year_level, term),
+        "scope_label": services.scope_label(program, major),
+        "already_subject_ids": already_subject_ids,
+    }
+
+
+def _subject_add_existing_only(request, program, major, year_level, term):
+    """Program Head's "Add Subject" — confirmed CITCI practice: only
+    Admin enters a subject's code/title/units (see SubjectAddExistingForm);
+    a Program Head just picks one of Admin's existing active subjects,
+    never types a code or creates a new Subject row, even via a crafted
+    POST (the form's queryset-bound ModelChoiceField rejects any pk that
+    isn't an existing active Subject)."""
+    if request.method != "POST":
+        return render(
+            request,
+            "academics/_subject_add_existing_modal.html",
+            _subject_add_existing_context(program, major, year_level, term),
+        )
+
+    form = SubjectAddExistingForm(request.POST)
+    if not form.is_valid():
+        return render(
+            request,
+            "academics/_subject_add_existing_modal.html",
+            _subject_add_existing_context(program, major, year_level, term, form),
+        )
+
+    subject = form.cleaned_data["subject"]
+    duplicate_error = services.subject_duplicate_error(subject, program, major, year_level, term)
+    if duplicate_error:
+        form.add_error(None, duplicate_error)
+        return render(
+            request,
+            "academics/_subject_add_existing_modal.html",
+            _subject_add_existing_context(program, major, year_level, term, form),
+        )
+
+    CurriculumEntry.objects.create(program=program, major=major, year_level=year_level, term=term, subject=subject)
+    _log_academic_setup_change(
+        AcademicSetupChangeLog.ModelName.SUBJECT,
+        subject,
+        AcademicSetupChangeLog.Action.ADDED_TO_CURRICULUM,
+        request.user,
+        is_admin_override=False,
+        program=program,
+        major=major,
+    )
+    return trigger_response("refreshSubjects", toast=f"{subject.code} added to the curriculum.")
+
+
 @role_required(ADMIN, PROGRAM_HEAD)
 def subject_add(request):
     program, major = _resolve_program_major_from_request(request, request.user)
@@ -1605,6 +1762,9 @@ def subject_add(request):
     year_level_raw = request.GET.get("year_level") or request.POST.get("year_level") or ""
     year_level = int(year_level_raw) if year_level_raw else None
     term = request.GET.get("term") or request.POST.get("term") or Term.FIRST
+
+    if not request.user.is_admin_role:
+        return _subject_add_existing_only(request, program, major, year_level, term)
 
     if request.method != "POST":
         form = SubjectAddForm(request.GET) if "code" in request.GET else None
@@ -1987,7 +2147,7 @@ def class_roster(request, pk):
         request,
         "academics/class_roster.html",
         {
-            "page_title": f"Class List — {class_offering}",
+            "page_title": f"Class List: {class_offering}",
             "class_offering": class_offering,
             "roster_entries": roster_entries,
             "can_manage": _can_manage_roster(request.user, class_offering),
@@ -2042,7 +2202,12 @@ def class_join_qr(request, pk):
     class_offering = _require_owner_instructor(request, pk)
     code = services.ensure_join_code(class_offering)
     join_url = request.build_absolute_uri(reverse("academics:join_with_code", args=[code]))
-    img = qrcode.make(join_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+    # box_size is in mm per QR module -- the on-page <img> is already sized
+    # by its own CSS, but the raw .svg (e.g. after "Download QR", opened
+    # directly in a browser tab) renders at this native size with no page
+    # CSS around it, so it needs to be large on its own to not look tiny
+    # and top-left-stuck the way a small box_size does.
+    img = qrcode.make(join_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=20, border=2)
     buffer = io.BytesIO()
     img.save(buffer)
     return HttpResponse(buffer.getvalue(), content_type="image/svg+xml")
@@ -2106,11 +2271,11 @@ def class_join_requests_bulk_decide(request, pk):
 
 @role_required(INSTRUCTOR)
 def my_classes(request):
-    active = Semester.objects.filter(is_active=True).first()
+    selected_semester = _resolve_semester_from_request(request)
     qs = ClassOffering.objects.none()
-    if active:
+    if selected_semester:
         qs = (
-            ClassOffering.objects.filter(instructor=request.user, semester=active)
+            ClassOffering.objects.filter(instructor=request.user, semester=selected_semester)
             .select_related("subject")
             .prefetch_related("sections")
             .annotate(
@@ -2125,7 +2290,16 @@ def my_classes(request):
     return render(
         request,
         "academics/my_classes.html",
-        {"page_title": "My Classes", "classes": qs, "active_semester_set": bool(active)},
+        {
+            "page_title": "My Classes",
+            "classes": qs,
+            "active_semester_set": bool(Semester.objects.filter(is_active=True).exists()),
+            "selected_semester": selected_semester,
+            "academic_years": AcademicYear.objects.order_by("-start_year"),
+            "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+            "selected_sem_term": selected_semester.term if selected_semester else None,
+            "semester_term_choices": Term.choices,
+        },
     )
 
 
@@ -2150,30 +2324,114 @@ def _program_head_class_queryset(user, active):
     )
 
 
+def _class_year_level(class_offering):
+    """Best-available year level for grouping a class into a year-level
+    card: the SubjectOffering's own year_level when the class came from
+    the Offer-a-subject flow, else the first attached section's
+    year_level (a manually-created or joined class), else None (shown in
+    its own "No Year Level" card, e.g. a TCP-style class)."""
+    if class_offering.offering_id and class_offering.offering.year_level:
+        return class_offering.offering.year_level
+    sections = list(class_offering.sections.all())
+    return sections[0].year_level if sections else None
+
+
+def _group_classes_by_year_level(classes):
+    """Mirrors the Subjects page's year-level cards: one group per year
+    level present among `classes`, ordered 1-4 then "no year level" last."""
+    buckets = {}
+    for c in classes:
+        buckets.setdefault(_class_year_level(c), []).append(c)
+    ordered_keys = sorted(buckets.keys(), key=lambda k: (k is None, k))
+    cards = []
+    for key in ordered_keys:
+        group = buckets[key]
+        cards.append({"year_level": key, "classes": group, "class_ids_csv": ",".join(str(c.pk) for c in group)})
+    return cards
+
+
 @role_required(PROGRAM_HEAD)
 def program_head_classes(request):
-    """Teaching-load manager for a Program Head's own program(s): inline-
-    editable instructor/room/schedule per class (class_update_field), an
-    "Unassigned only" filter, and a sticky-bar bulk action (assign
-    instructor / set room / set schedule) over the checked rows."""
-    active = Semester.objects.filter(is_active=True).first()
-    qs = _program_head_class_queryset(request.user, active)
+    """Teaching-load manager for a Program Head's own program(s): a major
+    pill filter (same one-pill-per-major pattern as the Subjects page —
+    needed the moment a head covers more than one major, so classes from
+    "English" and "Social Studies" never show merged in one list), an
+    Academic Year + Semester selector (same ?ay=&sem_term= pattern as the
+    Subjects page, so a past term's classes stay reachable), classes
+    grouped into year-level cards, inline-editable instructor/room/
+    schedule per class (class_update_field), an "Unassigned only" filter,
+    and a sticky-bar bulk action (assign instructor / set room / set
+    schedule) over the checked rows."""
+    pills = _build_pills(request.user)
+    program, major = _resolve_program_major_from_request(request, request.user, pills=pills)
+    if program is None:
+        return render(
+            request,
+            "academics/program_head_classes.html",
+            {"page_title": "Classes", "no_scope": True},
+        )
+
+    selected_semester = _resolve_semester_from_request(request)
+    qs = _program_head_class_queryset(request.user, selected_semester)
+    if major is not None:
+        qs = qs.filter(sections__program=program, sections__major=major).distinct()
+    else:
+        qs = qs.filter(sections__program=program, sections__major__isnull=True).distinct()
 
     if request.GET.get("unassigned") == "1":
         qs = qs.filter(instructor__isnull=True)
 
+    section_id = request.GET.get("section", "").strip()
+    if section_id.isdigit():
+        qs = qs.filter(sections__pk=int(section_id)).distinct()
+
+    sections_for_filter = []
+    if selected_semester:
+        sections_qs = scoping.sections_in_scope(request.user).filter(
+            academic_year=selected_semester.academic_year, program=program
+        )
+        sections_qs = sections_qs.filter(major=major) if major else sections_qs.filter(major__isnull=True)
+        sections_for_filter = list(sections_qs.order_by("year_level", "name"))
+    available_year_levels = sorted({s.year_level for s in sections_for_filter if s.year_level is not None})
+
+    year_level_filter = request.GET.get("year_level", "ALL")
+    if year_level_filter != "ALL" and year_level_filter.isdigit():
+        qs = qs.filter(sections__year_level=int(year_level_filter)).distinct()
+
     classes = list(qs)
     for c in classes:
         c.row_actions = _class_row_actions(c)
+    cards = _group_classes_by_year_level(classes)
+
+    for pill in pills:
+        pill["active"] = program.id == pill["program"].id and (
+            (major.id if major else None) == (pill["major"].id if pill["major"] else None)
+        )
+
+    academic_years = AcademicYear.objects.order_by("-start_year")
     return render(
         request,
         "academics/program_head_classes.html",
         {
             "page_title": "Classes",
+            "pills": pills,
+            "program": program,
+            "major": major,
+            "cards": cards,
             "classes": classes,
             "class_ids_json": [c.pk for c in classes],
-            "active_semester_set": bool(active),
+            "active_semester_set": bool(Semester.objects.filter(is_active=True).exists()),
+            "selected_semester": selected_semester,
+            "academic_years": academic_years,
+            "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+            "selected_sem_term": selected_semester.term if selected_semester else None,
+            "semester_term_choices": Term.choices,
+            "sections_for_filter": sections_for_filter,
+            "selected_section_id": section_id,
+            "available_year_levels": available_year_levels,
+            "year_level_filter": year_level_filter,
             "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
+            "rooms": Room.objects.filter(is_active=True),
         },
     )
 
@@ -2470,6 +2728,15 @@ def class_update_field(request, pk):
             toast = f"{instructor.full_name} assigned to {_class_label(class_offering)}." if instructor else f"{_class_label(class_offering)} unassigned."
         except ValidationError as exc:
             error = exc.messages[0]
+    elif field == "room":
+        room = Room.objects.filter(pk=value, is_active=True).first() if value else None
+        try:
+            _require_semester_unlocked(class_offering)
+            class_offering.room = room
+            class_offering.save(update_fields=["room"])
+            toast = f"Room updated for {_class_label(class_offering)}."
+        except PermissionDenied as exc:
+            error = str(exc)
     else:
         try:
             _require_semester_unlocked(class_offering)
@@ -2487,6 +2754,7 @@ def class_update_field(request, pk):
             "class_offering": class_offering,
             "error": error,
             "instructors": User.objects.filter(role=INSTRUCTOR, is_active=True).order_by("last_name", "first_name"),
+            "rooms": Room.objects.filter(is_active=True),
         },
         request=request,
     )
@@ -2514,14 +2782,19 @@ def _scope_programs_for_teaching_loads(request):
 
 @role_required(ADMIN, PROGRAM_HEAD)
 def teaching_loads(request):
-    active = Semester.objects.filter(is_active=True).first()
+    selected_semester = _resolve_semester_from_request(request)
     programs = _scope_programs_for_teaching_loads(request)
     instructor_id = request.GET.get("instructor")
-    rows, unassigned = teaching_load_rows(active, programs, instructor_id=instructor_id)
+    rows, unassigned = teaching_load_rows(selected_semester, programs, instructor_id=instructor_id)
 
     context = {
         "page_title": "Teaching Loads",
-        "active_semester_set": bool(active),
+        "active_semester_set": bool(Semester.objects.filter(is_active=True).exists()),
+        "selected_semester": selected_semester,
+        "academic_years": AcademicYear.objects.order_by("-start_year"),
+        "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+        "selected_sem_term": selected_semester.term if selected_semester else None,
+        "semester_term_choices": Term.choices,
         "rows": rows,
         "unassigned": unassigned,
         "programs": Program.objects.all() if request.user.is_admin_role else programs,
@@ -2536,10 +2809,10 @@ def teaching_loads(request):
 def teaching_loads_export(request):
     from reports.excel import workbook_response
 
-    active = Semester.objects.filter(is_active=True).first()
+    selected_semester = _resolve_semester_from_request(request)
     programs = _scope_programs_for_teaching_loads(request)
     instructor_id = request.GET.get("instructor")
-    rows, unassigned = teaching_load_rows(active, programs, instructor_id=instructor_id)
+    rows, unassigned = teaching_load_rows(selected_semester, programs, instructor_id=instructor_id)
 
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -2551,7 +2824,9 @@ def teaching_loads_export(request):
     sheet.append(["Unassigned classes"])
     for class_offering in unassigned:
         sheet.append([str(class_offering)])
-    return workbook_response(workbook, f"TeachingLoads_{active}.xlsx" if active else "TeachingLoads.xlsx")
+    return workbook_response(
+        workbook, f"TeachingLoads_{selected_semester}.xlsx" if selected_semester else "TeachingLoads.xlsx"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2561,52 +2836,23 @@ def teaching_loads_export(request):
 # ---------------------------------------------------------------------------
 
 
-def _roster_context(class_offering):
-    roster_entries = list(
-        class_offering.roster_entries.select_related("student", "student__student_profile").order_by(
-            "status", "student__last_name", "student__first_name"
-        )
-    )
-    memberships_by_student_id = {
-        m.student_id: m.section
-        for m in SectionMembership.objects.filter(
-            semester=class_offering.semester, student_id__in=[e.student_id for e in roster_entries]
-        ).select_related("section")
-    }
-    for entry in roster_entries:
-        entry.membership_section = memberships_by_student_id.get(entry.student_id)
-    return {"class_offering": class_offering, "roster_entries": roster_entries}
-
-
 @role_required(ADMIN, PROGRAM_HEAD)
 def class_lists_home(request):
-    active = Semester.objects.filter(is_active=True).first()
-    scoped_classes = (
-        ClassOffering.objects.all() if request.user.is_admin_role else scoping.classes_in_scope(request.user)
-    )
-
+    """Retired as its own page -- a class's roster is now managed directly
+    from its own Class List page (`class_roster`, reachable from the
+    Classes page's Students column), so this is just a thin redirect for
+    any old `?class=<pk>` link/bookmark. With no `?class=`, send the user
+    to the Classes list itself instead of a confusing blank page."""
     class_id = request.GET.get("class")
-    class_offering = None
     if class_id:
-        class_offering = get_object_or_404(scoped_classes, pk=class_id)
-    elif active:
-        class_offering = (
-            scoped_classes.filter(semester=active)
-            .order_by("-semester__academic_year__start_year", "subject__code")
-            .first()
+        scoped_classes = (
+            ClassOffering.objects.all() if request.user.is_admin_role else scoping.classes_in_scope(request.user)
         )
-
-    context = {
-        "page_title": "Class Lists",
-        "selected_class": class_offering,
-        "class_search_url": reverse("academics:class_search"),
-    }
-    if class_offering:
-        context.update(_roster_context(class_offering))
-
-    if is_htmx(request):
-        return render(request, "academics/_class_list_roster.html", context)
-    return render(request, "academics/class_lists.html", context)
+        class_offering = get_object_or_404(scoped_classes, pk=class_id)
+        return redirect("academics:class_roster", pk=class_offering.pk)
+    if request.user.is_admin_role:
+        return redirect("academics:classes")
+    return redirect("academics:program_head_classes")
 
 
 @role_required(ADMIN, PROGRAM_HEAD)
@@ -2632,12 +2878,10 @@ def class_list_add_section(request, pk):
         else:
             skipped_count += 1
 
-    context = _roster_context(class_offering)
-    context["summary"] = f"{added_count} added, {skipped_count} already on the list (skipped)."
-    return render(request, "academics/_class_list_roster.html", context)
+    return trigger_response("refreshRoster", toast=f"{added_count} added, {skipped_count} already on the list (skipped).")
 
 
-@role_required(ADMIN, PROGRAM_HEAD)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_add_students_form(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -2660,7 +2904,7 @@ def class_list_add_students_form(request, pk):
     return render(request, "academics/_class_list_add_students_modal.html", context)
 
 
-@role_required(ADMIN, PROGRAM_HEAD)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_add_students_submit(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -2675,7 +2919,7 @@ def class_list_add_students_submit(request, pk):
     return trigger_response("refreshRoster", toast=f"Added {count} student{'s' if count != 1 else ''} to the class list.")
 
 
-@role_required(ADMIN, PROGRAM_HEAD)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_mark_dropped(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
     if not _can_manage_roster(request.user, entry.class_offering):
@@ -2684,11 +2928,10 @@ def class_list_mark_dropped(request, pk):
     entry.status = ClassRosterEntry.Status.DROPPED
     entry.date_dropped = date.today()
     entry.save(update_fields=["status", "date_dropped"])
-    context = _roster_context(entry.class_offering)
-    return render(request, "academics/_class_list_roster.html", context)
+    return trigger_response("refreshRoster", toast=f"{entry.student.full_name} marked as dropped.")
 
 
-@role_required(ADMIN, PROGRAM_HEAD)
+@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
 def class_list_restore(request, pk):
     entry = get_object_or_404(ClassRosterEntry, pk=pk)
     if not _can_manage_roster(request.user, entry.class_offering):
@@ -2697,8 +2940,7 @@ def class_list_restore(request, pk):
     entry.status = ClassRosterEntry.Status.ACTIVE
     entry.date_dropped = None
     entry.save(update_fields=["status", "date_dropped"])
-    context = _roster_context(entry.class_offering)
-    return render(request, "academics/_class_list_roster.html", context)
+    return trigger_response("refreshRoster", toast=f"{entry.student.full_name} restored to the class list.")
 
 
 # ---------------------------------------------------------------------------
@@ -2710,7 +2952,7 @@ def class_list_restore(request, pk):
 _IMPORT_SESSION_KEY = "class_list_import_preview"
 
 
-@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_import_template(request):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
@@ -2729,7 +2971,7 @@ def class_list_import_template(request):
     return response
 
 
-@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_import_upload(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -2771,7 +3013,7 @@ def class_list_import_upload(request, pk):
     )
 
 
-@role_required(ADMIN, PROGRAM_HEAD, INSTRUCTOR)
+@role_required(ADMIN, PROGRAM_HEAD)
 def class_list_import_confirm(request, pk):
     class_offering = get_object_or_404(ClassOffering, pk=pk)
     if not _can_manage_roster(request.user, class_offering):
@@ -2800,112 +3042,6 @@ def class_list_import_confirm(request, pk):
     # refreshRoster is picked up both by the Class Lists page's #roster-container
     # and by class_roster.html (read-only roster, reloads itself on this event).
     return trigger_response("refreshRoster", toast="Class list imported.")
-
-
-# ---------------------------------------------------------------------------
-# Import Class Offerings (ADMIN only) — upload an .xlsx or the Registrar's
-# .docx -> preview (new subjects / new classes / shared classes / unknown
-# instructors) -> confirm. Never auto-creates or auto-merges an instructor.
-# ---------------------------------------------------------------------------
-
-_OFFERINGS_IMPORT_SESSION_KEY = "offerings_import_preview"
-
-
-@role_required(ADMIN, PROGRAM_HEAD)
-def offerings_import_template(request):
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.title = "Class Offerings"
-    sheet.append(["Semester", "Program", "Major", "Year Level", "Course Code", "Description", "Units", "Room", "Schedule", "Instructor"])
-    sheet.append(["FIRST", "BSED", "ENG", "1", "ENG101", "Introduction to Literature", "3", "Room 101", "MWF 8:00-9:00AM", ""])
-
-    buffer = io.BytesIO()
-    workbook.save(buffer)
-    buffer.seek(0)
-    response = HttpResponse(
-        buffer.read(),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    response["Content-Disposition"] = 'attachment; filename="class_offerings_template.xlsx"'
-    return response
-
-
-@role_required(ADMIN, PROGRAM_HEAD)
-def offerings_import(request):
-    context = {
-        "page_title": "Import Class Offerings",
-        "semesters": Semester.objects.select_related("academic_year").all(),
-        "active_semester": Semester.objects.filter(is_active=True).first(),
-    }
-    return render(request, "academics/offerings_import.html", context)
-
-
-@role_required(ADMIN, PROGRAM_HEAD)
-def offerings_import_upload(request):
-    scope_user = None if request.user.is_admin_role else request.user
-    semester_id = request.POST.get("semester")
-    target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
-    if target_semester is None:
-        return render(
-            request, "academics/_offerings_import_result.html", {"error": "Choose a target semester first."}
-        )
-
-    uploaded_file = request.FILES.get("file")
-    if not uploaded_file:
-        return render(
-            request,
-            "academics/_offerings_import_result.html",
-            {"error": "Choose a file first.", "target_semester": target_semester},
-        )
-
-    name = uploaded_file.name.lower()
-    try:
-        if name.endswith(".docx"):
-            preview = parse_offerings_docx_for_preview(uploaded_file, target_semester, user=scope_user)
-        else:
-            index, data_rows = parse_offerings_xlsx(uploaded_file)
-            preview = build_offerings_preview(index, data_rows, target_semester, user=scope_user)
-    except SpreadsheetImportError as exc:
-        return render(
-            request,
-            "academics/_offerings_import_result.html",
-            {"error": str(exc), "target_semester": target_semester},
-        )
-
-    request.session[_OFFERINGS_IMPORT_SESSION_KEY] = {"semester_id": target_semester.pk, "classes": preview["classes"]}
-    context = {"target_semester": target_semester, **preview}
-    return render(request, "academics/_offerings_import_preview.html", context)
-
-
-@role_required(ADMIN, PROGRAM_HEAD)
-def offerings_import_confirm(request):
-    scope_user = None if request.user.is_admin_role else request.user
-    semester_id = request.POST.get("semester")
-    target_semester = get_object_or_404(Semester, pk=semester_id) if semester_id else None
-
-    stashed = request.session.get(_OFFERINGS_IMPORT_SESSION_KEY)
-    if not stashed or not target_semester or stashed.get("semester_id") != target_semester.pk:
-        return render(
-            request,
-            "academics/_offerings_import_result.html",
-            {"error": "Your preview expired — upload the file again."},
-        )
-
-    try:
-        counts = commit_offerings_import(stashed["classes"], target_semester, user=scope_user)
-    except PermissionDenied:
-        del request.session[_OFFERINGS_IMPORT_SESSION_KEY]
-        return render(
-            request,
-            "academics/_offerings_import_result.html",
-            {"error": "One or more rows are outside your scope — upload the file again."},
-        )
-    del request.session[_OFFERINGS_IMPORT_SESSION_KEY]
-    return render(
-        request,
-        "academics/_offerings_import_result.html",
-        {"target_semester": target_semester, "success": True, **counts},
-    )
 
 
 # ---------------------------------------------------------------------------

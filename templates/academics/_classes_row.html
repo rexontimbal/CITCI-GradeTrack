@@ -1,7 +1,7 @@
 {% load sidebar_icons %}
 <tr class="hover:bg-gray-50" id="class-row-{{ class_offering.pk }}">
     <td class="px-4 py-3">
-        <input type="checkbox" aria-label="Select {{ class_offering }}"
+        <input type="checkbox" x-show="selectMode" x-cloak aria-label="Select {{ class_offering }}"
                :checked="isSelected({{ class_offering.pk }})" @change="toggle({{ class_offering.pk }})">
     </td>
     <td class="px-4 py-3">
@@ -21,10 +21,14 @@
         </select>
     </td>
     <td class="px-4 py-3">
-        <input type="text" name="value" value="{{ class_offering.room }}" placeholder="Room"
-               hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
-               hx-include="this" hx-trigger="blur changed" hx-vals='{"field": "room"}'
-               class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+        <select hx-post="{% url 'academics:class_update_field' class_offering.pk %}" hx-target="#class-row-{{ class_offering.pk }}" hx-swap="outerHTML"
+                hx-include="this" hx-trigger="change" name="value" hx-vals='{"field": "room"}' aria-label="Room"
+                class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+            <option value="">Not set</option>
+            {% for room in rooms %}
+            <option value="{{ room.pk }}" {% if class_offering.room_id == room.pk %}selected{% endif %}>{{ room.name }}</option>
+            {% endfor %}
+        </select>
     </td>
     <td class="px-4 py-3">
         <input type="text" name="value" value="{{ class_offering.schedule }}" placeholder="e.g. MWF 8:00–9:00"
@@ -36,7 +40,9 @@
         {% if class_offering.roster_size %}
         <a href="{% url 'academics:class_roster' class_offering.pk %}" class="text-brand-primary-700 hover:underline">{{ class_offering.roster_size }}</a>
         {% else %}
-        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">No students</span>
+        <a href="{% url 'academics:class_roster' class_offering.pk %}" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200" title="Add students to this class">
+            No students
+        </a>
         {% endif %}
         {% if class_offering.pending_join_count %}
         <span class="ml-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700" title="Pending join requests">+{{ class_offering.pending_join_count }} pending</span>
@@ -55,8 +61,8 @@
         {% if error %}
         <p class="mb-1 text-xs text-red-600">{{ error }}</p>
         {% endif %}
-        <div class="flex flex-wrap items-center justify-end gap-1">
-            <a href="{% url 'grading:class_grading' class_offering.pk %}" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+        <div class="flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
+            <a href="{% url 'grading:class_grading' class_offering.pk %}" class="whitespace-nowrap rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                 Grading
             </a>
             {% include "partials/_overflow_menu.html" with actions=class_offering.row_actions %}

@@ -35,13 +35,13 @@
         <p>Page {{ completions.number }} of {{ completions.paginator.num_pages }} ({{ completions.paginator.count }} total)</p>
         <div class="flex gap-2">
             {% if completions.has_previous %}
-            <a href="?status=INC_COMPLETIONS&page={{ completions.previous_page_number }}"
-               hx-get="?status=INC_COMPLETIONS&page={{ completions.previous_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+            <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS&page={{ completions.previous_page_number }}"
+               hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS&page={{ completions.previous_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
             {% endif %}
             {% if completions.has_next %}
-            <a href="?status=INC_COMPLETIONS&page={{ completions.next_page_number }}"
-               hx-get="?status=INC_COMPLETIONS&page={{ completions.next_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+            <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS&page={{ completions.next_page_number }}"
+               hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS&page={{ completions.next_page_number }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
             {% endif %}
         </div>

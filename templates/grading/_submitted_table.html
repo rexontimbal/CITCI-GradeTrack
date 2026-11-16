@@ -33,13 +33,13 @@
         <p>Page {{ sheets.number }} of {{ sheets.paginator.num_pages }} ({{ sheets.paginator.count }} total)</p>
         <div class="flex gap-2">
             {% if sheets.has_previous %}
-            <a href="?status={{ status_filter }}&page={{ sheets.previous_page_number }}"
-               hx-get="?status={{ status_filter }}&page={{ sheets.previous_page_number }}" hx-target="#submitted-table" hx-swap="outerHTML"
+            <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&page={{ sheets.previous_page_number }}"
+               hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&page={{ sheets.previous_page_number }}" hx-target="#submitted-table" hx-swap="outerHTML"
                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
             {% endif %}
             {% if sheets.has_next %}
-            <a href="?status={{ status_filter }}&page={{ sheets.next_page_number }}"
-               hx-get="?status={{ status_filter }}&page={{ sheets.next_page_number }}" hx-target="#submitted-table" hx-swap="outerHTML"
+            <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&page={{ sheets.next_page_number }}"
+               hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&page={{ sheets.next_page_number }}" hx-target="#submitted-table" hx-swap="outerHTML"
                class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
             {% endif %}
         </div>

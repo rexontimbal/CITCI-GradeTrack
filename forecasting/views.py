@@ -7,7 +7,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from academics.models import ClassOffering, ClassRosterEntry, Program, Semester
+from academics.models import AcademicYear, ClassOffering, ClassRosterEntry, Program, Semester, Term
 from accounts.decorators import role_required
 from accounts.models import User
 
@@ -214,6 +214,31 @@ def _build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries, l
 
 
 @role_required(PROGRAM_HEAD, INSTRUCTOR)
+def _resolve_semester_from_request(request):
+    """Academic Year + Semester filter, same ?ay=<academic_year_id>&
+    sem_term=<term> convention as the Subjects/Classes pages (see
+    academics.views._resolve_semester_from_request) -- defaults to the
+    active semester so a past term's at-risk data stays reachable once a
+    new school year starts, instead of silently disappearing."""
+    ay_id = request.GET.get("ay")
+    sem_term = request.GET.get("sem_term")
+    if ay_id and sem_term:
+        semester = Semester.objects.filter(academic_year_id=ay_id, term=sem_term).select_related("academic_year").first()
+        if semester:
+            return semester
+    return Semester.objects.filter(is_active=True).select_related("academic_year").first()
+
+
+def _semester_filter_context(selected_semester):
+    return {
+        "academic_years": AcademicYear.objects.order_by("-start_year"),
+        "selected_ay_id": selected_semester.academic_year_id if selected_semester else None,
+        "selected_sem_term": selected_semester.term if selected_semester else None,
+        "semester_term_choices": Term.choices,
+        "selected_semester": selected_semester,
+    }
+
+
 def at_risk(request):
     if request.user.is_instructor:
         return _at_risk_instructor(request)
@@ -221,17 +246,18 @@ def at_risk(request):
 
 
 def _at_risk_instructor(request):
-    active_semester = Semester.objects.filter(is_active=True).first()
+    selected_semester = _resolve_semester_from_request(request)
     classes = list(
-        ClassOffering.objects.filter(instructor=request.user, semester=active_semester)
+        ClassOffering.objects.filter(instructor=request.user, semester=selected_semester)
         .select_related("subject")
         .prefetch_related("sections__program", "sections__major")
-        if active_semester
+        if selected_semester
         else ClassOffering.objects.none()
     )
 
     class_filter = request.GET.get("class")
     level_filter = request.GET.get("level")
+    student_query = request.GET.get("q", "").strip()
 
     bulk = get_display_forecasts_for_classes(classes)
     rows = []
@@ -240,6 +266,8 @@ def _at_risk_instructor(request):
             continue
         checkpoint, forecasts, roster_entries = bulk.get(class_offering.pk, (None, {}, {}))
         rows.extend(_build_at_risk_rows(class_offering, checkpoint, forecasts, roster_entries, level_filter))
+    if student_query:
+        rows = [r for r in rows if student_query.lower() in r["entry"].student.full_name.lower()]
     rows.sort(key=lambda r: r["probability"], reverse=True)
 
     from django.core.paginator import Paginator
@@ -253,13 +281,15 @@ def _at_risk_instructor(request):
         "rows": page,
         "class_filter": class_filter,
         "level_filter": level_filter,
+        "student_query": student_query,
         "show_synthetic_banner": _any_non_historical_active_model(),
+        **_semester_filter_context(selected_semester),
     }
     return render(request, "forecasting/at_risk_instructor.html", context)
 
 
-def _program_head_classes(user, active_semester):
-    if active_semester is None:
+def _program_head_classes(user, semester):
+    if semester is None:
         return ClassOffering.objects.none()
     # prefetch sections__program/major so every ClassOffering.__str__()/
     # Section.__str__() call in the template (one per row, one per
@@ -271,7 +301,7 @@ def _program_head_classes(user, active_semester):
     from academics.scoping import classes_in_scope
 
     return (
-        classes_in_scope(user, semester=active_semester)
+        classes_in_scope(user, semester=semester)
         .select_related("subject", "instructor")
         .prefetch_related("sections__program", "sections__major")
         .distinct()
@@ -279,11 +309,13 @@ def _program_head_classes(user, active_semester):
 
 
 def _at_risk_program_head(request):
-    active_semester = Semester.objects.filter(is_active=True).first()
-    classes = list(_program_head_classes(request.user, active_semester))
+    selected_semester = _resolve_semester_from_request(request)
+    classes = list(_program_head_classes(request.user, selected_semester))
 
     class_filter = request.GET.get("class")
     level_filter = request.GET.get("level")
+    student_query = request.GET.get("q", "").strip()
+    class_query = request.GET.get("class_q", "").strip()
 
     # One grouped query for every class's intervention count, instead of a
     # per-class .count() query in the loop below (Phase 8 part A query-
@@ -313,6 +345,8 @@ def _at_risk_program_head(request):
         for row in class_rows:
             if level_filter and row["level"] != level_filter:
                 continue
+            if student_query and student_query.lower() not in row["entry"].student.full_name.lower():
+                continue
             rows.append(row)
     rows.sort(key=lambda r: r["probability"], reverse=True)
 
@@ -321,10 +355,24 @@ def _at_risk_program_head(request):
     classes_affected = sum(1 for c in by_class.values() if c["at_risk"] or c["watch"])
     total_interventions = sum(intervention_counts.values())
 
+    by_class_list = list(by_class.values())
+    if class_query:
+        q = class_query.lower()
+        by_class_list = [
+            c
+            for c in by_class_list
+            if q in c["class_offering"].subject.code.lower()
+            or q in c["class_offering"].subject.title.lower()
+            or (c["class_offering"].instructor and q in c["class_offering"].instructor.full_name.lower())
+        ]
+
     from django.core.paginator import Paginator
 
     paginator = Paginator(rows, 25)
     page = paginator.get_page(request.GET.get("page"))
+
+    class_paginator = Paginator(by_class_list, 10)
+    class_page = class_paginator.get_page(request.GET.get("class_page"))
 
     context = {
         "page_title": "At-Risk Students",
@@ -332,7 +380,9 @@ def _at_risk_program_head(request):
         "rows": page,
         "class_filter": class_filter,
         "level_filter": level_filter,
-        "by_class": by_class.values(),
+        "student_query": student_query,
+        "class_query": class_query,
+        "by_class": class_page,
         "summary": {
             "at_risk": total_at_risk,
             "watch": total_watch,
@@ -340,6 +390,7 @@ def _at_risk_program_head(request):
             "interventions": total_interventions,
         },
         "show_synthetic_banner": _any_non_historical_active_model(),
+        **_semester_filter_context(selected_semester),
     }
     return render(request, "forecasting/at_risk_program_head.html", context)
 
@@ -350,8 +401,8 @@ def at_risk_export(request):
 
     from reports.excel import workbook_response
 
-    active_semester = Semester.objects.filter(is_active=True).first()
-    classes = list(_program_head_classes(request.user, active_semester))
+    selected_semester = _resolve_semester_from_request(request)
+    classes = list(_program_head_classes(request.user, selected_semester))
 
     wb = Workbook()
     ws = wb.active

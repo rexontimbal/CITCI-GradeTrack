@@ -534,7 +534,7 @@ def recompute_and_notify(roster_entries):
             notify(
                 entry.student,
                 "A quick check-in",
-                f"We noticed something in {class_offering.subject.code} — take a look when you can.",
+                f"We noticed something in {class_offering.subject.code}. Take a look when you can.",
                 link=f"/grading/my-grades/{entry.pk}/",
             )
 

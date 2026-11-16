@@ -34,7 +34,7 @@
             </li>
             <li class="flex items-center justify-between py-3">
                 <span class="text-sm text-gray-700">Class lists still empty</span>
-                <a href="{% url 'academics:class_lists' %}" class="text-sm font-medium {% if checklist.empty_class_lists %}text-amber-700{% else %}text-brand-primary-700{% endif %} hover:underline">
+                <a href="{% url 'academics:program_head_classes' %}" class="text-sm font-medium {% if checklist.empty_class_lists %}text-amber-700{% else %}text-brand-primary-700{% endif %} hover:underline">
                     {{ checklist.empty_class_lists }}
                 </a>
             </li>

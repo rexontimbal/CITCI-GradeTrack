@@ -288,11 +288,17 @@ class SubjectOffering(TimeStampedModel):
 
     @property
     def covered_sections(self):
-        """Every section currently covered by this offering's classes --
-        derived, never stored (Principle 0: an offering's coverage is
-        whatever its classes say, nothing more). Backs the Subjects page's
+        """Every section currently covered by this offering's ACTIVE classes
+        -- derived, never stored (Principle 0: an offering's coverage is
+        whatever its classes say, nothing more). A deactivated class (e.g.
+        its last section was removed) contributes no coverage even though
+        the row itself still exists. Backs the Subjects page's
         "Offered · 1-A, 1-B" badge and Manage Sections' pre-checked state."""
-        return Section.objects.filter(class_offerings__offering=self).distinct().order_by("year_level", "name")
+        return (
+            Section.objects.filter(class_offerings__offering=self, class_offerings__is_active=True)
+            .distinct()
+            .order_by("year_level", "name")
+        )
 
 
 class StudentProfile(TimeStampedModel):
@@ -359,6 +365,24 @@ class SectionMembership(TimeStampedModel):
         return f"{self.student.full_name} · {self.section} ({self.semester})"
 
 
+class Room(TimeStampedModel):
+    """Admin-maintained master list of physical rooms, shared across every
+    program — a class picks one from this list instead of a free-text
+    field, so the same room is never typo'd into several near-duplicate
+    spellings (e.g. "Room 101" vs "Rm 101"). PROTECT: a room already
+    assigned to a class can't just be deleted out from under it; the UI
+    offers "Deactivate instead" the same way Program/Section do."""
+
+    name = models.CharField(max_length=50, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class ClassOffering(TimeStampedModel):
     """A class as taught in a semester. Usually one section, but sometimes
     one class serves multiple sections at once (e.g. a General Education
@@ -377,7 +401,7 @@ class ClassOffering(TimeStampedModel):
         related_name="class_offerings",
     )
     schedule = models.CharField(max_length=150, blank=True)
-    room = models.CharField(max_length=50, blank=True)
+    room = models.ForeignKey(Room, on_delete=models.PROTECT, null=True, blank=True, related_name="class_offerings")
     is_active = models.BooleanField(default=True)
     offering = models.ForeignKey(
         SubjectOffering,

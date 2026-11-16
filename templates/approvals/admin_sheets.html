@@ -29,6 +29,16 @@
 
 <form hx-get="{% url 'approvals:admin_sheets' %}" hx-target="#admin-sheets-table" hx-swap="outerHTML"
       hx-trigger="change from:select" class="mb-4 flex flex-wrap items-center gap-2">
+    <select name="ay" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Academic Year">
+        {% for ay in academic_years %}
+        <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+        {% endfor %}
+    </select>
+    <select name="sem_term" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="Semester">
+        {% for value, label in semester_term_choices %}
+        <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
     <select name="program" class="rounded-lg border border-gray-300 px-3 py-2 text-sm" aria-label="All programs">
     <option value="">All programs</option>
         {% for p in programs %}<option value="{{ p.pk }}" {% if selected_program == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.code }}</option>{% endfor %}

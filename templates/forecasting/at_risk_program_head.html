@@ -4,14 +4,12 @@
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <div>
         <h2 class="text-xl font-bold text-gray-900">At-Risk Students</h2>
-        <p class="mt-1 text-sm text-gray-600">Across your program(s) this semester.</p>
+        <p class="mt-1 text-sm text-gray-600">Across your program(s){% if selected_semester %} · {{ selected_semester }}{% endif %}.</p>
     </div>
-    <a href="{% url 'forecasting:at_risk_export' %}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+    <a href="{% url 'forecasting:at_risk_export' %}?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
         Export Excel
     </a>
 </div>
-
-{% include "forecasting/_synthetic_banner.html" %}
 
 <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
     {% include "partials/_stat_card.html" with icon="alert" label="At Risk" value=summary.at_risk %}
@@ -20,41 +18,17 @@
     {% include "partials/_stat_card.html" with icon="clipboard" label="Interventions Logged" value=summary.interventions %}
 </div>
 
-<div class="mb-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-    <table class="min-w-full divide-y divide-gray-200 text-sm">
-        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-            <tr>
-                <th class="px-4 py-3">Class</th>
-                <th class="px-4 py-3">Instructor</th>
-                <th class="px-4 py-3 text-center">At Risk</th>
-                <th class="px-4 py-3 text-center">Watch</th>
-                <th class="px-4 py-3 text-center">Interventions</th>
-                <th class="px-4 py-3 text-right">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-            {% for c in by_class %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 font-medium text-gray-900">{{ c.class_offering.subject.code }} · {{ c.class_offering.subject.title }}</td>
-                <td class="px-4 py-3 text-gray-700">{{ c.class_offering.instructor.full_name|default:"Unassigned" }}</td>
-                <td class="px-4 py-3 text-center text-red-700">{{ c.at_risk }}</td>
-                <td class="px-4 py-3 text-center text-amber-700">{{ c.watch }}</td>
-                <td class="px-4 py-3 text-center text-gray-600">{{ c.interventions }}</td>
-                <td class="px-4 py-3 text-right">
-                    <form method="post" action="{% url 'forecasting:recompute_class' c.class_offering.pk %}" class="inline">
-                        {% csrf_token %}
-                        <button type="submit" class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">Recompute</button>
-                    </form>
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6" class="px-4 py-4 text-center text-gray-600">No classes this semester.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
 <form method="get" class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+    <select name="ay" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Academic Year">
+        {% for ay in academic_years %}
+        <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+        {% endfor %}
+    </select>
+    <select name="sem_term" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Semester">
+        {% for value, label in semester_term_choices %}
+        <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
     <select name="class" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Filter by class">
         <option value="">All classes</option>
         {% for c in classes %}
@@ -66,6 +40,9 @@
         <option value="AT_RISK" {% if level_filter == "AT_RISK" %}selected{% endif %}>At Risk</option>
         <option value="WATCH" {% if level_filter == "WATCH" %}selected{% endif %}>Watch</option>
     </select>
+    <input type="search" name="q" value="{{ student_query }}" placeholder="Search student name"
+           class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+    <button type="submit" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Search</button>
 </form>
 
 {% if rows %}
@@ -111,15 +88,73 @@
     <p>Page {{ rows.number }} of {{ rows.paginator.num_pages }} ({{ rows.paginator.count }} total)</p>
     <div class="flex gap-2">
         {% if rows.has_previous %}
-        <a href="?class={{ class_filter }}&level={{ level_filter }}&page={{ rows.previous_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
+        <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&class={{ class_filter }}&level={{ level_filter }}&q={{ student_query }}&page={{ rows.previous_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
         {% endif %}
         {% if rows.has_next %}
-        <a href="?class={{ class_filter }}&level={{ level_filter }}&page={{ rows.next_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
+        <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&class={{ class_filter }}&level={{ level_filter }}&q={{ student_query }}&page={{ rows.next_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
         {% endif %}
     </div>
 </div>
 {% endif %}
 {% else %}
 {% include "partials/_empty_state.html" with icon="alert" title="No at-risk students right now" description="Students flagged At Risk or Watch across your program(s) will show up here." %}
+{% endif %}
+
+<h3 class="mb-3 mt-8 text-sm font-semibold text-gray-900">By Class</h3>
+<form method="get" class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+    <input type="hidden" name="ay" value="{{ selected_ay_id }}">
+    <input type="hidden" name="sem_term" value="{{ selected_sem_term }}">
+    <input type="hidden" name="class" value="{{ class_filter }}">
+    <input type="hidden" name="level" value="{{ level_filter }}">
+    <input type="hidden" name="q" value="{{ student_query }}">
+    <input type="search" name="class_q" value="{{ class_query }}" placeholder="Search class or instructor"
+           class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+    <button type="submit" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Search</button>
+</form>
+<div class="mb-3 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+                <th class="px-4 py-3">Class</th>
+                <th class="px-4 py-3">Instructor</th>
+                <th class="px-4 py-3 text-center">At Risk</th>
+                <th class="px-4 py-3 text-center">Watch</th>
+                <th class="px-4 py-3 text-center">Interventions</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for c in by_class %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ c.class_offering.subject.code }} · {{ c.class_offering.subject.title }}</td>
+                <td class="px-4 py-3 text-gray-700">{{ c.class_offering.instructor.full_name|default:"Unassigned" }}</td>
+                <td class="px-4 py-3 text-center text-red-700">{{ c.at_risk }}</td>
+                <td class="px-4 py-3 text-center text-amber-700">{{ c.watch }}</td>
+                <td class="px-4 py-3 text-center text-gray-600">{{ c.interventions }}</td>
+                <td class="px-4 py-3 text-right">
+                    <form method="post" action="{% url 'forecasting:recompute_class' c.class_offering.pk %}" class="inline">
+                        {% csrf_token %}
+                        <button type="submit" class="text-xs font-medium text-brand-primary-700 underline hover:no-underline">Recompute</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="px-4 py-4 text-center text-gray-600">No classes this semester.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if by_class.paginator.num_pages > 1 %}
+<div class="mb-6 flex items-center justify-between text-sm text-gray-600">
+    <p>Page {{ by_class.number }} of {{ by_class.paginator.num_pages }} ({{ by_class.paginator.count }} total)</p>
+    <div class="flex gap-2">
+        {% if by_class.has_previous %}
+        <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&class={{ class_filter }}&level={{ level_filter }}&q={{ student_query }}&class_q={{ class_query }}&class_page={{ by_class.previous_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if by_class.has_next %}
+        <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&class={{ class_filter }}&level={{ level_filter }}&q={{ student_query }}&class_q={{ class_query }}&class_page={{ by_class.next_page_number }}" class="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-gray-50">Next</a>
+        {% endif %}
+    </div>
+</div>
 {% endif %}
 {% endblock %}

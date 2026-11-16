@@ -3,10 +3,22 @@
 {% block content %}
 {% include "partials/_page_subtitle.html" with subtitle="Grade sheet PDFs and class record exports for your classes." %}
 
-{% if not active_semester_set %}
+{% if semesters %}
+<form method="get" class="mb-5 flex items-center gap-2 text-sm">
+    <label for="semester" class="text-gray-600">Semester:</label>
+    <select id="semester" name="semester" onchange="this.form.submit()"
+            class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+        {% for s in semesters %}
+        <option value="{{ s.pk }}" {% if selected_semester and selected_semester.pk == s.pk %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+    </select>
+</form>
+{% endif %}
+
+{% if not selected_semester %}
 {% include "partials/_empty_state.html" with icon="document" title="No active semester" description="An admin hasn't set an active semester yet." %}
 {% elif not classes %}
-{% include "partials/_empty_state.html" with icon="document" title="No classes this semester" description="You have no classes assigned in the active semester." %}
+{% include "partials/_empty_state.html" with icon="document" title="No classes this semester" description="You have no classes assigned in this semester." %}
 {% else %}
 <div class="overflow-x-auto gold-scroll rounded-2xl border border-gray-200 bg-white">
     <table class="min-w-full divide-y divide-gray-200 text-sm">

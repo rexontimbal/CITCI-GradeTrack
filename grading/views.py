@@ -166,7 +166,7 @@ def template_components(request, pk):
     context = {"template": template, "components": template.components.all()}
     if is_htmx(request):
         return render(request, "grading/_template_components_table.html", context)
-    context["page_title"] = f"Components — {template.name}"
+    context["page_title"] = f"Components: {template.name}"
     return render(request, "grading/template_components.html", context)
 
 
@@ -434,7 +434,7 @@ def class_grading(request, pk):
     is_overdue = bool(deadline and timezone.now() > deadline and grade_sheet is None)
 
     context = {
-        "page_title": f"Grading — {class_offering}",
+        "page_title": f"Grading: {class_offering}",
         "class_offering": class_offering,
         "can_edit": can_edit,
         "is_admin": request.user.is_admin_role,
@@ -923,7 +923,7 @@ def subject_detail(request, pk):
     status_label, status_key = subject_status_chip(roster_entry, released_entry)
 
     context = {
-        "page_title": f"{class_offering.subject.code} — My Grades",
+        "page_title": f"My Grades: {class_offering.subject.code}",
         "roster_entry": roster_entry,
         "class_offering": class_offering,
         "released_entry": released_entry,

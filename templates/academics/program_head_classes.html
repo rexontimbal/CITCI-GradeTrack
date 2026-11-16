@@ -3,52 +3,120 @@
 {% block page_title %}Classes{% endblock %}
 {% block content %}
 
-{% if not active_semester_set %}
+{% if no_scope %}
+{% include "partials/_empty_state.html" with icon="chalkboard" title="No program in scope" description="You have not been assigned as a Program Head for any program yet. Ask Admin to assign you on the Programs or Majors page." %}
+{% elif not active_semester_set %}
 {% include "partials/_no_active_semester.html" %}
 {% else %}
 
-<div class="mb-4 flex items-center justify-between">
-    <p class="text-xs font-medium text-gray-600">{{ classes|length }} class{{ classes|length|pluralize:"es" }}</p>
-    <div class="flex gap-2">
-        <button hx-get="{% url 'academics:ph_class_join' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            Join Existing Class
-        </button>
-        <button hx-get="{% url 'academics:ph_class_create' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            Add Class Manually
-        </button>
+<div class="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
+    <div class="mb-3 inline-flex h-10 overflow-hidden rounded-lg border border-gray-300">
+        {% for pill in pills %}
+        <a href="?program={{ pill.program.pk }}&major={{ pill.major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&year_level=ALL"
+           class="flex items-center px-4 text-sm font-medium {% if not forloop.first %}border-l border-gray-300{% endif %} {% if pill.active %}bg-brand-primary-700 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+            {{ pill.label }}
+        </a>
+        {% endfor %}
     </div>
+
+    <form method="get" action="{% url 'academics:program_head_classes' %}" class="flex flex-wrap items-center gap-3">
+        <input type="hidden" name="program" value="{{ program.pk }}">
+        <input type="hidden" name="major" value="{{ major.pk|default:'' }}">
+        <div class="relative">
+            <label class="floating-label-bg pointer-events-none absolute -top-2 left-2 z-10 px-1 text-xs font-medium text-gray-600">Academic Year</label>
+            <select name="ay" onchange="this.form.requestSubmit()" aria-label="Academic Year"
+                    class="h-10 min-w-[150px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                {% for ay in academic_years %}
+                <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="relative">
+            <label class="floating-label-bg pointer-events-none absolute -top-2 left-2 z-10 px-1 text-xs font-medium text-gray-600">Semester</label>
+            <select name="sem_term" onchange="this.form.requestSubmit()" aria-label="Semester"
+                    class="h-10 min-w-[120px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                {% for value, label in semester_term_choices %}
+                <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="relative">
+            <label class="floating-label-bg pointer-events-none absolute -top-2 left-2 z-10 px-1 text-xs font-medium text-gray-600">Section</label>
+            <select name="section" onchange="this.form.requestSubmit()" aria-label="Section"
+                    class="h-10 min-w-[140px] rounded-lg border border-gray-300 px-3 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="">All Sections</option>
+                {% for section in sections_for_filter %}
+                <option value="{{ section.pk }}" {% if section.pk|stringformat:"s" == selected_section_id %}selected{% endif %}>{{ section.short_label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <label class="ml-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input type="checkbox" name="unassigned" value="1" onchange="this.form.requestSubmit()" {% if request.GET.unassigned == "1" %}checked{% endif %}>
+            Unassigned only
+        </label>
+    </form>
+
+    {% if available_year_levels %}
+    <div class="mt-3 inline-flex h-10 overflow-hidden rounded-lg border border-gray-300">
+        <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&section={{ selected_section_id }}&year_level=ALL"
+           class="flex items-center px-4 text-sm font-medium {% if year_level_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+            All Years
+        </a>
+        {% for yl in available_year_levels %}
+        <a href="?program={{ program.pk }}&major={{ major.pk|default:'' }}&ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&section={{ selected_section_id }}&year_level={{ yl }}"
+           class="flex items-center border-l border-gray-300 px-4 text-sm font-medium {% if year_level_filter == yl|stringformat:'s' %}bg-brand-primary-700 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+            {{ yl }}{% if yl == 1 %}st{% elif yl == 2 %}nd{% elif yl == 3 %}rd{% else %}th{% endif %} Year
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 
 {% if classes %}
 {{ class_ids_json|json_script:"all-class-ids" }}
 <div x-data="classBulkSelect('{% url 'academics:class_update_field' 0 %}')" class="relative" style="padding-bottom: 4.5rem;">
-    <div class="overflow-x-auto rounded-2xl border border-gray-200 bg-white gold-scroll">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                <tr>
-                    <th class="px-4 py-3">
-                        <input type="checkbox" aria-label="Select all classes"
-                               x-effect="$el.checked = allChecked(JSON.parse(document.getElementById('all-class-ids').textContent)); $el.indeterminate = someChecked(JSON.parse(document.getElementById('all-class-ids').textContent)) && !allChecked(JSON.parse(document.getElementById('all-class-ids').textContent))"
-                               @change="onHeaderToggle(JSON.parse(document.getElementById('all-class-ids').textContent), $event.target.checked)">
-                    </th>
-                    <th class="px-4 py-3">Class</th>
-                    <th class="px-4 py-3">Instructor</th>
-                    <th class="px-4 py-3">Room</th>
-                    <th class="px-4 py-3">Schedule</th>
-                    <th class="px-4 py-3">Students</th>
-                    <th class="px-4 py-3">Status</th>
-                    <th class="px-4 py-3 text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-                {% for class_offering in classes %}
-                {% include "academics/_classes_row.html" with class_offering=class_offering instructors=instructors %}
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs font-medium text-gray-600">{{ classes|length }} class{{ classes|length|pluralize:"es" }}{% if selected_semester %} · {{ selected_semester }}{% endif %}</p>
+        <label class="relative inline-flex cursor-pointer items-center gap-2 select-none">
+            <input type="checkbox" x-model="selectMode" @change="clearAll()" class="peer sr-only">
+            <span class="h-6 w-11 rounded-full bg-gray-300 transition-colors peer-checked:bg-brand-primary-700"></span>
+            <span class="pointer-events-none absolute left-[2px] top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+            <span class="text-xs font-medium text-gray-700">Select</span>
+        </label>
     </div>
+    {% for card in cards %}
+    <div class="mb-6 rounded-2xl border border-gray-200 bg-white p-5">
+        <h3 class="mb-3 text-sm font-semibold text-gray-900">
+            {% if card.year_level %}{{ card.year_level }}{% if card.year_level == 1 %}st{% elif card.year_level == 2 %}nd{% elif card.year_level == 3 %}rd{% else %}th{% endif %} Year{% else %}No Year Level{% endif %}
+            <span class="font-normal text-gray-500">· {{ card.classes|length }} class{{ card.classes|length|pluralize:"es" }}</span>
+        </h3>
+        <div class="overflow-x-auto rounded-xl border border-gray-200 gold-scroll">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <tr>
+                        <th class="px-4 py-3">
+                            <input type="checkbox" x-show="selectMode" x-cloak aria-label="Select all in this year level"
+                                   x-effect="$el.checked = allChecked([{{ card.class_ids_csv }}]); $el.indeterminate = someChecked([{{ card.class_ids_csv }}]) && !allChecked([{{ card.class_ids_csv }}])"
+                                   @change="onHeaderToggle([{{ card.class_ids_csv }}], $event.target.checked)">
+                        </th>
+                        <th class="px-4 py-3">Class</th>
+                        <th class="px-4 py-3">Instructor</th>
+                        <th class="px-4 py-3">Room</th>
+                        <th class="px-4 py-3">Schedule</th>
+                        <th class="px-4 py-3">Students</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for class_offering in card.classes %}
+                    {% include "academics/_classes_row.html" with class_offering=class_offering instructors=instructors rooms=rooms %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
 
     <div x-show="count > 0" x-cloak
          class="fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-6 py-3 shadow-lg md:left-64">
@@ -62,11 +130,14 @@
                 <option value="{{ instructor.pk }}">{{ instructor.full_name }}</option>
                 {% endfor %}
             </select>
-            <div class="flex items-center gap-1">
-                <input type="text" x-model="roomValue" @keydown.enter.prevent="setRoom()" placeholder="Set room"
-                       class="w-28 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
-                <button type="button" @click="setRoom()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Apply</button>
-            </div>
+            <select @change="if ($event.target.value !== '__placeholder__') { setRoom($event.target.value); } $event.target.value = '__placeholder__'"
+                    class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <option value="__placeholder__" selected>Set room…</option>
+                <option value="">Not set</option>
+                {% for room in rooms %}
+                <option value="{{ room.pk }}">{{ room.name }}</option>
+                {% endfor %}
+            </select>
             <div class="flex items-center gap-1">
                 <input type="text" x-model="scheduleValue" @keydown.enter.prevent="setSchedule()" placeholder="Set schedule"
                        class="w-36 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
@@ -85,5 +156,20 @@
 
 <script>
     document.body.addEventListener("refreshClasses", () => window.location.reload());
+
+    // Arriving via a #class-row-<id> link (e.g. Teaching Loads' "Unassigned
+    // classes" list) scrolls that row into view and briefly highlights it,
+    // so the row you clicked for is obvious instead of lost in a long table.
+    // box-shadow/ring doesn't render reliably on <tr> across browsers, so
+    // this uses a plain background-color transition instead.
+    if (location.hash.startsWith("#class-row-")) {
+        const row = document.querySelector(location.hash);
+        if (row) {
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+            row.style.transition = "background-color 0.4s ease";
+            row.style.backgroundColor = "#fef3c7"; // amber-100
+            setTimeout(() => { row.style.backgroundColor = ""; }, 2500);
+        }
+    }
 </script>
 {% endblock %}

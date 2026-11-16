@@ -22,6 +22,7 @@ from academics.models import (
     Subject,
     Term,
 )
+from academics.services import resolve_or_create_room
 
 DEMO_PASSWORD = "Demo@1234"
 
@@ -224,13 +225,14 @@ class Command(BaseCommand):
             subject = subjects[c["code"]]
             semester = first_sem if c["semester"] == "FIRST" else second_sem
             instructor = instructors.get(c["instructor"])
+            room = resolve_or_create_room(c["room"])
 
             class_offering = ClassOffering.objects.filter(
-                subject=subject, semester=semester, room=c["room"], schedule=c["schedule"]
+                subject=subject, semester=semester, room=room, schedule=c["schedule"]
             ).first()
             if class_offering is None:
                 class_offering = ClassOffering.objects.create(
-                    subject=subject, semester=semester, instructor=instructor, room=c["room"], schedule=c["schedule"]
+                    subject=subject, semester=semester, instructor=instructor, room=room, schedule=c["schedule"]
                 )
             else:
                 class_offering.instructor = instructor

@@ -4,9 +4,23 @@
 {% block content %}
 {% include "partials/_page_subtitle.html" with subtitle="Grade sheets submitted for classes under your program(s)." %}
 
+<form method="get" class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+    <input type="hidden" name="status" value="{{ status_filter }}">
+    <select name="ay" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Academic Year">
+        {% for ay in academic_years %}
+        <option value="{{ ay.pk }}" {% if ay.pk == selected_ay_id %}selected{% endif %}>{{ ay.start_year }}-{{ ay.end_year }}</option>
+        {% endfor %}
+    </select>
+    <select name="sem_term" onchange="this.form.submit()" class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm" aria-label="Semester">
+        {% for value, label in semester_term_choices %}
+        <option value="{{ value }}" {% if value == selected_sem_term %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+</form>
+
 {% if late_counts %}
 <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
-    <a href="?status={{ status_filter }}&late=1" hx-get="?status={{ status_filter }}&late=1" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+    <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&late=1" hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}&late=1" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
        class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 font-medium text-red-700 hover:bg-red-100">
         {{ late_counts.late_count }} late
     </a>
@@ -14,7 +28,7 @@
         {{ late_counts.not_submitted_count }} not yet submitted
     </span>
     {% if late_only %}
-    <a href="?status={{ status_filter }}" hx-get="?status={{ status_filter }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+    <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}" hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status_filter }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
        class="text-gray-600 underline hover:no-underline">Clear late filter</a>
     {% endif %}
 </div>
@@ -34,19 +48,19 @@
 
 <div class="mb-4 flex flex-wrap gap-2 border-b border-gray-200 pb-3">
     {% for status, label in statuses %}
-    <a href="?status={{ status }}"
-       hx-get="?status={{ status }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+    <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status }}"
+       hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status={{ status }}" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
        class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == status %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         {{ label }} <span class="ml-1 text-xs opacity-75">{{ counts|dict_get:status|default:0 }}</span>
     </a>
     {% endfor %}
-    <a href="?status=ALL"
-       hx-get="?status=ALL" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+    <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=ALL"
+       hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=ALL" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
        class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == "ALL" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         All
     </a>
-    <a href="?status=INC_COMPLETIONS"
-       hx-get="?status=INC_COMPLETIONS" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
+    <a href="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS"
+       hx-get="?ay={{ selected_ay_id }}&sem_term={{ selected_sem_term }}&status=INC_COMPLETIONS" hx-target="#queue-table" hx-swap="outerHTML" hx-push-url="true"
        class="rounded-lg px-3 py-1.5 text-sm font-medium {% if status_filter == "INC_COMPLETIONS" %}bg-brand-primary-700 text-white{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
         INC Completions <span class="ml-1 text-xs opacity-75">{{ counts.INC_COMPLETIONS|default:0 }}</span>
     </a>

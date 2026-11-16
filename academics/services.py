@@ -22,6 +22,7 @@ from .models import (
     ClassOffering,
     ClassRosterEntry,
     CurriculumEntry,
+    Room,
     Section,
     SectionMembership,
     Semester,
@@ -31,6 +32,22 @@ from .models import (
     SubjectOffering,
     TeachingAssignmentLog,
 )
+
+
+def resolve_or_create_room(raw_name):
+    """A spreadsheet/docx import or demo seeder's room column is free
+    text, not the admin's own curated Room list — matched case-
+    insensitively against an existing Room, else created fresh (unlike an
+    unmatched instructor name, which is never auto-created, a room name
+    carries no identity/security weight worth blocking on; the admin can
+    rename/merge it afterward on the Rooms page)."""
+    name = (raw_name or "").strip()
+    if not name:
+        return None
+    room = Room.objects.filter(name__iexact=name).first()
+    if room:
+        return room
+    return Room.objects.create(name=name)
 
 
 def check_instructor_change_allowed(class_offering):
@@ -47,7 +64,7 @@ def check_instructor_change_allowed(class_offering):
 
     if not is_class_editable(class_offering):
         raise ValidationError(
-            "This class's grade sheet has already been submitted — the instructor can no longer be changed."
+            "This class's grade sheet has already been submitted. The instructor can no longer be changed."
         )
 
 
@@ -123,6 +140,7 @@ def teaching_load_rows(semester, programs, program_id=None, instructor_id=None):
         ClassOffering.objects.filter(semester=semester, sections__program__in=scoped_programs)
         .distinct()
         .select_related("subject", "instructor")
+        .prefetch_related("sections__program", "sections__major")
         .annotate(
             roster_size=Count(
                 "roster_entries", filter=Q(roster_entries__status=ClassRosterEntry.Status.ACTIVE), distinct=True
@@ -343,7 +361,7 @@ def subject_used_in_released_grades(subject):
 # creates one ClassOffering per active section of that program/major/
 # year_level and fills its roster from the section's active students.
 # Preview (read-only) → commit (one atomic transaction) — same shape as
-# offerings_import's/the AY wizard's existing preview-then-confirm flows.
+# the AY wizard's existing preview-then-confirm flow.
 # ---------------------------------------------------------------------------
 
 
@@ -637,6 +655,11 @@ def withdraw_offering_section(offering, section, actor):
         return True, None
     if class_has_scores_or_submitted_sheet(class_offering):
         return False, f"{offering.subject.code} · {section.short_label} has scores or a submitted grade sheet."
+    # Removing the class's last section deletes its roster entries outright
+    # below -- never do that to a class a student has already joined, even
+    # with nothing graded yet.
+    if class_offering.sections.count() == 1 and class_offering.roster_entries.exists():
+        return False, f"{offering.subject.code} · {section.short_label} already has students on its roster."
 
     with transaction.atomic():
         class_offering.sections.remove(section)
@@ -665,14 +688,21 @@ def class_has_scores_or_submitted_sheet(class_offering):
 
 def withdraw_offering(offering, actor):
     """Deletes `offering` and every class it created, but only if none of
-    those classes has a score encoded or a submitted-or-later grade sheet.
+    those classes has a score encoded, a submitted-or-later grade sheet,
+    or any student already on its roster (withdrawing deletes the class's
+    roster entries outright — a class a student has already joined, even
+    with nothing graded yet, must never be silently torn down under them).
     Returns (True, None) on success, or (False, reason) if blocked — never
     partially deletes."""
     classes = list(offering.class_offerings.all())
-    blocking = [class_offering for class_offering in classes if class_has_scores_or_submitted_sheet(class_offering)]
+    blocking = [
+        class_offering
+        for class_offering in classes
+        if class_has_scores_or_submitted_sheet(class_offering) or class_offering.roster_entries.exists()
+    ]
     if blocking:
         names = ", ".join(str(c) for c in blocking)
-        return False, f"Can't withdraw — {names} already has scores or a submitted grade sheet."
+        return False, f"Can't withdraw: {names} already has students on its roster, scores, or a submitted grade sheet."
 
     with transaction.atomic():
         AcademicSetupChangeLog.objects.create(
@@ -1099,7 +1129,7 @@ def approve_join_request(join_request, actor):
 
     notify(
         join_request.student,
-        f"You're in — {join_request.class_offering}",
+        f"You're in: {join_request.class_offering}",
         f"Your request to join {join_request.class_offering} was approved.",
         link="/academics/my-classes/",
     )
@@ -1119,7 +1149,7 @@ def reject_join_request(join_request, actor, reason=""):
 
     notify(
         join_request.student,
-        f"Request declined — {join_request.class_offering}",
+        f"Request declined: {join_request.class_offering}",
         reason or f"Your request to join {join_request.class_offering} was declined.",
         link="/academics/my-classes/",
     )

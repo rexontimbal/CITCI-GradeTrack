@@ -30,6 +30,24 @@ urlpatterns = [
     path("majors/<int:pk>/edit/", views.MajorFormView.as_view(), name="major_edit"),
     path("majors/<int:pk>/delete/", views.MajorDeleteView.as_view(), name="major_delete"),
 
+    # Rooms
+    path("rooms/", views.RoomListView.as_view(), name="rooms"),
+    path("rooms/create/", views.RoomFormView.as_view(), name="room_create"),
+    path("rooms/<int:pk>/edit/", views.RoomFormView.as_view(), name="room_edit"),
+    path("rooms/<int:pk>/delete/", views.RoomDeleteView.as_view(), name="room_delete"),
+    path("rooms/<int:pk>/toggle-active/", views.RoomToggleActiveView.as_view(), name="room_toggle_active"),
+
+    # Subject Catalog (flat master list, independent of curriculum placement)
+    path("subject-catalog/", views.SubjectCatalogListView.as_view(), name="subject_catalog"),
+    path("subject-catalog/create/", views.SubjectCatalogFormView.as_view(), name="subject_catalog_create"),
+    path("subject-catalog/<int:pk>/edit/", views.SubjectCatalogFormView.as_view(), name="subject_catalog_edit"),
+    path("subject-catalog/<int:pk>/delete/", views.SubjectCatalogDeleteView.as_view(), name="subject_catalog_delete"),
+    path(
+        "subject-catalog/<int:pk>/toggle-active/",
+        views.SubjectCatalogToggleActiveView.as_view(),
+        name="subject_catalog_toggle_active",
+    ),
+
     # Sections
     path("sections/", views.sections_home, name="sections"),
     path("sections/create/", views.SectionFormView.as_view(), name="section_create"),
@@ -135,11 +153,7 @@ urlpatterns = [
     path("classes/<int:pk>/import/", views.class_list_import_upload, name="class_list_import_upload"),
     path("classes/<int:pk>/import/confirm/", views.class_list_import_confirm, name="class_list_import_confirm"),
 
-    # Import Class Offerings + Copy classes from previous semester (admin)
-    path("offerings/import/template/", views.offerings_import_template, name="offerings_import_template"),
-    path("offerings/import/", views.offerings_import, name="offerings_import"),
-    path("offerings/import/upload/", views.offerings_import_upload, name="offerings_import_upload"),
-    path("offerings/import/confirm/", views.offerings_import_confirm, name="offerings_import_confirm"),
+    # Copy classes from previous semester (admin)
     path("offerings/copy/", views.offerings_copy_previous, name="offerings_copy_previous"),
     path("offerings/copy/confirm/", views.offerings_copy_previous_confirm, name="offerings_copy_previous_confirm"),
 

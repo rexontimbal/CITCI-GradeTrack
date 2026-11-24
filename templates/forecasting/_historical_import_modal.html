@@ -7,8 +7,11 @@
 </div>
 <div class="mt-4 space-y-4">
     <p class="text-sm text-gray-600">
-        Upload one or more past class records (`.xlsx`): either CITCI's own class-record layout or this
-        system's own Class Record export. One file per class. Identities are masked before anything is saved.
+        Upload one or more past class records: CITCI's own class-record layout, this system's own Class
+        Record export, or a plain Excel/CSV file with headers in row 1 (any other column names are fine;
+        you'll confirm what each one means on the next screen). One file per class. Upload either all
+        CITCI-layout files or all plain Excel/CSV files in one batch, not a mix of both. Identities are
+        masked before anything is saved.
     </p>
 
     {% if error %}
@@ -18,8 +21,22 @@
     <form hx-post="{% url 'forecasting:historical_import' %}" hx-target="#modal-content" hx-swap="innerHTML"
           hx-encoding="multipart/form-data" class="space-y-4">
         {% csrf_token %}
-        <input type="file" name="files" accept=".xlsx" multiple required
+        <input type="file" name="files" accept=".xlsx,.xls,.csv" multiple required
                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-brand-primary-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-primary-800">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="mb-1 block text-xs font-medium text-gray-700">Semester label (optional)</label>
+                <input type="text" name="semester_label" placeholder="e.g. 1st Sem 2024-2025"
+                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <p class="mt-1 text-xs text-gray-500">Used when a file has no Semester column of its own. Defaults to the file name.</p>
+            </div>
+            <div>
+                <label class="mb-1 block text-xs font-medium text-gray-700">Subject code (optional)</label>
+                <input type="text" name="subject_code" placeholder="e.g. GE 2"
+                       class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                <p class="mt-1 text-xs text-gray-500">Used when a file has no Subject column of its own. Defaults to the file name.</p>
+            </div>
+        </div>
         <div class="flex justify-end gap-2">
             <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Cancel

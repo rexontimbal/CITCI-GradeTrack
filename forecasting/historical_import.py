@@ -72,6 +72,21 @@ _DEFAULT_WEIGHTS = {
 }
 
 
+def compute_label(final_grade, remarks):
+    """label = 1 (at risk) iff final_grade > 3.00, or remarks is
+    INC/DROPPED/DRP; 0 otherwise. Returns None when neither a usable
+    final_grade nor a recognized remarks value is available, meaning the
+    caller should skip the row. CITCI's scale is 1.00 (best) to 5.00
+    (worst); 3.00 is the passing cutoff. Shared by every label source in
+    this module (uploaded-file parsing and the live-data export) so there
+    is exactly one implementation of this rule."""
+    if remarks in ("DROPPED", "DRP", "INC"):
+        return 1
+    if final_grade is None:
+        return None
+    return 1 if final_grade > 3.00 else 0
+
+
 def mask_identifier(raw_identifier):
     """SHA-256(app secret salt + identifier) — the only function allowed
     to see a real name/ID number in this whole pipeline. The same
@@ -270,22 +285,26 @@ def parse_workbook(file_name, uploaded_file, semester_label, subject_code):
         except (TypeError, ValueError):
             final_grade = None
 
-        if final_grade is None and remarks not in ("INC", "DROPPED", "DRP"):
-            skipped.append(SkippedRow(file_name, row, "No readable FINAL GRADE or remarks — can't determine a label"))
+        label = compute_label(final_grade, remarks)
+        if label is None:
+            skipped.append(SkippedRow(file_name, row, "No readable FINAL GRADE or remarks. Can't determine a label."))
             row += 1
             continue
 
-        if remarks in ("DROPPED", "DRP"):
-            label = 1  # DROPPED counts as at-risk, per the target-label rule
-        elif remarks == "INC":
-            label = 1
-        else:
-            label = 1 if final_grade > 3.00 else 0
-
         masked_id = mask_identifier(identifier)
 
+        items = []
+        for category, parsed_items in components:
+            for item_col, parsed in parsed_items:
+                raw = ws.cell(row, item_col).value
+                try:
+                    earned = float(raw)
+                except (TypeError, ValueError):
+                    earned = None
+                items.append((category, parsed.term, earned, parsed.max_score))
+
         for checkpoint in (Checkpoint.PRELIM, Checkpoint.MIDTERM):
-            features = _checkpoint_features(ws, row, components, checkpoint)
+            features = compute_checkpoint_features(items, checkpoint)
             if features is None:
                 continue
             rows.append(
@@ -303,24 +322,32 @@ def parse_workbook(file_name, uploaded_file, semester_label, subject_code):
     return rows, skipped
 
 
-def _checkpoint_features(ws, row, components, checkpoint):
+def compute_checkpoint_features(items, checkpoint):
+    """items: iterable of (category, term, earned, possible) tuples,
+    already resolved to plain numbers -- source-agnostic. `earned` is
+    None for a blank/unscored cell; `possible` is always the item's known
+    max (or 100 for a column that's already a percentage). Built from
+    live openpyxl cell reads (the rigid template scanner) or from a
+    flexible DataFrame + admin-confirmed column mapping -- this function
+    doesn't know or care which. Returns the same per-checkpoint feature
+    dict either way, or None if nothing was in scope / scored at all.
+
+    This is also the one place the leakage guard lives: an item whose
+    term sorts after `checkpoint` (via ASSESSMENT_TERM_ORDER) never
+    contributes, regardless of how the item was discovered."""
     cutoff = ASSESSMENT_TERM_ORDER[checkpoint]
-    sums = {}  # feature_name -> [earned, possible]
-    for category, items in components:
+    in_scope = [(category, earned, possible) for category, term, earned, possible in items if ASSESSMENT_TERM_ORDER[term] <= cutoff]
+
+    sums = {}  # feature_name -> [earned, possible], scored items only
+    for category, earned, possible in in_scope:
+        if earned is None:
+            continue
         feature_name = _CATEGORY_TO_FEATURE.get(category)
         if feature_name is None:
             continue
-        for item_col, parsed in items:
-            if ASSESSMENT_TERM_ORDER[parsed.term] > cutoff:
-                continue
-            raw = ws.cell(row, item_col).value
-            try:
-                earned = float(raw)
-            except (TypeError, ValueError):
-                continue
-            bucket = sums.setdefault(feature_name, [0.0, 0.0])
-            bucket[0] += earned
-            bucket[1] += parsed.max_score
+        bucket = sums.setdefault(feature_name, [0.0, 0.0])
+        bucket[0] += earned
+        bucket[1] += possible
 
     if not sums:
         return None
@@ -329,27 +356,19 @@ def _checkpoint_features(ws, row, components, checkpoint):
     for name, (earned, possible) in sums.items():
         features[name] = Decimal(str(round(earned / possible * 100, 4))) if possible else None
 
-    total_in_scope = 0
-    total_scored = 0
+    total_in_scope = len(in_scope)
+    total_scored = sum(1 for _, earned, _ in in_scope if earned is not None)
+
+    weighted_by_category = {}
+    for category, earned, possible in in_scope:
+        bucket = weighted_by_category.setdefault(category, [Decimal("0"), Decimal("0")])
+        bucket[1] += Decimal(str(possible))
+        if earned is not None:
+            bucket[0] += Decimal(str(earned))
+
     weighted_sum = Decimal("0")
     weight_total = Decimal("0")
-    for category, items in components:
-        in_scope = [p for _, p in items if ASSESSMENT_TERM_ORDER[p.term] <= cutoff]
-        if not in_scope:
-            continue
-        earned = Decimal("0")
-        possible = Decimal("0")
-        for item_col, parsed in items:
-            if ASSESSMENT_TERM_ORDER[parsed.term] > cutoff:
-                continue
-            total_in_scope += 1
-            raw = ws.cell(row, item_col).value
-            possible += Decimal(str(parsed.max_score))
-            try:
-                earned += Decimal(str(float(raw)))
-                total_scored += 1
-            except (TypeError, ValueError):
-                pass
+    for category, (earned, possible) in weighted_by_category.items():
         if possible:
             grade = Decimal("5") - Decimal("4") * (earned / possible)
             weight = Decimal(str(_DEFAULT_WEIGHTS.get(category, 10)))
@@ -391,6 +410,31 @@ def build_import_preview(files, semester_label_fn=None):
     return preview
 
 
+def looks_like_known_template(file_name, uploaded_file):
+    """Cheap probe: does this file match the known rigid CITCI/Class-Record
+    layout well enough to use the fast existing path with zero behavior
+    change? Requires more than a header-row match -- a flexible export
+    that happens to reuse "ID Number"/"Name of Students" as its own
+    headers (but nothing else matching a recognized component) must still
+    fall through to the flexible mapper, not silently produce a 0-row
+    "successful" rigid-path result. Only .xlsx/.xls files are even
+    eligible; .csv always routes to the flexible path. Always resets the
+    file pointer afterward so a real parse can run next either way."""
+    lower = file_name.lower()
+    if not (lower.endswith(".xlsx") or lower.endswith(".xls")):
+        return False
+    try:
+        rows, _skipped = parse_workbook(file_name, uploaded_file, "probe", "probe")
+        return len(rows) > 0
+    except Exception:
+        return False
+    finally:
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+
+
 def export_released_data_to_historical(user):
     """Admin action ("Add released semesters to training data") — masks
     every RELEASED/LOCKED GradeSheetEntry's data into HistoricalRecord the
@@ -419,11 +463,8 @@ def export_released_data_to_historical(user):
         identifier = roster_entry.student.id_number or str(roster_entry.student_id)
         masked_id = mask_identifier(identifier)
 
-        if entry.remarks in ("DROPPED", "INC"):
-            label = 1
-        elif entry.final_grade is not None:
-            label = 1 if entry.final_grade > Decimal("3.00") else 0
-        else:
+        label = compute_label(entry.final_grade, entry.remarks or "")
+        if label is None:
             skipped.append({"file": "live-export", "row": entry.pk, "reason": "No final grade to derive a label from"})
             continue
 

@@ -1,0 +1,119 @@
+{% load sidebar_icons %}
+<div class="flex items-center justify-between border-b border-gray-200 pb-3">
+    <h3 id="modal-title" class="text-base font-semibold text-gray-900">Confirm what each column means</h3>
+    <button type="button" @click="modalOpen = false" aria-label="Close" class="text-gray-600 hover:text-gray-600">
+        {% sidebar_icon "close" "w-5 h-5" %}
+    </button>
+</div>
+
+<form hx-post="{% url 'forecasting:historical_import_mapping_confirm' %}" hx-target="#modal-content" hx-swap="innerHTML" class="mt-4 space-y-4">
+    {% csrf_token %}
+
+    <p class="text-sm text-gray-600">
+        We guessed a role for each column below from its header text and its values. Nothing is saved yet.
+        Review each one, fix any that look wrong, and set the grading period for every score column before
+        continuing.
+    </p>
+
+    {% if errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <ul class="list-inside list-disc">
+            {% for file_name, message in errors %}<li>{{ file_name }}: {{ message }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="max-h-[28rem] space-y-6 overflow-y-auto gold-scroll pr-1">
+        {% for file in files %}
+        <div class="rounded-lg border border-gray-200 p-3">
+            <p class="mb-2 text-sm font-semibold text-gray-900">{{ file.file_name }}</p>
+            <div class="space-y-2">
+                {% for col in file.columns %}
+                <div x-data="{ role: '{{ col.suggested_role }}', kind: '{{ col.suggested_kind|default:'RAW' }}' }" class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">{{ col.header_text }}</p>
+                            {% if col.sample_values %}
+                            <p class="text-xs text-gray-500">Sample: {{ col.sample_values|join:", " }}</p>
+                            {% endif %}
+                            {% if col.value_range_hint %}
+                            <p class="text-xs text-gray-500">{{ col.value_range_hint }}</p>
+                            {% endif %}
+                        </div>
+                        <select name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-role" x-model="role"
+                                class="h-9 rounded-lg border border-gray-300 px-2 text-sm focus:border-brand-accent-600 focus:outline-none focus:ring-2 focus:ring-brand-accent-500">
+                            {% for value, label in role_choices %}
+                            <option value="{{ value }}" {% if value == col.suggested_role %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div x-show="role === 'SCORE'" x-cloak class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div>
+                            <label class="block text-xs text-gray-600">Category</label>
+                            <select name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-category"
+                                    class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                                <option value="">select</option>
+                                {% for value, label in category_choices %}
+                                <option value="{{ value }}" {% if value == col.suggested_category %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600">Term</label>
+                            <select name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-term"
+                                    class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                                <option value="">select</option>
+                                {% for value, label in term_choices %}
+                                <option value="{{ value }}" {% if value == col.suggested_term %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-600">Kind</label>
+                            <select name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-kind" x-model="kind"
+                                    class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                                {% for value, label in kind_choices %}
+                                <option value="{{ value }}" {% if value == col.suggested_kind %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div x-show="kind === 'RAW'" x-cloak>
+                            <label class="block text-xs text-gray-600">Max score</label>
+                            <input type="number" min="1" step="1" name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-max_score"
+                                   class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                        </div>
+                    </div>
+
+                    <div x-show="role === 'RUNNING_GRADE'" x-cloak class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div>
+                            <label class="block text-xs text-gray-600">Term</label>
+                            <select name="col-{{ forloop.parentloop.counter0 }}-{{ col.index }}-term"
+                                    class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
+                                <option value="">select</option>
+                                {% for value, label in term_choices %}
+                                <option value="{{ value }}" {% if value == col.suggested_term %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <p class="text-xs text-gray-500">
+        Student identities are masked (SHA-256) the moment a row is read. No names or ID numbers are saved.
+    </p>
+
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" @click="modalOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+            Preview Import
+        </button>
+    </div>
+</form>

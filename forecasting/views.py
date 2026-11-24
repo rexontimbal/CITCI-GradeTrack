@@ -10,9 +10,11 @@ from django.utils import timezone
 from academics.models import AcademicYear, ClassOffering, ClassRosterEntry, Program, Semester, Term
 from accounts.decorators import role_required
 from accounts.models import User
+from grading.models import AssessmentTerm, ComponentCategory
 
+from . import flexible_import
 from .forms import InterventionForm
-from .historical_import import build_import_preview, commit_import, export_released_data_to_historical
+from .historical_import import build_import_preview, commit_import, export_released_data_to_historical, looks_like_known_template
 from .ml.train import train_model
 from .models import Checkpoint, HistoricalImportBatch, Intervention, MlModelVersion, Prediction, TrainingSource
 from .services import (
@@ -46,7 +48,10 @@ def model(request):
             version = train_model(checkpoint, source, threshold=threshold)
             messages.success(request, f"Trained {version}. Inactive until you Activate it below.")
         except ValidationError as exc:
-            messages.error(request, " ".join(exc.messages))
+            # Always a "not enough data yet" refusal, never a system
+            # failure -- amber, not red, so it doesn't read as something
+            # broke.
+            messages.warning(request, " ".join(exc.messages))
         return redirect("forecasting:model")
 
     versions_by_checkpoint = {}
@@ -105,6 +110,25 @@ def historical(request):
     return render(request, "forecasting/historical.html", context)
 
 
+def _mapping_context(files_payload):
+    return {
+        "files": files_payload,
+        "role_choices": flexible_import.ColumnRole.CHOICES,
+        "kind_choices": flexible_import.SCORE_KIND_CHOICES,
+        "category_choices": ComponentCategory.choices,
+        "term_choices": AssessmentTerm.choices,
+    }
+
+
+@role_required(ADMIN)
+def historical_import_instructions(request):
+    """Shown before the file picker, every time -- explains the one rule
+    that makes clean parsing possible (headers in literal row 1) before
+    the admin ever sees an upload form. "Continue" re-GETs the existing
+    upload view into the same #modal-content target."""
+    return render(request, "forecasting/_historical_import_instructions.html", {})
+
+
 @role_required(ADMIN)
 def historical_import_upload(request):
     if request.method != "POST":
@@ -114,20 +138,94 @@ def historical_import_upload(request):
     if not uploaded_files:
         return render(request, "forecasting/_historical_import_modal.html", {"error": "Choose at least one file."})
 
-    files = [(f.name, f) for f in uploaded_files]
-    try:
-        preview = build_import_preview(files)
-    except Exception as exc:  # pragma: no cover — surfaced to the admin, not silently swallowed
-        return render(request, "forecasting/_historical_import_modal.html", {"error": str(exc)})
+    semester_fallback = request.POST.get("semester_label", "").strip()
+    subject_fallback = request.POST.get("subject_code", "").strip()
 
-    if preview.row_count == 0:
-        return render(
-            request,
-            "forecasting/_historical_import_modal.html",
-            {"error": "No usable rows found in the uploaded file(s). See the skipped-row reasons if any."},
+    files = [(f.name, f) for f in uploaded_files]
+
+    # If every file matches the known rigid layout (CITCI's own template or
+    # this system's Class Record export), behavior is identical to before
+    # this feature existed -- the fast path, untouched. Mixing rigid and
+    # flexible files in one batch is unsupported: any mismatch sends the
+    # whole batch through the flexible mapper instead.
+    if all(looks_like_known_template(name, f) for name, f in files):
+        try:
+            preview = build_import_preview(files)
+        except Exception as exc:  # pragma: no cover — surfaced to the admin, not silently swallowed
+            return render(request, "forecasting/_historical_import_modal.html", {"error": str(exc)})
+
+        if preview.row_count == 0:
+            return render(
+                request,
+                "forecasting/_historical_import_modal.html",
+                {"error": "No usable rows found in the uploaded file(s). See the skipped-row reasons if any."},
+            )
+
+        request.session["historical_import_preview"] = preview.to_session()
+        return render(request, "forecasting/_historical_import_preview.html", {"preview": preview})
+
+    files_payload = []
+    for name, uploaded_file in files:
+        try:
+            df = flexible_import.read_table(name, uploaded_file)
+        except ValueError as exc:
+            return render(request, "forecasting/_historical_import_modal.html", {"error": str(exc)})
+        candidates = flexible_import.suggest_columns(df)
+        stem = name.rsplit(".", 1)[0]  # matches the rigid path's own filename-stem fallback
+        files_payload.append(
+            flexible_import.build_file_payload(name, df, candidates, semester_fallback or stem, subject_fallback or stem)
         )
 
-    request.session["historical_import_preview"] = preview.to_session()
+    request.session["flexible_import_mapping"] = {"files": files_payload}
+    return render(request, "forecasting/_historical_import_mapping.html", _mapping_context(files_payload))
+
+
+@role_required(ADMIN)
+def historical_import_mapping_confirm(request):
+    stashed = request.session.get("flexible_import_mapping")
+    if not stashed:
+        response = render(
+            request, "forecasting/_historical_import_modal.html", {"error": "Your upload expired. Upload again."}
+        )
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    files_payload = stashed["files"]
+    mapping = flexible_import.parse_mapping_from_post(files_payload, request.POST)
+    errors = flexible_import.validate_mapping(files_payload, mapping)
+
+    if errors:
+        response = render(
+            request,
+            "forecasting/_historical_import_mapping.html",
+            {**_mapping_context(files_payload), "errors": errors},
+        )
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    preview_dict = flexible_import.build_flexible_preview(files_payload, mapping)
+    del request.session["flexible_import_mapping"]
+
+    if preview_dict["row_count"] == 0:
+        response = render(
+            request,
+            "forecasting/_historical_import_modal.html",
+            {"error": "No usable rows found with this mapping. See the skipped-row reasons if any."},
+        )
+        response["HX-Retarget"] = "#modal-content"
+        response["HX-Reswap"] = "innerHTML"
+        return response
+
+    request.session["historical_import_preview"] = preview_dict
+    # _historical_import_preview.html only reads attributes off `preview`
+    # (row_count/positive_count/skipped/file_names) -- a plain namespace
+    # satisfies it exactly like the rigid path's dataclass instance does.
+    from types import SimpleNamespace
+
+    namespace_dict = {**preview_dict, "skipped": [SimpleNamespace(**s) for s in preview_dict["skipped"]]}
+    preview = SimpleNamespace(**namespace_dict)
     return render(request, "forecasting/_historical_import_preview.html", {"preview": preview})
 
 
@@ -136,7 +234,7 @@ def historical_import_confirm(request):
     stashed = request.session.get("historical_import_preview")
     if not stashed:
         response = render(
-            request, "forecasting/_historical_import_modal.html", {"error": "Your preview expired — upload again."}
+            request, "forecasting/_historical_import_modal.html", {"error": "Your preview expired. Upload again."}
         )
         response["HX-Retarget"] = "#modal-content"
         response["HX-Reswap"] = "innerHTML"

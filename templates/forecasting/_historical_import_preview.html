@@ -27,8 +27,13 @@
     {% endif %}
 
     <p class="text-xs text-gray-600">
+        {% if preview.flexible %}
+        Only masked data (no names/ID numbers) will be saved. Every column's grading period was chosen
+        during setup. Nothing was guessed by column position.
+        {% else %}
         Only masked data (no names/ID numbers) will be saved. Non-exam items with no recorded term were
         assigned to a grading period by column position (chronological order assumed, split into quarters).
+        {% endif %}
     </p>
 
     <div class="flex justify-end gap-2 pt-2">

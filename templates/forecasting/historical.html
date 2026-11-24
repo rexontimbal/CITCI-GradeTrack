@@ -10,7 +10,7 @@
                 Add released semesters to training data
             </button>
         </form>
-        <button type="button" hx-get="{% url 'forecasting:historical_import' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
+        <button type="button" hx-get="{% url 'forecasting:historical_import_instructions' %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                 class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
             Import Historical Records
         </button>
@@ -19,8 +19,10 @@
 
 <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
     Identities are masked (SHA-256) before anything is saved: no names or ID numbers are ever stored here.
-    Non-exam items in an uploaded sheet with no recorded term are assigned to a grading period by column
-    position (chronological order assumed, split into quarters): a disclosed limitation, recorded per batch below.
+    A file matching this system's own class-record layout is read automatically (its non-exam items with no
+    recorded term are assigned to a grading period by column position, a disclosed limitation recorded per
+    batch below). Any other layout, including a plain CSV, opens a short setup screen to confirm what each
+    column means before anything is saved.
 </div>
 
 {% if batches %}

@@ -761,3 +761,393 @@ class TrainForecastModelCommandTests(TestCase):
 
         with self.assertRaises(CommandError):
             call_command("train_forecast_model", checkpoint="prelim", source="historical")
+
+
+# ---------------------------------------------------------------------------
+# Flexible historical-data import — accepts an arbitrary CSV/Excel layout
+# (unlike historical_import.py's rigid, single known template) via an
+# auto-suggest-then-confirm column mapping. See CLAUDE.md's dated note on
+# this feature and the plan this was built from.
+# ---------------------------------------------------------------------------
+
+import csv as _csv
+from io import StringIO as _StringIO
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+from .flexible_import import (
+    ColumnMapping,
+    ColumnRole,
+    SCORE_KIND_PERCENT,
+    SCORE_KIND_RAW,
+    build_file_payload,
+    build_flexible_preview,
+    read_table,
+    suggest_columns,
+    validate_mapping,
+)
+from .historical_import import compute_checkpoint_features, looks_like_known_template
+
+
+def _csv_bytes(header, rows, file_name="custom.csv"):
+    buf = _StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(header)
+    writer.writerows(rows)
+    data = BytesIO(buf.getvalue().encode("utf-8"))
+    data.name = file_name
+    return data
+
+
+class RigidTemplateDispatchTests(TestCase):
+    """The existing rigid parser must stay the automatic fast path for a
+    file that genuinely matches it, and must never falsely claim a file
+    that merely reuses its header strings (CLAUDE.md's "never silently
+    guess" rule applies to the dispatch itself, not just the mapping)."""
+
+    def test_minimal_class_record_matches_known_template(self):
+        buf = _minimal_class_record_bytes([("2026-0001", 5, 3.5, "FAILED")])
+        self.assertTrue(looks_like_known_template("test.xlsx", buf))
+
+    def test_csv_never_matches_known_template(self):
+        buf = _csv_bytes(["Student ID", "Final Grade"], [["1", "3.0"]])
+        self.assertFalse(looks_like_known_template("test.csv", buf))
+
+    def test_header_only_lookalike_falls_through_to_flexible(self):
+        wb = Workbook()
+        ws = wb.active
+        ws.cell(1, 1, "ID Number")
+        ws.cell(1, 2, "Name of Students")
+        ws.cell(1, 3, "Something Else")
+        ws.cell(2, 1, "2026-0001")
+        ws.cell(2, 2, "Juan")
+        ws.cell(2, 3, "90")
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        self.assertFalse(looks_like_known_template("lookalike.xlsx", buf))
+
+
+class FlexibleColumnSuggestionTests(TestCase):
+    """suggest_columns is a pure function — no DB/session writes — so it
+    is exercised directly against a handful of representative headers."""
+
+    def test_suggestions_match_expected_roles(self):
+        header = ["Student ID", "Student Name", "Attendance Avg", "Quiz Avg", "Prelim Exam", "Final Grade", "Remarks"]
+        rows = [["2026-0001", "Dela Cruz, Juan", "95", "80", "70", "3.50", "FAILED"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        by_header = {c.header_text: c for c in suggest_columns(df)}
+
+        self.assertEqual(by_header["Student ID"].suggested_role, ColumnRole.ID)
+        self.assertEqual(by_header["Student Name"].suggested_role, ColumnRole.NAME)
+        self.assertEqual(by_header["Attendance Avg"].suggested_role, ColumnRole.SCORE)
+        self.assertEqual(by_header["Attendance Avg"].suggested_category, ComponentCategory.ATTENDANCE)
+        self.assertEqual(by_header["Quiz Avg"].suggested_role, ColumnRole.SCORE)
+        self.assertEqual(by_header["Quiz Avg"].suggested_category, ComponentCategory.QUIZ)
+        self.assertEqual(by_header["Prelim Exam"].suggested_role, ColumnRole.SCORE)
+        self.assertEqual(by_header["Prelim Exam"].suggested_category, ComponentCategory.EXAM)
+        self.assertEqual(by_header["Prelim Exam"].suggested_term, AssessmentTerm.PRELIM)
+        self.assertEqual(by_header["Final Grade"].suggested_role, ColumnRole.FINAL_GRADE)
+        self.assertEqual(by_header["Remarks"].suggested_role, ColumnRole.REMARKS)
+
+    def test_semifinal_header_is_never_mistaken_for_final(self):
+        header = ["Semifinal Exam"]
+        rows = [["80"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        candidate = suggest_columns(df)[0]
+        self.assertEqual(candidate.suggested_term, AssessmentTerm.SEMIFINAL)
+
+    def test_unrecognized_header_defaults_to_ignore(self):
+        header = ["Favorite Color"]
+        rows = [["Blue"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        candidate = suggest_columns(df)[0]
+        self.assertEqual(candidate.suggested_role, ColumnRole.IGNORE)
+
+    def test_score_column_with_no_period_in_its_header_still_gets_a_usable_default(self):
+        """A score column like "Attendance Avg" names no grading period at
+        all -- the suggestion must still pre-fill a term (Prelim) and a
+        kind (percent, since the sampled values sit in 0-100), so the
+        common one-column-per-category upload needs zero manual edits
+        before Preview Import, not a blank "select" the admin has to fill
+        in. A column whose values fall outside 0-100 (so it can't
+        confidently be guessed as a percentage) defaults to raw instead,
+        which still needs a max score typed in -- there's no way to guess
+        one, so this is never silently assumed."""
+        header = ["Attendance Avg", "Quiz Points"]
+        rows = [["92", "180"], ["88", "190"], ["76", "150"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        by_header = {c.header_text: c for c in suggest_columns(df)}
+
+        attendance = by_header["Attendance Avg"]
+        self.assertEqual(attendance.suggested_term, AssessmentTerm.PRELIM)
+        self.assertEqual(attendance.suggested_kind, SCORE_KIND_PERCENT)
+
+        quiz = by_header["Quiz Points"]
+        self.assertEqual(quiz.suggested_term, AssessmentTerm.PRELIM)
+        self.assertEqual(quiz.suggested_kind, SCORE_KIND_RAW)
+
+
+class FlexibleLeakageGuardTests(TestCase):
+    """Proves the shared compute_checkpoint_features enforces the leakage
+    guard regardless of which importer built the (category, term, earned,
+    possible) tuples — the flexible path's own correctness depends on
+    this holding for admin-supplied, not scanner-discovered, terms."""
+
+    def test_final_term_item_never_reaches_prelim_or_midterm_features(self):
+        items = [
+            (ComponentCategory.QUIZ, AssessmentTerm.PRELIM, 8.0, 10.0),
+            (ComponentCategory.EXAM, AssessmentTerm.FINAL, 20.0, 20.0),  # must never leak
+        ]
+        prelim = compute_checkpoint_features(items, Checkpoint.PRELIM)
+        midterm = compute_checkpoint_features(items, Checkpoint.MIDTERM)
+        self.assertIsNone(prelim["exam_pct"])
+        self.assertIsNone(midterm["exam_pct"])
+        self.assertEqual(prelim["quiz_pct"], Decimal("80"))
+
+
+class FlexibleCsvImportTests(TestCase):
+    """A genuinely custom CSV layout, mapped and confirmed explicitly,
+    must produce the same masked_id/label/features_json shape the rigid
+    importer already produces."""
+
+    def test_arbitrary_csv_with_confirmed_mapping_produces_correct_records(self):
+        header = ["Student ID", "Attendance Avg", "Quiz Avg", "Exam Score", "Final Grade", "Remarks"]
+        rows = [["2026-0099", "90", "80", "70", "3.50", "FAILED"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        candidates = suggest_columns(df)
+        payload = build_file_payload("custom.csv", df, candidates, "custom.csv", "custom.csv")
+
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.ATTENDANCE, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                3: ColumnMapping(index=3, role=ColumnRole.SCORE, category=ComponentCategory.EXAM, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                4: ColumnMapping(index=4, role=ColumnRole.FINAL_GRADE),
+                5: ColumnMapping(index=5, role=ColumnRole.REMARKS),
+            }
+        }
+        self.assertEqual(validate_mapping([payload], mapping), [])
+
+        result = build_flexible_preview([payload], mapping)
+        self.assertEqual(result["row_count"], 2)  # PRELIM + MIDTERM for the one student
+        self.assertEqual(result["positive_count"], 2)  # 3.50 > 3.00 -> at risk at both checkpoints
+        for record in result["records"]:
+            self.assertEqual(record["masked_id"], mask_identifier("2026-0099"))
+            self.assertEqual(record["label"], 1)
+            self.assertEqual(set(record["features_json"].keys()), set(FEATURE_NAMES))
+            self.assertEqual(Decimal(record["features_json"]["attendance_pct"]), Decimal("90"))
+
+    def test_raw_score_column_uses_the_confirmed_max_score(self):
+        header = ["Student ID", "Quiz Raw", "Final Grade"]
+        rows = [["2026-0001", "8", "2.00"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        payload = build_file_payload("custom.csv", df, suggest_columns(df), "custom.csv", "custom.csv")
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_RAW, max_score=10),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+        self.assertEqual(validate_mapping([payload], mapping), [])
+        result = build_flexible_preview([payload], mapping)
+        prelim_record = next(r for r in result["records"] if r["checkpoint"] == Checkpoint.PRELIM)
+        self.assertEqual(Decimal(prelim_record["features_json"]["quiz_pct"]), Decimal("80"))
+
+
+class FlexibleFallbackTruncationTests(TestCase):
+    """A long file name (or a long typed-in fallback) must never reach
+    the DB as-is -- HistoricalRecord.subject_code is only 20 characters
+    and semester_label only 100; this used to crash with
+    StringDataRightTruncation at commit time instead of saving a usable,
+    if imperfect, value."""
+
+    def test_long_subject_fallback_is_truncated_not_crashed_on(self):
+        header = ["Student ID", "Quiz Avg", "Final Grade"]
+        rows = [["2026-0001", "80", "2.00"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        long_name = "a_very_long_file_name_that_exceeds_the_subject_code_column_limit"
+        payload = build_file_payload("x.csv", df, suggest_columns(df), long_name, long_name)
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+        result = build_flexible_preview([payload], mapping)
+        for record in result["records"]:
+            self.assertLessEqual(len(record["subject_code"]), 20)
+            self.assertLessEqual(len(record["semester_label"]), 100)
+        # Must actually commit without the DB rejecting the value.
+        from .historical_import import commit_import
+
+        admin = make_user(User.Role.ADMIN, "trunc_admin")
+        commit_import(result, admin)
+        self.assertEqual(HistoricalRecord.objects.count(), 2)
+
+
+class FlexibleValidationTests(TestCase):
+    """Every error blocks the whole batch's commit — never a partial
+    one — matching reports/excel_import.py's established contract."""
+
+    def setUp(self):
+        header = ["Student ID", "Quiz Avg", "Final Grade"]
+        rows = [["2026-0001", "80", "3.00"]]
+        df = read_table("custom.csv", _csv_bytes(header, rows))
+        self.payload = build_file_payload("custom.csv", df, suggest_columns(df), "custom.csv", "custom.csv")
+
+    def test_missing_final_grade_mapping_is_an_error(self):
+        mapping = {0: {0: ColumnMapping(index=0, role=ColumnRole.ID)}}
+        errors = validate_mapping([self.payload], mapping)
+        self.assertTrue(any("Final Grade" in msg for _, msg in errors))
+
+    def test_score_column_without_a_term_is_an_error(self):
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+        errors = validate_mapping([self.payload], mapping)
+        self.assertTrue(any("term" in msg.lower() for _, msg in errors))
+
+    def test_raw_score_column_without_a_max_score_is_an_error(self):
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_RAW),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+        errors = validate_mapping([self.payload], mapping)
+        self.assertTrue(any("max score" in msg.lower() for _, msg in errors))
+
+    def test_no_id_or_name_column_is_an_error(self):
+        mapping = {
+            0: {
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+        errors = validate_mapping([self.payload], mapping)
+        self.assertTrue(any("Student ID or Student Name" in msg for _, msg in errors))
+
+
+class FlexibleExcelCsvParityTests(TestCase):
+    """The same tabular data, once as CSV and once as a plain single-
+    header-row .xlsx, must converge on identical results."""
+
+    def test_csv_and_excel_produce_the_same_records(self):
+        header = ["Student ID", "Quiz Avg", "Final Grade"]
+        rows = [["2026-0001", "80", "2.00"]]
+
+        csv_df = read_table("custom.csv", _csv_bytes(header, rows))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(header)
+        ws.append(rows[0])
+        xlsx_buf = BytesIO()
+        wb.save(xlsx_buf)
+        xlsx_buf.seek(0)
+        excel_df = read_table("custom.xlsx", xlsx_buf)
+
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            }
+        }
+
+        csv_payload = build_file_payload("custom.csv", csv_df, suggest_columns(csv_df), "x", "x")
+        excel_payload = build_file_payload("custom.xlsx", excel_df, suggest_columns(excel_df), "x", "x")
+
+        csv_result = build_flexible_preview([csv_payload], mapping)
+        excel_result = build_flexible_preview([excel_payload], mapping)
+
+        strip_names = lambda records: [{k: v for k, v in r.items() if k != "semester_label" and k != "subject_code"} for r in records]
+        self.assertEqual(strip_names(csv_result["records"]), strip_names(excel_result["records"]))
+
+
+class FlexibleImportViewFlowTests(TestCase):
+    """Full upload -> mapping-confirm -> commit round trip through the
+    real views, proving the two paths converge on the same session-stash
+    contract and that an invalid mapping never partially commits."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "fi_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(self.admin)
+
+    def test_custom_csv_round_trip_creates_historical_records(self):
+        content = "Student ID,Attendance Avg,Final Grade,Remarks\n2026-0001,95,2.00,PASSED\n"
+        upload = SimpleUploadedFile("custom.csv", content.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
+        self.assertContains(response, "Confirm what each column means")
+
+        post_data = {
+            "col-0-0-role": "ID",
+            "col-0-1-role": "SCORE",
+            "col-0-1-category": "ATTENDANCE",
+            "col-0-1-term": "PRELIM",
+            "col-0-1-kind": "PERCENT",
+            "col-0-2-role": "FINAL_GRADE",
+            "col-0-3-role": "REMARKS",
+        }
+        response = self.client.post(reverse("forecasting:historical_import_mapping_confirm"), post_data)
+        self.assertContains(response, "Confirm Import")
+
+        response = self.client.post(reverse("forecasting:historical_import_confirm"))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(HistoricalRecord.objects.count(), 2)
+
+    def test_missing_final_grade_mapping_blocks_commit_with_no_partial_write(self):
+        content = "Student ID,Attendance Avg\n2026-0001,95\n"
+        upload = SimpleUploadedFile("custom2.csv", content.encode("utf-8"), content_type="text/csv")
+        self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
+
+        post_data = {
+            "col-0-0-role": "ID",
+            "col-0-1-role": "SCORE",
+            "col-0-1-category": "ATTENDANCE",
+            "col-0-1-term": "PRELIM",
+            "col-0-1-kind": "PERCENT",
+        }
+        response = self.client.post(reverse("forecasting:historical_import_mapping_confirm"), post_data)
+        self.assertContains(response, "Final Grade")
+        self.assertEqual(HistoricalRecord.objects.count(), 0)
+
+    def test_long_file_name_with_no_subject_code_typed_in_commits_without_crashing(self):
+        """Regression test for a real bug: a file name on its own (the
+        fallback subject_code when the admin leaves that field blank)
+        easily exceeds HistoricalRecord.subject_code's 20-char column,
+        which used to crash the confirm step with a 500 instead of
+        truncating."""
+        content = "Student ID,Quiz Avg,Final Grade\n2026-0001,80,2.00\n"
+        upload = SimpleUploadedFile("a_very_long_sample_historical_data_file_name.csv", content.encode("utf-8"), content_type="text/csv")
+        self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
+        post_data = {
+            "col-0-0-role": "ID",
+            "col-0-1-role": "SCORE",
+            "col-0-1-category": "QUIZ",
+            "col-0-1-term": "PRELIM",
+            "col-0-1-kind": "PERCENT",
+            "col-0-2-role": "FINAL_GRADE",
+        }
+        self.client.post(reverse("forecasting:historical_import_mapping_confirm"), post_data)
+        response = self.client.post(reverse("forecasting:historical_import_confirm"))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(HistoricalRecord.objects.count(), 2)
+
+    def test_rigid_template_file_skips_the_mapping_screen(self):
+        buf = _minimal_class_record_bytes([("2026-0001", 5, 3.5, "FAILED")])
+        upload = SimpleUploadedFile(
+            "rigid.xlsx", buf.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response = self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
+        self.assertContains(response, "Confirm Import")
+        self.assertNotContains(response, "Confirm what each column means")

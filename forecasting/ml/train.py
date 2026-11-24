@@ -45,10 +45,11 @@ def _check_historical_sufficient(rows, checkpoint):
     positives = sum(row["label"] for row in rows)
     if len(rows) < MIN_HISTORICAL_ROWS or positives < MIN_HISTORICAL_POSITIVES:
         raise ValidationError(
-            f"Not enough historical data to train the {checkpoint} model on HISTORICAL alone: "
-            f"{len(rows)} row(s), {positives} positive. Need at least {MIN_HISTORICAL_ROWS} rows "
-            f"and {MIN_HISTORICAL_POSITIVES} positives. Import more historical data, or use "
-            "source=mixed for development (never for the Chapter 4 / final-defense model)."
+            f"Not enough historical data yet to train the {checkpoint} model: you have "
+            f"{len(rows)} row(s) with {positives} at-risk case(s). Need at least {MIN_HISTORICAL_ROWS} "
+            f"rows and {MIN_HISTORICAL_POSITIVES} at-risk cases for this checkpoint. Import more "
+            'historical data, or pick the "Mixed" source for development only, never for the Chapter '
+            "4 or final-defense model."
         )
 
 

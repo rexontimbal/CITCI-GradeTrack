@@ -12,7 +12,7 @@ from accounts.decorators import role_required
 from accounts.models import User
 from grading.models import AssessmentTerm, ComponentCategory
 
-from . import flexible_import
+from . import flexible_import, gradebook_import
 from .forms import InterventionForm
 from .historical_import import build_import_preview, commit_import, export_released_data_to_historical, looks_like_known_template
 from .ml.train import train_model
@@ -142,6 +142,26 @@ def historical_import_upload(request):
     subject_fallback = request.POST.get("subject_code", "").strip()
 
     files = [(f.name, f) for f in uploaded_files]
+
+    # A file from a real third-party gradebook export (a `Meta` sheet
+    # naming "fullyear") is fully self-describing -- no mapping-confirm
+    # screen needed at all, straight to the preview. Checked first since
+    # its fingerprint is the most specific/unambiguous of the three.
+    if all(gradebook_import.looks_like_fullyear_gradebook(f) for name, f in files):
+        try:
+            preview = gradebook_import.build_gradebook_import_preview(files)
+        except Exception as exc:  # pragma: no cover — surfaced to the admin, not silently swallowed
+            return render(request, "forecasting/_historical_import_modal.html", {"error": str(exc)})
+
+        if preview.row_count == 0:
+            return render(
+                request,
+                "forecasting/_historical_import_modal.html",
+                {"error": "No usable rows found in the uploaded file(s). See the skipped-row reasons if any."},
+            )
+
+        request.session["historical_import_preview"] = preview.to_session()
+        return render(request, "forecasting/_historical_import_preview.html", {"preview": preview})
 
     # If every file matches the known rigid layout (CITCI's own template or
     # this system's Class Record export), behavior is identical to before

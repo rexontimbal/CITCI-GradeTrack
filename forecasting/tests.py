@@ -1151,3 +1151,167 @@ class FlexibleImportViewFlowTests(TestCase):
         response = self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
         self.assertContains(response, "Confirm Import")
         self.assertNotContains(response, "Confirm what each column means")
+
+
+# ---------------------------------------------------------------------------
+# Dedicated importer for a real third-party "fullyear gradebook" export
+# (forecasting/gradebook_import.py) -- confirmed by direct inspection of 4
+# real sample files, never used directly in these tests (a hand-built
+# synthetic workbook is used instead, so the suite never depends on real
+# student data).
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+from .gradebook_import import build_gradebook_import_preview, looks_like_fullyear_gradebook, parse_gradebook_file
+
+
+def _build_fullyear_gradebook(sheets, meta_sheets=None):
+    """`sheets` is {sheet_name: [(student_name, attendance, quiz, project,
+    recitation, exam, period_grade, remarks), ...]}, one row per student,
+    raw scores out of 10 for every category. `meta_sheets` defaults to one
+    Meta entry per sheet with quarter_id 1/2/3 in the order given."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    header1 = [
+        "#", "Student", "Attendance  (5%)", None, "Quizzes  (30%)", None, "Projects  (10%)", None,
+        "Oral Recitation  (15%)", None, "Major Examinations  (40%)", None, "Initial", "Period\nGrade", "Remarks",
+    ]
+    header2 = [None, None, "A 1", "%", "Q 1", "%", "P 1", "%", "OR 1", "%", "ME 1", "%", None, None, None]
+    max_row = [None, None, 10, None, 10, None, 10, None, 10, None, 10, None, None, None, None]
+
+    for sheet_name, rows in sheets.items():
+        ws = wb.create_sheet(sheet_name)
+        ws.append([f"Some Subject -- {sheet_name}"])
+        ws.append(header1)
+        ws.append(header2)
+        ws.append(max_row)
+        for i, (name, attendance, quiz, project, recitation, exam, period_grade, remarks) in enumerate(rows, start=1):
+            ws.append([i, name, attendance, None, quiz, None, project, None, recitation, None, exam, None, None, period_grade, remarks])
+
+    if meta_sheets is None:
+        meta_sheets = [{"name": name, "quarter_id": i} for i, name in enumerate(sheets.keys(), start=1)]
+    ws = wb.create_sheet("Meta")
+    ws.cell(1, 1, _json.dumps({"type": "fullyear", "sheets": meta_sheets}))
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+class FullYearGradebookDetectionTests(TestCase):
+    def test_recognizes_a_fullyear_gradebook_file(self):
+        buf = _build_fullyear_gradebook({"Prelim": [], "Midterm": [], "Finals": []})
+        self.assertTrue(looks_like_fullyear_gradebook(buf))
+
+    def test_rejects_a_plain_workbook_without_a_meta_sheet(self):
+        wb = Workbook()
+        wb.active.append(["Student ID", "Final Grade"])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        self.assertFalse(looks_like_fullyear_gradebook(buf))
+
+
+class FullYearGradebookParseTests(TestCase):
+    def test_label_comes_from_the_final_quarter_sheets_period_grade_and_remarks(self):
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 8, 9, 7, 6, None, None)],
+                "Midterm": [("Dela Cruz, Juan", 9, 7, 8, 6, 5, None, None)],
+                "Finals": [("Dela Cruz, Juan", 8, 6, 7, 5, 4, 3.50, "Failed")],
+            }
+        )
+        rows, skipped = parse_gradebook_file("test.xlsx", buf, "1st Sem", "TEST101")
+        self.assertEqual(skipped, [])
+        self.assertTrue(all(r["label"] == 1 for r in rows))  # 3.50 > 3.00 -> at risk
+
+    def test_midterm_checkpoint_combines_prelim_and_midterm_sheet_items(self):
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 10, 10, 10, 10, None, None)],  # 100% everything
+                "Midterm": [("Dela Cruz, Juan", 0, 0, 0, 0, 0, None, None)],  # 0% everything
+                "Finals": [("Dela Cruz, Juan", 10, 10, 10, 10, 10, 1.50, "Very Good")],
+            }
+        )
+        rows, skipped = parse_gradebook_file("test.xlsx", buf, "1st Sem", "TEST101")
+        self.assertEqual(skipped, [])
+        midterm_row = next(r for r in rows if r["checkpoint"] == Checkpoint.MIDTERM)
+        # Combines Prelim's 100% with Midterm's 0% for every category.
+        self.assertEqual(Decimal(midterm_row["features_json"]["quiz_pct"]), Decimal("50"))
+        prelim_row = next(r for r in rows if r["checkpoint"] == Checkpoint.PRELIM)
+        self.assertEqual(Decimal(prelim_row["features_json"]["quiz_pct"]), Decimal("100"))
+
+    def test_a_student_missing_from_a_period_sheet_degrades_gracefully(self):
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [],  # nobody recorded this period at all
+                "Midterm": [("Dela Cruz, Juan", 9, 7, 8, 6, 5, None, None)],
+                "Finals": [("Dela Cruz, Juan", 8, 6, 7, 5, 4, 2.00, "Passed")],
+            }
+        )
+        rows, skipped = parse_gradebook_file("test.xlsx", buf, "1st Sem", "TEST101")
+        self.assertEqual(skipped, [])
+        checkpoints = {r["checkpoint"] for r in rows}
+        self.assertNotIn(Checkpoint.PRELIM, checkpoints)  # nothing scored -> no PRELIM row at all
+        self.assertIn(Checkpoint.MIDTERM, checkpoints)
+
+    def test_category_name_synonyms_are_recognized(self):
+        """Projects/Oral Recitation/Major Examinations headers (this
+        software's own wording) all resolve to the right category."""
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 10, 10, 10, 10, None, None)],
+                "Midterm": [("Dela Cruz, Juan", 10, 10, 10, 10, 10, None, None)],
+                "Finals": [("Dela Cruz, Juan", 10, 10, 10, 10, 10, 1.00, "Very Good")],
+            }
+        )
+        rows, skipped = parse_gradebook_file("test.xlsx", buf, "1st Sem", "TEST101")
+        prelim_row = next(r for r in rows if r["checkpoint"] == Checkpoint.PRELIM)
+        for feature_name in ("project_pct", "recitation_pct", "exam_pct"):
+            self.assertEqual(Decimal(prelim_row["features_json"][feature_name]), Decimal("100"))
+
+    def test_long_fallback_names_are_truncated_not_crashed_on(self):
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 8, 9, 7, 6, None, None)],
+                "Midterm": [("Dela Cruz, Juan", 9, 7, 8, 6, 5, None, None)],
+                "Finals": [("Dela Cruz, Juan", 8, 6, 7, 5, 4, 2.00, "Passed")],
+            }
+        )
+        long_name = "a_very_long_subject_name_that_exceeds_the_subject_code_column_limit"
+        rows, skipped = parse_gradebook_file("test.xlsx", buf, long_name, long_name)
+        self.assertTrue(len(rows) > 0)
+        for r in rows:
+            self.assertLessEqual(len(r["subject_code"]), 20)
+            self.assertLessEqual(len(r["semester_label"]), 100)
+
+
+class FullYearGradebookViewFlowTests(TestCase):
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "fygb_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(self.admin)
+
+    def test_upload_skips_straight_to_preview_no_mapping_screen(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.urls import reverse
+
+        buf = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 8, 9, 7, 6, None, None)],
+                "Midterm": [("Dela Cruz, Juan", 9, 7, 8, 6, 5, None, None)],
+                "Finals": [("Dela Cruz, Juan", 8, 6, 7, 5, 4, 3.50, "Failed")],
+            }
+        )
+        upload = SimpleUploadedFile(
+            "gradebook.xlsx", buf.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response = self.client.post(reverse("forecasting:historical_import"), {"files": [upload]})
+        self.assertContains(response, "Confirm Import")
+        self.assertNotContains(response, "Confirm what each column means")
+
+        response = self.client.post(reverse("forecasting:historical_import_confirm"))
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(HistoricalRecord.objects.count(), 2)  # PRELIM + MIDTERM for the one student
+        self.assertTrue(all("Dela Cruz" not in r.masked_id for r in HistoricalRecord.objects.all()))

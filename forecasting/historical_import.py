@@ -44,6 +44,13 @@ _CATEGORY_NAME_MAP = {
     "PROJECT": ComponentCategory.PROJECT,
     "EXAMINATION": ComponentCategory.EXAM,
     "EXAM": ComponentCategory.EXAM,
+    # Synonyms seen in a real third-party gradebook export (forecasting/
+    # gradebook_import.py) -- additive, never changes how CITCI's own
+    # template wording above is handled.
+    "PROJECTS": ComponentCategory.PROJECT,
+    "ORAL RECITATION": ComponentCategory.RECITATION,
+    "MAJOR EXAMINATIONS": ComponentCategory.EXAM,
+    "MAJOR EXAMINATION": ComponentCategory.EXAM,
 }
 
 _EXAM_SUBLABEL_TERM = {"P": AssessmentTerm.PRELIM, "M": AssessmentTerm.MIDTERM, "S": AssessmentTerm.SEMIFINAL, "F": AssessmentTerm.FINAL}

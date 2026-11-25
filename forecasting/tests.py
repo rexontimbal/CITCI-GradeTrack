@@ -1315,3 +1315,66 @@ class FullYearGradebookViewFlowTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertEqual(HistoricalRecord.objects.count(), 2)  # PRELIM + MIDTERM for the one student
         self.assertTrue(all("Dela Cruz" not in r.masked_id for r in HistoricalRecord.objects.all()))
+
+
+class PerFileBreakdownTests(TestCase):
+    """The preview screen's per-file table -- one row per uploaded file
+    with its own row/positive/skipped counts, shown when more than one
+    file was uploaded at once. All three importers (rigid/flexible/
+    gradebook) share the same HistoricalImportPreview.add_file/
+    add_failed_file accounting, so one representative test per importer
+    is enough to prove the contract holds everywhere."""
+
+    def test_rigid_path_reports_one_row_per_file_including_a_failed_one(self):
+        good = _minimal_class_record_bytes([("2026-0001", 5, 3.5, "FAILED")])
+        bad = BytesIO(b"not a real workbook")
+        preview = build_import_preview([("good.xlsx", good), ("bad.xlsx", bad)])
+        self.assertEqual(len(preview.per_file), 2)
+        by_name = {f.file_name: f for f in preview.per_file}
+        self.assertGreater(by_name["good.xlsx"].row_count, 0)
+        self.assertEqual(by_name["bad.xlsx"].row_count, 0)
+        self.assertEqual(by_name["bad.xlsx"].skipped_count, 1)
+        # A failed file is still shown in the table but never counted
+        # among the successfully-imported file_names (existing behavior).
+        self.assertNotIn("bad.xlsx", preview.file_names)
+
+    def test_flexible_path_reports_one_row_per_file(self):
+        header = ["Student ID", "Quiz Avg", "Final Grade"]
+        buf1 = _csv_bytes(header, [["2026-0001", "80", "2.00"]], "file1.csv")
+        buf2 = _csv_bytes(header, [["2026-0002", "40", "4.00"]], "file2.csv")
+        df1 = read_table("file1.csv", buf1)
+        df2 = read_table("file2.csv", buf2)
+        payload1 = build_file_payload("file1.csv", df1, suggest_columns(df1), "file1.csv", "file1.csv")
+        payload2 = build_file_payload("file2.csv", df2, suggest_columns(df2), "file2.csv", "file2.csv")
+        mapping = {
+            0: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            },
+            1: {
+                0: ColumnMapping(index=0, role=ColumnRole.ID),
+                1: ColumnMapping(index=1, role=ColumnRole.SCORE, category=ComponentCategory.QUIZ, term=AssessmentTerm.PRELIM, kind=SCORE_KIND_PERCENT),
+                2: ColumnMapping(index=2, role=ColumnRole.FINAL_GRADE),
+            },
+        }
+        result = build_flexible_preview([payload1, payload2], mapping)
+        self.assertEqual(len(result["per_file"]), 2)
+        by_name = {f["file_name"]: f for f in result["per_file"]}
+        self.assertEqual(by_name["file1.csv"]["positive_count"], 0)
+        self.assertEqual(by_name["file2.csv"]["positive_count"], 2)  # 4.00 > 3.00, both checkpoints
+
+    def test_gradebook_path_reports_one_row_per_file(self):
+        good = _build_fullyear_gradebook(
+            {
+                "Prelim": [("Dela Cruz, Juan", 10, 8, 9, 7, 6, None, None)],
+                "Midterm": [("Dela Cruz, Juan", 9, 7, 8, 6, 5, None, None)],
+                "Finals": [("Dela Cruz, Juan", 8, 6, 7, 5, 4, 3.50, "Failed")],
+            }
+        )
+        bad = BytesIO(b"not a real workbook")
+        preview = build_gradebook_import_preview([("good.xlsx", good), ("bad.xlsx", bad)])
+        self.assertEqual(len(preview.per_file), 2)
+        by_name = {f.file_name: f for f in preview.per_file}
+        self.assertGreater(by_name["good.xlsx"].row_count, 0)
+        self.assertEqual(by_name["bad.xlsx"].skipped_count, 1)

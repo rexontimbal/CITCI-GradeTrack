@@ -244,7 +244,11 @@ def historical_import_mapping_confirm(request):
     # satisfies it exactly like the rigid path's dataclass instance does.
     from types import SimpleNamespace
 
-    namespace_dict = {**preview_dict, "skipped": [SimpleNamespace(**s) for s in preview_dict["skipped"]]}
+    namespace_dict = {
+        **preview_dict,
+        "skipped": [SimpleNamespace(**s) for s in preview_dict["skipped"]],
+        "per_file": [SimpleNamespace(**f) for f in preview_dict.get("per_file", [])],
+    }
     preview = SimpleNamespace(**namespace_dict)
     return render(request, "forecasting/_historical_import_preview.html", {"preview": preview})
 

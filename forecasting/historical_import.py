@@ -128,12 +128,51 @@ class SkippedRow:
 
 
 @dataclass
+class FilePreviewSummary:
+    """One row of the preview screen's per-file breakdown table."""
+
+    file_name: str
+    row_count: int = 0
+    positive_count: int = 0
+    skipped_count: int = 0
+
+
+@dataclass
 class HistoricalImportPreview:
     file_names: list = field(default_factory=list)
     row_count: int = 0
     positive_count: int = 0
     records: list = field(default_factory=list)  # [{masked_id, semester_label, subject_code, checkpoint, features_json, label}, ...]
     skipped: list = field(default_factory=list)  # [SkippedRow, ...]
+    per_file: list = field(default_factory=list)  # [FilePreviewSummary, ...]
+
+    def add_file(self, file_name, rows, skipped):
+        """One successfully-opened file's rows/skipped -- records them in
+        the aggregate totals AND the per-file breakdown table. The single
+        place every importer (rigid/flexible/gradebook) calls, so all
+        three keep identical per-file accounting without duplicating it."""
+        self.file_names.append(file_name)
+        self.records.extend(rows)
+        self.skipped.extend(skipped)
+        self.per_file.append(
+            FilePreviewSummary(
+                file_name=file_name,
+                row_count=len(rows),
+                positive_count=sum(r["label"] for r in rows),
+                skipped_count=len(skipped),
+            )
+        )
+
+    def add_failed_file(self, file_name, reason):
+        """A file that couldn't be parsed at all -- shown in the per-file
+        table and the skipped list, but (matching existing behavior)
+        never counted among the successfully-imported `file_names`."""
+        self.skipped.append(SkippedRow(file_name, 0, reason))
+        self.per_file.append(FilePreviewSummary(file_name=file_name, skipped_count=1))
+
+    def finalize(self):
+        self.row_count = len(self.records)
+        self.positive_count = sum(r["label"] for r in self.records)
 
     def to_session(self):
         return {
@@ -142,6 +181,7 @@ class HistoricalImportPreview:
             "positive_count": self.positive_count,
             "records": self.records,
             "skipped": [asdict(s) for s in self.skipped],
+            "per_file": [asdict(f) for f in self.per_file],
         }
 
 
@@ -406,14 +446,11 @@ def build_import_preview(files, semester_label_fn=None):
         try:
             rows, skipped = parse_workbook(file_name, uploaded_file, semester_label, subject_code)
         except ValueError as exc:
-            preview.skipped.append(SkippedRow(file_name, 0, str(exc)))
+            preview.add_failed_file(file_name, str(exc))
             continue
-        preview.file_names.append(file_name)
-        preview.records.extend(rows)
-        preview.skipped.extend(skipped)
+        preview.add_file(file_name, rows, skipped)
 
-    preview.row_count = len(preview.records)
-    preview.positive_count = sum(r["label"] for r in preview.records)
+    preview.finalize()
     return preview
 
 

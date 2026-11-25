@@ -332,12 +332,9 @@ def build_gradebook_import_preview(files, semester_label_fn=None):
         try:
             rows, skipped = parse_gradebook_file(file_name, uploaded_file, semester_label, subject_code)
         except ValueError as exc:
-            preview.skipped.append(SkippedRow(file_name, 0, str(exc)))
+            preview.add_failed_file(file_name, str(exc))
             continue
-        preview.file_names.append(file_name)
-        preview.records.extend(rows)
-        preview.skipped.extend(skipped)
+        preview.add_file(file_name, rows, skipped)
 
-    preview.row_count = len(preview.records)
-    preview.positive_count = sum(r["label"] for r in preview.records)
+    preview.finalize()
     return preview

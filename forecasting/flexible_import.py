@@ -28,7 +28,7 @@ import pandas as pd
 
 from grading.models import ASSESSMENT_TERM_ORDER, AssessmentTerm, ComponentCategory
 
-from .historical_import import SkippedRow, compute_checkpoint_features, compute_label, mask_identifier
+from .historical_import import HistoricalImportPreview, SkippedRow, compute_checkpoint_features, compute_label, mask_identifier
 from .ml.features import FEATURE_NAMES
 from .models import Checkpoint, HistoricalRecord
 
@@ -388,15 +388,14 @@ def build_flexible_preview(files_payload, mapping):
     produces (file_names, row_count, positive_count, records, skipped), so
     historical_import_confirm/commit_import need zero changes regardless
     of which path produced it."""
-    file_names = []
-    records = []
-    skipped = []
+    preview = HistoricalImportPreview()
 
     for fi, file_payload in enumerate(files_payload):
         file_name = file_payload["file_name"]
         rows = file_payload["rows"]
         file_mapping = mapping.get(fi, {})
-        file_names.append(file_name)
+        file_records = []
+        file_skipped = []
 
         id_col = next((ci for ci, cm in file_mapping.items() if cm.role == ColumnRole.ID), None)
         name_col = next((ci for ci, cm in file_mapping.items() if cm.role == ColumnRole.NAME), None)
@@ -415,7 +414,7 @@ def build_flexible_preview(files_payload, mapping):
             name_value = row[name_col].strip() if name_col is not None else ""
             identifier = id_value or name_value
             if not identifier:
-                skipped.append(SkippedRow(file_name, row_index, "No ID or Name value. Can't identify this row."))
+                file_skipped.append(SkippedRow(file_name, row_index, "No ID or Name value. Can't identify this row."))
                 continue
 
             final_grade = _parse_float(row[final_grade_col]) if final_grade_col is not None else None
@@ -423,7 +422,7 @@ def build_flexible_preview(files_payload, mapping):
 
             label = compute_label(final_grade, remarks)
             if label is None:
-                skipped.append(SkippedRow(file_name, row_index, "No readable Final Grade or Remarks. Can't determine a label."))
+                file_skipped.append(SkippedRow(file_name, row_index, "No readable Final Grade or Remarks. Can't determine a label."))
                 continue
 
             masked_id = mask_identifier(identifier)
@@ -448,7 +447,7 @@ def build_flexible_preview(files_payload, mapping):
                     features = dict.fromkeys(FEATURE_NAMES)
                 if direct_grade is not None:
                     features["running_grade"] = direct_grade
-                records.append(
+                file_records.append(
                     {
                         "masked_id": masked_id,
                         "semester_label": semester_label,
@@ -459,11 +458,9 @@ def build_flexible_preview(files_payload, mapping):
                     }
                 )
 
-    return {
-        "file_names": file_names,
-        "row_count": len(records),
-        "positive_count": sum(r["label"] for r in records),
-        "records": records,
-        "skipped": [asdict(s) for s in skipped],
-        "flexible": True,
-    }
+        preview.add_file(file_name, file_records, file_skipped)
+
+    preview.finalize()
+    result = preview.to_session()
+    result["flexible"] = True
+    return result

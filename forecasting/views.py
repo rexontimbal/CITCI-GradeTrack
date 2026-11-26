@@ -111,6 +111,17 @@ def historical(request):
     return render(request, "forecasting/historical.html", context)
 
 
+_FEATURE_DISPLAY_LABELS = {
+    "quiz_pct": "Quiz %",
+    "recitation_pct": "Recitation %",
+    "project_pct": "Project %",
+    "attendance_pct": "Attendance %",
+    "exam_pct": "Exam %",
+    "running_grade": "Running Grade",
+    "missing_rate_pct": "Missing %",
+}
+
+
 @role_required(ADMIN)
 def historical_detail(request, pk):
     """Read-only drill-down into one import batch's rows -- masked_id is
@@ -136,7 +147,7 @@ def historical_detail(request, pk):
             "page_title": f"Historical Data: Batch #{batch.pk}",
             "batch": batch,
             "page": page,
-            "feature_names": FEATURE_NAMES,
+            "feature_columns": [(name, _FEATURE_DISPLAY_LABELS[name]) for name in FEATURE_NAMES],
             "checkpoint_choices": Checkpoint.choices,
             "checkpoint_filter": checkpoint_filter,
         },

@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block html_title %}CITCI GradeTrack{% endblock %}</title>
     <link rel="icon" href="{% static 'img/citci-seal-256.png' %}">
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="theme-color" content="#283082">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GradeTrack">
+    <link rel="apple-touch-icon" href="{% static 'img/pwa/icon-192.png' %}">
     {% tailwind_css %}
     <script>
         /* Global toast store (Phase 8 part A) — must run before Alpine's
@@ -42,6 +49,18 @@
     <script src="{% static 'js/qr-scanner.js' %}" defer></script>
     <script src="{% static 'vendor/chartjs/chart.umd.min.js' %}" defer></script>
     <script src="{% static 'vendor/alpinejs/alpine.min.js' %}" defer></script>
+    <script>
+        {% comment %}
+        PWA install support -- a service worker is one of Chrome's install
+        criteria alongside the manifest link above. Network-only (see
+        static/js/sw.js), so this never changes what data the app shows.
+        {% endcomment %}
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("{% static 'js/sw.js' %}").catch(() => {});
+            });
+        }
+    </script>
 </head>
 <body class="h-full overflow-x-hidden font-sans text-gray-800 antialiased"
       x-data="{
@@ -115,12 +134,14 @@ readers without moving focus.
             {% endif %}
         </header>
 
-        <main class="flex-1 p-4 md:p-6">
+        <main class="flex-1 p-4 pb-20 md:p-6">
             {% include "partials/_messages.html" %}
             {% block content %}{% endblock %}
         </main>
     </div>
 </div>
+
+{% include "partials/_bottom_nav.html" %}
 
 {# Shared modal shell: CRUD pages hx-get their form/confirm fragment into #modal-content. role="dialog"/aria-modal mark this as its own landmark region, since it sits outside the main content area for stacking-context reasons. #}
 <div x-show="modalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4">

@@ -362,3 +362,65 @@ class NoMultiLineDjangoCommentLeaksTests(TestCase):
         content = response.content.decode()
         self.assertNotIn("{#", content)
         self.assertNotIn("#}", content)
+
+
+class PwaTests(TestCase):
+    """PWA installability: a served manifest.json + registered service
+    worker is what lets Chrome offer "Add to Home Screen" on Android."""
+
+    def test_manifest_is_served_and_valid(self):
+        import json
+
+        from django.contrib.staticfiles.finders import find
+
+        manifest_path = find("manifest.json")
+        self.assertIsNotNone(manifest_path, "static/manifest.json not found by staticfiles finders")
+        with open(manifest_path) as f:
+            data = json.load(f)
+        self.assertEqual(data["name"], "CITCI GradeTrack")
+        self.assertEqual(data["start_url"], "/dashboard/")
+        self.assertEqual(data["display"], "standalone")
+        self.assertTrue(data["icons"])
+
+    def test_service_worker_is_served(self):
+        from django.contrib.staticfiles.finders import find
+
+        self.assertIsNotNone(find("js/sw.js"), "static/js/sw.js not found by staticfiles finders")
+
+    def test_base_page_links_manifest_and_registers_service_worker(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        admin = make_user(User.Role.ADMIN, "pwa_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, 'rel="manifest"')
+        self.assertContains(response, "theme-color")
+        self.assertContains(response, "serviceWorker")
+
+
+class BottomNavTests(TestCase):
+    """Mobile-only quick-access bar (accounts.menu.BOTTOM_NAV) -- a
+    supplement to the full sidebar, never shown on desktop (md:hidden)."""
+
+    def test_student_center_button_is_the_qr_join_flow(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        student = make_user(User.Role.STUDENT, "bottomnav_student")
+        self.client.force_login(student)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, 'md:hidden')
+        self.assertContains(response, reverse("academics:student_my_classes"))
+
+    def test_admin_bottom_nav_has_no_qr_reference(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        admin = make_user(User.Role.ADMIN, "bottomnav_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("dashboard:home"))
+        content = response.content.decode()
+        bottom_nav_start = content.index('aria-label="Quick navigation"')
+        bottom_nav_end = content.index("</nav>", bottom_nav_start)
+        self.assertNotIn("Join Class", content[bottom_nav_start:bottom_nav_end])

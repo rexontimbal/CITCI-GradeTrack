@@ -1,0 +1,43 @@
+{% load sidebar_icons %}
+{% comment %}
+Mobile-only quick-access bar (md:hidden) -- a supplement to the full
+sidebar/drawer menu, not a replacement. Five slots per role: two plain
+items, a raised center button (the role's single most-used action --
+QR/Join Class for Student), two more plain items. bottom_nav comes from
+accounts.context_processors.sidebar (built off accounts.menu.bottom_nav_for).
+{% endcomment %}
+{% if bottom_nav %}
+<nav aria-label="Quick navigation"
+     class="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-between border-t border-gray-200 bg-white px-2 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] md:hidden"
+     style="padding-bottom: env(safe-area-inset-bottom);">
+    {% for url_name, label, icon in bottom_nav.left %}
+    <a href="{% url url_name %}"
+       class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium
+              {% if url_name == active_url_name %}text-brand-primary-700{% else %}text-gray-500{% endif %}">
+        {% sidebar_icon icon "h-5 w-5" %}
+        <span class="truncate">{{ label }}</span>
+    </a>
+    {% endfor %}
+
+    {% with url_name=bottom_nav.center.0 label=bottom_nav.center.1 icon=bottom_nav.center.2 %}
+    <div class="relative flex flex-1 flex-col items-center justify-end">
+        <a href="{% url url_name %}"
+           aria-label="{{ label }}"
+           class="-translate-y-5 flex h-14 w-14 shrink-0 items-center justify-center rounded-full shadow-lg ring-4 ring-white transition
+                  {% if url_name == active_url_name %}bg-brand-primary-700 text-white{% else %}bg-brand-accent-500 text-brand-primary-900{% endif %}">
+            {% sidebar_icon icon "h-6 w-6" %}
+        </a>
+        <span class="-mt-3 truncate text-[11px] font-semibold text-brand-primary-700">{{ label }}</span>
+    </div>
+    {% endwith %}
+
+    {% for url_name, label, icon in bottom_nav.right %}
+    <a href="{% url url_name %}"
+       class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium
+              {% if url_name == active_url_name %}text-brand-primary-700{% else %}text-gray-500{% endif %}">
+        {% sidebar_icon icon "h-5 w-5" %}
+        <span class="truncate">{{ label }}</span>
+    </a>
+    {% endfor %}
+</nav>
+{% endif %}

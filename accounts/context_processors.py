@@ -1,4 +1,4 @@
-from .menu import menu_for
+from .menu import bottom_nav_for, menu_for
 
 
 def sidebar(request):
@@ -15,6 +15,7 @@ def sidebar(request):
         "sidebar_menu": menu_for(request.user),
         "active_url_name": active_url_name,
         "sidebar_badges": _sidebar_badges(request.user),
+        "bottom_nav": bottom_nav_for(request.user),
     }
 
 

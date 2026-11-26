@@ -138,3 +138,59 @@ MENUS = {
 
 def menu_for(user):
     return MENUS.get(user.role, [])
+
+
+# Curated, mobile-only bottom navigation -- a quick-access supplement to the
+# full sidebar menu above, not a replacement (see templates/partials/
+# _bottom_nav.html). Each role gets exactly 2 left + 1 raised center +
+# 2 right items, same (url_name, label, icon_key) shape as MENUS.
+BOTTOM_NAV = {
+    User.Role.ADMIN: {
+        "left": [
+            ("dashboard:home", "Dashboard", "home"),
+            ("accounts:users", "Users", "users"),
+        ],
+        "center": ("approvals:admin_sheets", "Grade Sheets", "clipboard"),
+        "right": [
+            ("reports:index", "Reports", "document"),
+            ("reports:settings", "Settings", "settings"),
+        ],
+    },
+    User.Role.PROGRAM_HEAD: {
+        "left": [
+            ("dashboard:home", "Dashboard", "home"),
+            ("academics:program_head_classes", "Classes", "chalkboard"),
+        ],
+        "center": ("approvals:index", "Grade Approvals", "check-circle"),
+        "right": [
+            ("forecasting:at_risk", "At-Risk Students", "alert"),
+            ("reports:index", "Reports", "document"),
+        ],
+    },
+    User.Role.INSTRUCTOR: {
+        "left": [
+            ("dashboard:home", "Dashboard", "home"),
+            ("academics:my_classes", "My Classes", "chalkboard"),
+        ],
+        "center": ("approvals:submitted", "Submitted Grades", "clipboard"),
+        "right": [
+            ("forecasting:at_risk", "At-Risk Students", "alert"),
+            ("reports:index", "Reports", "document"),
+        ],
+    },
+    User.Role.STUDENT: {
+        "left": [
+            ("dashboard:home", "Dashboard", "home"),
+            ("academics:student_my_classes", "My Classes", "chalkboard"),
+        ],
+        "center": ("academics:student_my_classes", "Join Class", "qr"),
+        "right": [
+            ("grading:my_grades", "My Grades", "book"),
+            ("dashboard:notifications", "Notifications", "bell"),
+        ],
+    },
+}
+
+
+def bottom_nav_for(user):
+    return BOTTOM_NAV.get(user.role)

@@ -21,7 +21,8 @@ accounts.context_processors.sidebar (built off accounts.menu.bottom_nav_for).
 
     {% with url_name=bottom_nav.center.0 label=bottom_nav.center.1 icon=bottom_nav.center.2 %}
     <div class="relative flex flex-1 flex-col items-center justify-end">
-        <a href="{% url url_name %}"
+        {# icon=="qr" is the student Join Class flow -- jump straight into the modal's camera tab, see student_my_classes.html. #}
+        <a href="{% url url_name %}{% if icon == 'qr' %}?join=scan{% endif %}"
            aria-label="{{ label }}"
            class="-translate-y-5 flex h-14 w-14 shrink-0 items-center justify-center rounded-full shadow-lg ring-4 ring-white transition
                   {% if url_name == active_url_name %}bg-brand-primary-700 text-white{% else %}bg-brand-accent-500 text-brand-primary-900{% endif %}">

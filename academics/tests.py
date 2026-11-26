@@ -3740,6 +3740,26 @@ class ClassJoinViewTests(ClassJoinCodeTestBase):
         self.assertEqual(response["Content-Type"], "image/svg+xml")
         self.assertIn(b"<svg", response.content)
 
+    def test_join_modal_tab_scan_param_opens_straight_into_the_camera_tab(self):
+        """The bottom-nav QR button links to my-classes?join=scan, which
+        fires one GET at the modal view with ?tab=scan -- confirms the
+        view/template actually honor that param (tab='scan'; start()),
+        not just that the page loads."""
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("academics:student_join_modal"), {"tab": "scan"})
+        self.assertContains(response, "tab = 'scan'; start();")
+
+    def test_join_modal_without_tab_param_defaults_to_code_entry(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("academics:student_join_modal"))
+        self.assertNotContains(response, "tab = 'scan'; start();")
+
+    def test_my_classes_page_wires_the_auto_scan_trigger(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("academics:student_my_classes"))
+        self.assertContains(response, "join=scan")
+        self.assertContains(response, "window.Alpine.$data")
+
     def test_student_my_classes_shows_joined_and_pending(self):
         from .services import approve_join_request
 

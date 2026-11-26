@@ -9,6 +9,20 @@
     </button>
 </div>
 
+{% comment %}
+The bottom-nav "Join Class" QR button links here with ?join=scan -- jump
+straight into the modal's camera tab instead of making the student tap
+"Join class" then "Scan QR" themselves. htmx/Alpine are deferred scripts,
+already loaded by DOMContentLoaded.
+{% endcomment %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        if (new URLSearchParams(window.location.search).get("join") !== "scan") return;
+        try { window.Alpine.$data(document.body).modalOpen = true; } catch (e) {}
+        window.htmx.ajax("GET", "{% url 'academics:student_join_modal' %}?tab=scan", { target: "#modal-content", swap: "innerHTML" });
+    });
+</script>
+
 {% if not active_semester_set %}
 {% include "partials/_empty_state.html" with icon="calendar" title="No active semester" description="Ask the admin to set the active semester." %}
 {% elif roster_entries or join_requests %}

@@ -3390,7 +3390,8 @@ def student_my_classes(request):
 @role_required(STUDENT)
 def student_join_modal(request):
     if request.method != "POST":
-        return render(request, "academics/_join_modal.html", {"form": JoinCodeForm()})
+        initial_tab = "scan" if request.GET.get("tab") == "scan" else "code"
+        return render(request, "academics/_join_modal.html", {"form": JoinCodeForm(), "initial_tab": initial_tab})
     form = JoinCodeForm(request.POST)
     if not form.is_valid():
         return render(request, "academics/_join_modal.html", {"form": form})

@@ -1,5 +1,5 @@
 <div x-data="qrScanner('{% url 'academics:join_with_code' code='00000000' %}')"
-     x-init="joinUrlTemplate = joinUrlTemplate.replace('00000000', 'CODE')"
+     x-init="joinUrlTemplate = joinUrlTemplate.replace('00000000', 'CODE'); {% if initial_tab == 'scan' %}tab = 'scan'; start();{% endif %}"
      x-effect="if (!modalOpen) stop()">
 <div class="flex items-center justify-between border-b border-gray-200 pb-3">
     <h3 id="modal-title" class="text-base font-semibold text-gray-900">Join a class</h3>

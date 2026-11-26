@@ -7,7 +7,8 @@ QR/Join Class for Student), two more plain items. bottom_nav comes from
 accounts.context_processors.sidebar (built off accounts.menu.bottom_nav_for).
 {% endcomment %}
 {% if bottom_nav %}
-<nav aria-label="Quick navigation"
+{# x-show hides this whenever the mobile drawer is open -- its own user-card popover (Logout etc.) sits at the same height, and this bar previously painted on top of it since both were z-40. #}
+<nav x-show="!mobileOpen" aria-label="Quick navigation"
      class="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-between border-t border-gray-200 bg-white px-2 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] md:hidden"
      style="padding-bottom: env(safe-area-inset-bottom);">
     {% for url_name, label, icon in bottom_nav.left %}

@@ -436,3 +436,22 @@ class BottomNavTests(TestCase):
         bottom_nav_start = content.index('aria-label="Quick navigation"')
         bottom_nav_end = content.index("</nav>", bottom_nav_start)
         self.assertNotIn("Join Class", content[bottom_nav_start:bottom_nav_end])
+
+    def test_bottom_nav_hides_while_the_mobile_drawer_is_open(self):
+        """Regression: the bar used to sit at the same z-index (z-40) as the
+        mobile drawer's outer wrapper, and being later in the DOM it painted
+        on top of the drawer whenever both were visible -- covering the
+        drawer's own user-card popover (Logout) at the bottom. x-show
+        unmounts the bar entirely while mobileOpen is true; the mobile
+        drawer wrapper also moved to a higher z-index (z-[45]) as a second,
+        independent safeguard."""
+        from accounts.models import User
+        from grading.tests import make_user
+
+        student = make_user(User.Role.STUDENT, "bottomnav_drawer_student")
+        self.client.force_login(student)
+        response = self.client.get(reverse("dashboard:home"))
+        content = response.content.decode()
+        nav_tag_start = content.index("<nav ", content.index('aria-label="Quick navigation"') - 200)
+        self.assertIn('x-show="!mobileOpen"', content[nav_tag_start : nav_tag_start + 200])
+        self.assertIn("z-[45]", content)

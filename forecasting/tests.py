@@ -1432,3 +1432,31 @@ class HistoricalDetailViewTests(TestCase):
         batch, url = self._make_batch_with_records(n=1)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
+
+    def test_search_filters_by_subject_or_semester(self):
+        batch, url = self._make_batch_with_records(n=1)
+        self.assertContains(self.client.get(url, {"q": "TEST101"}), "TEST101")
+        self.assertNotContains(self.client.get(url, {"q": "nonexistent"}), "TEST101")
+
+    def test_page_size_changes_how_many_rows_render(self):
+        batch, url = self._make_batch_with_records(n=15)
+        response = self.client.get(url, {"page_size": "10"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page"].object_list), 10)
+
+    def test_invalid_page_size_falls_back_to_the_default(self):
+        batch, url = self._make_batch_with_records(n=1)
+        response = self.client.get(url, {"page_size": "not-a-number"})
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.get(url, {"page_size": "9999"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_view_opens_as_a_modal_not_a_full_page(self):
+        """The "View" link on the Historical Data list hx-gets this view
+        into #modal-content rather than navigating away -- the response
+        must be a bare modal fragment, not a full extends-base.html page."""
+        batch, url = self._make_batch_with_records(n=1)
+        response = self.client.get(url)
+        self.assertNotContains(response, "<html")
+        self.assertContains(response, 'id="modal-title"')

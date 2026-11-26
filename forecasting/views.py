@@ -122,13 +122,22 @@ _FEATURE_DISPLAY_LABELS = {
 }
 
 
+_PAGE_SIZE_CHOICES = (10, 25, 50, 100)
+
+
 @role_required(ADMIN)
 def historical_detail(request, pk):
-    """Read-only drill-down into one import batch's rows -- masked_id is
-    shown only as a short reference (its first 8 hex characters), never
-    the full hash or anything that could be reversed to a real identity.
-    Paginated since a real CITCI dataset can run to hundreds of rows."""
+    """Read-only drill-down into one import batch's rows, opened as a
+    modal (htmx GET into #modal-content) rather than a full page --
+    search, a checkpoint filter, and a page-size picker all re-GET this
+    same view and swap the whole modal body, the same convention every
+    other paginated modal in this app already uses. masked_id is shown
+    only as a short reference (its first 8 hex characters), never the
+    full hash or anything that could be reversed to a real identity."""
+    from urllib.parse import urlencode
+
     from django.core.paginator import Paginator
+    from django.db.models import Q
 
     batch = get_object_or_404(HistoricalImportBatch, pk=pk)
     records = batch.records.all().order_by("checkpoint", "subject_code", "masked_id")
@@ -137,19 +146,38 @@ def historical_detail(request, pk):
     if checkpoint_filter:
         records = records.filter(checkpoint=checkpoint_filter)
 
-    paginator = Paginator(records, 50)
+    query = request.GET.get("q", "").strip()
+    if query:
+        records = records.filter(Q(subject_code__icontains=query) | Q(semester_label__icontains=query))
+
+    try:
+        page_size = int(request.GET.get("page_size", 10))
+    except ValueError:
+        page_size = 10
+    if page_size not in _PAGE_SIZE_CHOICES:
+        page_size = 10
+
+    paginator = Paginator(records, page_size)
     page = paginator.get_page(request.GET.get("page"))
+
+    # The base query string every pagination link reuses (search/filter/page
+    # size), minus `page` itself -- built once here rather than fragile
+    # string-concatenation template filters.
+    base_query_string = urlencode({"q": query, "checkpoint": checkpoint_filter, "page_size": page_size})
 
     return render(
         request,
-        "forecasting/historical_detail.html",
+        "forecasting/_historical_detail_modal.html",
         {
-            "page_title": f"Historical Data: Batch #{batch.pk}",
             "batch": batch,
             "page": page,
             "feature_columns": [(name, _FEATURE_DISPLAY_LABELS[name]) for name in FEATURE_NAMES],
             "checkpoint_choices": Checkpoint.choices,
             "checkpoint_filter": checkpoint_filter,
+            "query": query,
+            "page_size": page_size,
+            "page_size_choices": _PAGE_SIZE_CHOICES,
+            "base_query_string": base_query_string,
         },
     )
 

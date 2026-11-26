@@ -1378,3 +1378,57 @@ class PerFileBreakdownTests(TestCase):
         by_name = {f.file_name: f for f in preview.per_file}
         self.assertGreater(by_name["good.xlsx"].row_count, 0)
         self.assertEqual(by_name["bad.xlsx"].skipped_count, 1)
+
+
+class HistoricalDetailViewTests(TestCase):
+    """The drill-down page a batch's own "View" link opens -- a read-only
+    table of its actual HistoricalRecord rows, never showing a reversible
+    identifier."""
+
+    def setUp(self):
+        self.admin = make_user(User.Role.ADMIN, "histdetail_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(self.admin)
+
+    def _make_batch_with_records(self, n=3):
+        from django.urls import reverse
+
+        from .models import HistoricalImportBatch
+
+        batch = HistoricalImportBatch.objects.create(uploaded_by=self.admin, file_count=1, row_count=n, positive_count=1)
+        for i in range(n):
+            HistoricalRecord.objects.create(
+                masked_id=mask_identifier(f"student-{i}"),
+                semester_label="1st Sem 2026-2027",
+                subject_code="TEST101",
+                checkpoint=Checkpoint.PRELIM,
+                features_json={name: "75.5000" for name in FEATURE_NAMES},
+                label=1 if i == 0 else 0,
+                batch=batch,
+            )
+        return batch, reverse("forecasting:historical_detail", args=[batch.pk])
+
+    def test_detail_page_lists_the_batchs_records(self):
+        batch, url = self._make_batch_with_records(n=3)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "TEST101")
+        self.assertContains(response, "75.50")
+
+    def test_detail_page_never_shows_the_full_masked_id(self):
+        batch, url = self._make_batch_with_records(n=1)
+        record = batch.records.first()
+        response = self.client.get(url)
+        self.assertNotContains(response, record.masked_id)  # only its first 8 chars are shown
+
+    def test_checkpoint_filter_narrows_the_table(self):
+        batch, url = self._make_batch_with_records(n=1)
+        response = self.client.get(url, {"checkpoint": "MIDTERM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "TEST101")  # the one record is PRELIM, filtered out
+
+    def test_non_admin_cannot_view(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "histdetail_instructor")
+        self.client.force_login(instructor)
+        batch, url = self._make_batch_with_records(n=1)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)

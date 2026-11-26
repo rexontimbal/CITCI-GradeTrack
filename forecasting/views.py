@@ -15,6 +15,7 @@ from grading.models import AssessmentTerm, ComponentCategory
 from . import flexible_import, gradebook_import
 from .forms import InterventionForm
 from .historical_import import build_import_preview, commit_import, export_released_data_to_historical, looks_like_known_template
+from .ml.features import FEATURE_NAMES
 from .ml.train import train_model
 from .models import Checkpoint, HistoricalImportBatch, Intervention, MlModelVersion, Prediction, TrainingSource
 from .services import (
@@ -108,6 +109,38 @@ def historical(request):
     batches = HistoricalImportBatch.objects.select_related("uploaded_by")
     context = {"page_title": "Historical Data", "batches": batches}
     return render(request, "forecasting/historical.html", context)
+
+
+@role_required(ADMIN)
+def historical_detail(request, pk):
+    """Read-only drill-down into one import batch's rows -- masked_id is
+    shown only as a short reference (its first 8 hex characters), never
+    the full hash or anything that could be reversed to a real identity.
+    Paginated since a real CITCI dataset can run to hundreds of rows."""
+    from django.core.paginator import Paginator
+
+    batch = get_object_or_404(HistoricalImportBatch, pk=pk)
+    records = batch.records.all().order_by("checkpoint", "subject_code", "masked_id")
+
+    checkpoint_filter = request.GET.get("checkpoint", "")
+    if checkpoint_filter:
+        records = records.filter(checkpoint=checkpoint_filter)
+
+    paginator = Paginator(records, 50)
+    page = paginator.get_page(request.GET.get("page"))
+
+    return render(
+        request,
+        "forecasting/historical_detail.html",
+        {
+            "page_title": f"Historical Data: Batch #{batch.pk}",
+            "batch": batch,
+            "page": page,
+            "feature_names": FEATURE_NAMES,
+            "checkpoint_choices": Checkpoint.choices,
+            "checkpoint_filter": checkpoint_filter,
+        },
+    )
 
 
 def _mapping_context(files_payload):

@@ -13,6 +13,7 @@ urlpatterns = [
     path("historical/import/", views.historical_import_upload, name="historical_import"),
     path("historical/import/mapping/confirm/", views.historical_import_mapping_confirm, name="historical_import_mapping_confirm"),
     path("historical/import/confirm/", views.historical_import_confirm, name="historical_import_confirm"),
+    path("historical/<int:pk>/", views.historical_detail, name="historical_detail"),
     path("historical/<int:pk>/delete/", views.historical_delete, name="historical_delete"),
     path("historical/export-live/", views.historical_export_live, name="historical_export_live"),
     path("at-risk/", views.at_risk, name="at_risk"),

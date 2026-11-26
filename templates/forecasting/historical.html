@@ -47,6 +47,7 @@
                 <td class="px-4 py-3 text-gray-700">{% if batch.row_count %}{% widthratio batch.positive_count batch.row_count 100 %}%{% else %}N/A{% endif %}</td>
                 <td class="px-4 py-3 text-gray-700">{{ batch.uploaded_by.full_name|default:"System" }}</td>
                 <td class="px-4 py-3 text-right">
+                    <a href="{% url 'forecasting:historical_detail' batch.pk %}" class="mr-3 text-xs font-medium text-brand-primary-700 underline hover:no-underline">View</a>
                     <form method="post" action="{% url 'forecasting:historical_delete' batch.pk %}" class="inline" onsubmit="return confirm('Delete this batch and its records?');">
                         {% csrf_token %}
                         <button type="submit" class="text-xs font-medium text-red-700 underline hover:no-underline">Delete</button>

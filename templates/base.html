@@ -28,6 +28,7 @@
     </script>
     <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
     <script src="{% static 'js/htmx-csrf.js' %}" defer></script>
+    <script src="{% static 'js/htmx-confirm.js' %}" defer></script>
     <script src="{% static 'js/form-guard.js' %}" defer></script>
     <script src="{% static 'js/searchable-select.js' %}" defer></script>
     <script src="{% static 'js/grading-grid.js' %}" defer></script>
@@ -48,12 +49,16 @@
           mobileOpen: false,
           modalOpen: false,
           notifOpen: false,
+          confirmOpen: false,
+          confirmMessage: '',
+          confirmAction: null,
           toggleCollapsed() {
               this.collapsed = !this.collapsed;
               try { localStorage.setItem('citci_sidebar_collapsed', this.collapsed ? '1' : '0'); } catch (e) {}
           }
       }"
-      @keydown.escape.window="modalOpen = false">
+      @keydown.escape.window="modalOpen = false; confirmOpen = false"
+      @open-confirm.window="confirmOpen = true; confirmMessage = $event.detail.message; confirmAction = $event.detail.onConfirm">
 
 {% comment %}
 Global toast stack (Phase 8 part A) — fed by Django messages on a full page
@@ -137,6 +142,37 @@ readers without moving focus.
         e.target.style.maxWidth = "";
     });
 </script>
+
+{# Shared confirm dialog -- replaces every native browser confirm() across
+   the app (every hx-confirm="..." attribute, intercepted once in
+   static/js/htmx-confirm.js, plus a couple of plain-form actions that
+   dispatch "open-confirm" directly). Its own z-index/layer, independent of
+   #modal-content, so confirming a destructive action from inside an
+   already-open modal never clobbers that modal's own content. #}
+<div x-show="confirmOpen" x-cloak class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50" @click="confirmOpen = false"></div>
+    <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+         class="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <div class="flex items-start gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                {% sidebar_icon "alert" "h-5 w-5" %}
+            </span>
+            <div class="pt-1">
+                <h3 id="confirm-title" class="text-base font-semibold text-gray-900">Please confirm</h3>
+                <p class="mt-1 text-sm text-gray-600" x-text="confirmMessage"></p>
+            </div>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="button" @click="confirmOpen = false; if (confirmAction) confirmAction()"
+                    class="rounded-lg bg-brand-accent-600 px-4 py-2 text-sm font-semibold text-brand-primary-900 hover:bg-brand-accent-700">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
 {% else %}
     {% block guest_content %}{% endblock %}
 {% endif %}

@@ -323,3 +323,22 @@ class RestoreDbCommandTests(TestCase):
             with mock.patch("core.management.commands.restore_db.Command._run", return_value=fake_result) as mock_run:
                 call_command("restore_db", str(dump_file), "--yes-i-am-sure")
             self.assertTrue(mock_run.called)
+
+
+class ConfirmDialogWiringTests(TestCase):
+    """Every hx-confirm="..." (and the couple of plain-form actions that
+    dispatch the same "open-confirm" event) relies on base.html's shared
+    confirm dialog + static/js/htmx-confirm.js being present on every
+    authenticated page -- a regression here would silently bring back the
+    native browser confirm() everywhere at once."""
+
+    def test_base_page_wires_the_shared_confirm_dialog(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        admin = make_user(User.Role.ADMIN, "confirmdialog_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, "js/htmx-confirm.js")
+        self.assertContains(response, "open-confirm")
+        self.assertContains(response, "confirmOpen")

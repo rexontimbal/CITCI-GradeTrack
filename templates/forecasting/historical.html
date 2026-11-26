@@ -49,7 +49,8 @@
                 <td class="px-4 py-3 text-right">
                     <button type="button" hx-get="{% url 'forecasting:historical_detail' batch.pk %}" hx-target="#modal-content" hx-swap="innerHTML" @click="modalOpen=true"
                             class="mr-3 text-xs font-medium text-brand-primary-700 underline hover:no-underline">View</button>
-                    <form method="post" action="{% url 'forecasting:historical_delete' batch.pk %}" class="inline" onsubmit="return confirm('Delete this batch and its records?');">
+                    <form method="post" action="{% url 'forecasting:historical_delete' batch.pk %}" class="inline"
+                          @submit.prevent="window.dispatchEvent(new CustomEvent('open-confirm', { detail: { message: 'Delete this batch and its records?', onConfirm: () => $el.submit() } }))">
                         {% csrf_token %}
                         <button type="submit" class="text-xs font-medium text-red-700 underline hover:no-underline">Delete</button>
                     </form>

@@ -93,6 +93,10 @@ def profile(request):
     context = {"form": form}
     if request.user.is_instructor:
         context["classes_count"] = ClassOffering.objects.filter(instructor=request.user).count()
+    if request.user.is_program_head:
+        from academics.scoping import classes_in_scope
+
+        context["classes_count"] = classes_in_scope(request.user).count()
     if request.user.is_student:
         active_semester = Semester.objects.filter(is_active=True).first()
         if active_semester:

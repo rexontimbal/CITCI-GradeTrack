@@ -342,3 +342,23 @@ class ConfirmDialogWiringTests(TestCase):
         self.assertContains(response, "js/htmx-confirm.js")
         self.assertContains(response, "open-confirm")
         self.assertContains(response, "confirmOpen")
+
+
+class NoMultiLineDjangoCommentLeaksTests(TestCase):
+    """Django's {# ... #} comment tag is documented as single-line only --
+    one that spans multiple lines (a literal newline between {# and #})
+    silently fails to be stripped and renders as literal page text
+    instead. This bit base.html's own confirm-dialog comments once
+    already; a {% comment %}/{% endcomment %} block is the correct choice
+    whenever a comment needs to span more than one line."""
+
+    def test_base_page_never_leaks_a_raw_comment_marker(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        admin = make_user(User.Role.ADMIN, "commentleak_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("dashboard:home"))
+        content = response.content.decode()
+        self.assertNotIn("{#", content)
+        self.assertNotIn("#}", content)

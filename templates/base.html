@@ -134,21 +134,25 @@ readers without moving focus.
     </div>
 </div>
 <script>
-    {# Most modals are fine at the default width; a data-heavy one (e.g. a
-       wide table) can opt into more room with x-init="$el.closest('#modal-content').style.maxWidth = '...'" --
-       reset here before every swap so that override never leaks into the
-       next, normal-sized modal opened afterward. #}
+    {% comment %}
+    Most modals are fine at the default width; a data-heavy one (e.g. a
+    wide table) can opt into more room with x-init="$el.closest('#modal-content').style.maxWidth = '...'" --
+    reset here before every swap so that override never leaks into the
+    next, normal-sized modal opened afterward.
+    {% endcomment %}
     document.getElementById("modal-content").addEventListener("htmx:beforeSwap", (e) => {
         e.target.style.maxWidth = "";
     });
 </script>
 
-{# Shared confirm dialog -- replaces every native browser confirm() across
-   the app (every hx-confirm="..." attribute, intercepted once in
-   static/js/htmx-confirm.js, plus a couple of plain-form actions that
-   dispatch "open-confirm" directly). Its own z-index/layer, independent of
-   #modal-content, so confirming a destructive action from inside an
-   already-open modal never clobbers that modal's own content. #}
+{% comment %}
+Shared confirm dialog -- replaces every native browser confirm() across
+the app (every hx-confirm="..." attribute, intercepted once in
+static/js/htmx-confirm.js, plus a couple of plain-form actions that
+dispatch "open-confirm" directly). Its own z-index/layer, independent of
+#modal-content, so confirming a destructive action from inside an
+already-open modal never clobbers that modal's own content.
+{% endcomment %}
 <div x-show="confirmOpen" x-cloak class="fixed inset-0 z-[60] flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/50" @click="confirmOpen = false"></div>
     <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"

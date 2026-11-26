@@ -106,7 +106,10 @@ def profile(request):
 
 @login_required
 def help_page(request):
-    return render(request, "accounts/help.html")
+    from .help_content import HELP_CONTENT
+
+    content = HELP_CONTENT.get(request.user.role.lower())
+    return render(request, "accounts/help.html", {"help_content": content})
 
 
 @login_required

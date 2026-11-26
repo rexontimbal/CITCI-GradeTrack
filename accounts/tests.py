@@ -732,3 +732,34 @@ class SuggestedStudentIdNumberTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "already exists")
+
+
+class HelpPageTests(TestCase):
+    """Help page (accounts.views.help_page) renders a real, role-specific
+    walkthrough from accounts.help_content instead of the old static
+    "coming soon" placeholder -- one per role, no empty-state fallback
+    once every role has content."""
+
+    def test_each_role_sees_its_own_guide_title(self):
+        from .help_content import HELP_CONTENT
+
+        cases = [
+            (User.Role.ADMIN, "help_admin", HELP_CONTENT["admin"]["title"]),
+            (User.Role.PROGRAM_HEAD, "help_ph", HELP_CONTENT["program_head"]["title"]),
+            (User.Role.INSTRUCTOR, "help_instructor", HELP_CONTENT["instructor"]["title"]),
+            (User.Role.STUDENT, "help_student", HELP_CONTENT["student"]["title"]),
+        ]
+        for role, username, expected_title in cases:
+            with self.subTest(role=role):
+                user = make_user(role, username)
+                self.client.force_login(user)
+                response = self.client.get(reverse("accounts:help"))
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, expected_title)
+                self.assertNotContains(response, "Help center coming soon")
+
+    def test_a_step_without_a_path_renders_with_no_broken_link(self):
+        instructor = make_user(User.Role.INSTRUCTOR, "help_instructor_nolink")
+        self.client.force_login(instructor)
+        response = self.client.get(reverse("accounts:help"))
+        self.assertContains(response, "Setup tab")

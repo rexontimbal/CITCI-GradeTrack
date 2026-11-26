@@ -40,16 +40,7 @@
     </div>
     {% endif %}
 
-    {% if preview.skipped %}
-    <div class="max-h-32 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        <strong>Skipped rows:</strong>
-        <ul class="mt-1 list-inside list-disc">
-            {% for s in preview.skipped %}
-            <li>{{ s.file }}: row {{ s.row }}: {{ s.reason }}</li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
+    {% include "forecasting/_skipped_rows_disclosure.html" with skipped=preview.skipped %}
 
     <p class="text-xs text-gray-600">
         {% if preview.flexible %}

@@ -98,16 +98,9 @@
 </div>
 {% endif %}
 
-{% if batch.skipped_rows_json %}
-<div class="mt-4 max-h-48 overflow-y-auto rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 gold-scroll">
-    <p class="mb-1 font-semibold">Skipped rows</p>
-    <ul class="list-inside list-disc space-y-0.5">
-        {% for s in batch.skipped_rows_json %}
-        <li>{{ s.file }}: row {{ s.row }}: {{ s.reason }}</li>
-        {% endfor %}
-    </ul>
+<div class="mt-4">
+    {% include "forecasting/_skipped_rows_disclosure.html" with skipped=batch.skipped_rows_json %}
 </div>
-{% endif %}
 {% else %}
 {% include "partials/_empty_state.html" with icon="folder" title="No rows for this filter" description="Try a different checkpoint, or clear the filter above." %}
 {% endif %}

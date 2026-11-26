@@ -1,0 +1,22 @@
+{% load sidebar_icons %}
+{% if skipped %}
+<div x-data="{ open: false }" class="overflow-hidden rounded-lg border border-gray-200">
+    <button type="button" @click="open = !open"
+            class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
+        <span class="flex items-center gap-2">
+            {% sidebar_icon "alert" "h-4 w-4 text-amber-500" %}
+            <strong>{{ skipped|length }}</strong> row{{ skipped|length|pluralize }} skipped
+        </span>
+        <span :class="open ? 'rotate-90' : ''" class="text-gray-400 transition-transform duration-150">
+            {% sidebar_icon "chevron-right" "h-4 w-4" %}
+        </span>
+    </button>
+    <div x-show="open" x-cloak class="max-h-48 overflow-y-auto border-t border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 gold-scroll">
+        <ul class="list-inside list-disc space-y-0.5">
+            {% for s in skipped %}
+            <li>{{ s.file }}: row {{ s.row }}: {{ s.reason }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}

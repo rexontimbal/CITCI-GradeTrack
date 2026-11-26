@@ -47,6 +47,15 @@ class LoginView(auth_views.LoginView):
     template_name = "accounts/login.html"
     redirect_authenticated_user = True
 
+    def get_redirect_url(self):
+        """Always land on the dashboard after login, for every role --
+        never honor a stray "?next=..." (e.g. left over from a session
+        that timed out on an admin-only page): logging in with a
+        different, less-privileged account on that same link would
+        otherwise bounce straight into a 403 before ever seeing their own
+        dashboard, confusing rather than useful."""
+        return ""
+
     def get_context_data(self, **kwargs):
         from reports.models import InstitutionSettings
 

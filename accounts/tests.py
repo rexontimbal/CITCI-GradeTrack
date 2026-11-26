@@ -43,6 +43,18 @@ class LoginTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.wsgi_request.user.is_authenticated)
 
+    def test_login_ignores_a_next_param_and_still_lands_on_the_dashboard(self):
+        """A stray "?next=..." (e.g. left over from a session that timed
+        out on a page a different, less-privileged account can't reach)
+        must never bounce a fresh login straight into a 403 -- every
+        role always lands on its own dashboard first, no exceptions,
+        including the QR-join flow's own "?next=/academics/join/<code>/"."""
+        response = self.client.post(
+            f"{reverse('accounts:login')}?next=/accounts/users/",
+            {"username": "stud1", "password": "pw12345!"},
+        )
+        self.assertRedirects(response, reverse("dashboard:home"))
+
 
 class ForcedFirstLoginStepsTests(TestCase):
     def test_new_account_is_redirected_to_password_change(self):

@@ -83,6 +83,17 @@ fold without the user knowing.
         <a href="{% url 'accounts:force_password_change' %}" class="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">
             {% sidebar_icon "sliders" "w-4 h-4" %} Change Password
         </a>
+        {% comment %}
+        Only shown once the browser fires beforeinstallprompt (Chrome on
+        Android/desktop; never on iOS Safari, and never once already
+        installed) -- static/js/pwa-install.js captures that event and
+        toggles installPromptAvailable on the body x-data.
+        {% endcomment %}
+        <button type="button" x-show="installPromptAvailable" x-cloak
+                @click="userMenuOpen = false; window.triggerPwaInstall()"
+                class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">
+            {% sidebar_icon "upload" "w-4 h-4" %} Install App
+        </button>
         <form method="post" action="{% url 'accounts:logout' %}">
             {% csrf_token %}
             <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">

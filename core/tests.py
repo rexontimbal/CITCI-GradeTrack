@@ -398,6 +398,18 @@ class PwaTests(TestCase):
         self.assertContains(response, "theme-color")
         self.assertContains(response, "serviceWorker")
 
+    def test_sidebar_offers_an_install_app_button_wired_to_the_prompt_capture(self):
+        from accounts.models import User
+        from grading.tests import make_user
+
+        admin = make_user(User.Role.ADMIN, "pwa_install_admin", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, "js/pwa-install.js")
+        self.assertContains(response, "installPromptAvailable")
+        self.assertContains(response, "triggerPwaInstall")
+        self.assertContains(response, "Install App")
+
 
 class BottomNavTests(TestCase):
     """Mobile-only quick-access bar (accounts.menu.BOTTOM_NAV) -- a
